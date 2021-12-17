@@ -56,7 +56,7 @@ class Attention(nn.Module):
         qkv = qkv.reshape(batch_size, num_patches, 3, self.num_heads, self.head_dim)
         qkv = qkv.permute(2, 0, 3, 1, 4) # (3, batch_size, num_heads, num_patches, head_dim)
 
-        query, key, value = qkv.unbind(0) 
+        query, key, value = qkv.unbind(0) # (batch_size, num_heads, num_patches, head_dim)
         
         # (batch_size, num_heads, num_patches, head_dim) * (batch_size, num_heads, head_dim, num_patches) 
         # -> (batch_size, num_heads, num_patches, num_patches)
