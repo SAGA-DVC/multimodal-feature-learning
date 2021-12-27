@@ -12,12 +12,12 @@ class TokenEmbedding(nn.Module):
         temporal patch size, these embeddings can follow 'uniform frame sampling' or 'tubelet embedding' schemes.
 
         Parameters:
-            img_size (int): dimension of one frame of the video (should be a square i.e. height=width) (default 224)
-            spatial_patch_size (int): dimension of the patch that will be used to convolve over a frame (default 16)
-            temporal_patch_size (int): dimension of the patch that will be used to convolve over multiple frames (default 1)
-            in_channels (int): number of channels of the each frame in the video. e.g. RGB. (default 3)
-            num_classes (int): number of classes for the prediction task (default 1000)
-            d_model (int): Dimension of the tensors used to compute attention
+            `img_size` (int): dimension of one frame of the video (should be a square i.e. height=width) (default 224)
+            `spatial_patch_size` (int): dimension of the patch that will be used to convolve over a frame (default 16)
+            `temporal_patch_size` (int): dimension of the patch that will be used to convolve over multiple frames (default 1)
+            `in_channels` (int): number of channels of the each frame in the video. e.g. RGB. (default 3)
+            `num_classes` (int): number of classes for the prediction task (default 1000)
+            `d_model` (int): Dimension of the tensors used to compute attention
 
         """
         
@@ -59,16 +59,16 @@ class PositionalEmbedding(nn.Module):
         Positional embeddings are initialzed and added to the input tensors. 
   
         Parameters:
-            num_frames (int): Number of frames in the input video
-            num_patches (int): Number of patches per frame in the input video
-            d_model (int): Dimension of the tensors used to compute attention
-            positional_embedding_dropout (float): dropout probability for the positional embeddings (default 0.0)
+            `num_frames` (int): Number of frames in the input video
+            `num_patches` (int): Number of patches per frame in the input video
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
           
         """
 
         super(PositionalEmbedding, self).__init__()
 
-        self.positional_embedding = nn.Parameter(torch.zeros(1, num_frames, num_patches, d_model)) 
+        self.positional_embedding = nn.Parameter(torch.zeros(1, 1, num_patches, d_model).repeat(1, num_frames, 1, 1)) 
         self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
     
     def forward(self, x):
@@ -90,18 +90,18 @@ class PositionalEmbedding(nn.Module):
 
 class Attention(nn.Module):
 
-    def __init__(self, d_model, num_heads=12, qkv_bias=False, attention_dropout=0., projection_dropout=0.):
+    def __init__(self, d_model, num_heads=12, qkv_bias=False, attention_dropout=0., projection_dropout=0., init=''):
 
         """
         Initialises all the attributes of the for the multi-headed attention block. 
   
         Parameters:
-            d_model (int): Dimension of the tensors used to compute attention
-            num_heads (int): Number of attention heads.
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
-          
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads.
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `init` (string): Intialisation method for the parameters in the attenion block (default )
         """
 
         super(Attention, self).__init__()
@@ -141,7 +141,7 @@ class Attention(nn.Module):
 
         query, key, value = qkv.unbind(0) 
         
-        # (batch_size, num_heads, num_frames * num_patches, head_dim) * (batch_size, num_heads, head_dim, num_tokens) 
+        # (batch_size, num_heads, num_tokens, head_dim) * (batch_size, num_heads, head_dim, num_tokens) 
         # -> (batch_size, num_heads, num_tokens, num_tokens)
         self_attention = torch.matmul(query, key.transpose(-2, -1)) * self.scale
         self_attention = self_attention.softmax(dim=-1)
@@ -163,11 +163,11 @@ class DotProductAttention(nn.Module):
         Initialises all the attributes for the Dot Product Attention architecture. 
   
         Parameters:
-            d_model (int): Dimension of the tensors used to compute attention
-            num_heads (int): Number of attention heads.
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads.
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
           
         """
 
@@ -265,11 +265,11 @@ class MLP(nn.Module):
         Multi-layer perceptron which consists of 2 fully connected layers.
   
         Parameters:
-            in_dim (int): input dimension of the MLP block
-            hidden_dim (int): dimension of the intermediate layer
-            out_dim (int): output dimension of the MLP block
-            drouput_1 (float): dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
-            drouput_2 (float): dropout probability applied after the second fully connected layer in the MLP block (default 0.0)
+            `in_dim` (int): Input dimension of the MLP block
+            `hidden_dim` (int): Dimension of the intermediate layer
+            `out_dim` (int): Output dimension of the MLP block
+            `drouput_1` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
+            `drouput_2` (float): Dropout probability applied after the second fully connected layer in the MLP block (default 0.0)
             
         """
 
@@ -287,17 +287,17 @@ class MLP(nn.Module):
         Performs a forward pass on the Multi-layer perceptron.
 
         Parameters:
-            x (tensor): Tensor of dimension (batch_size, num_frames * num_patches, d_model)
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
         
         Returns:
-            x (tensor): Tensor of dimension (batch_size, num_frames * num_patches, d_model)
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
 
         """
 
-        x = self.fully_connected_1(x) # (batch_size, num_frames * num_patches, hidden_dim)
+        x = self.fully_connected_1(x) # (batch_size, num_tokens, hidden_dim)
         x = self.activation_layer(x)
         x = self.dropout_1(x) 
-        x = self.fully_connected_2(x)  # (batch_size, num_frames * num_patches, out_dim)
+        x = self.fully_connected_2(x)  # (batch_size, num_tokens, out_dim)
         x = self.dropout_2(x) 
 
         return x
@@ -311,14 +311,14 @@ class FactorisedEncoder(nn.Module):
         Encoder consisting of the basic attention architecture.
   
         Parameters:
-            d_model (int): Dimension of the tensors used to compute attention
-            num_heads (int): Number of attention heads.
-            mlp_ratio (int): Used to determine the hidden layer dimension of the MLP. (default 4)
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            dropout_1 (float): dropout probability for the MLP block (default 0.0)
-            dropout_2 (float): dropout probability for the MLP block (default 0.0)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads.
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
     
         """
 
@@ -364,14 +364,14 @@ class FactorisedSelfAttentionEncoder(nn.Module):
         Attention architecture consisting of spatial attention followed by temporal attention within one block.
     
         Parameters:
-            d_model (int): Dimension of the tensors used to compute attention
-            num_heads (int): Number of attention heads.
-            mlp_ratio (int): Used to determine the hidden layer dimension of the MLP. (default 4)
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
-            dropout_1 (float): dropout probability for the MLP block (default 0.0)
-            dropout_2 (float): dropout probability for the MLP block (default 0.0)
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads.
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
     
         """
 
@@ -433,15 +433,15 @@ class FactorisedDotProductAttentionEncoder(nn.Module):
         Attention architecture consisting of spatial attention fused with temporal attention within one block.
   
         Parameters:
-            d_model (int): Dimension of the tensors used to compute attention
-            depth (int): number of encoder blocks. 
-            num_heads (int): Number of attention heads.
-            mlp_ratio (int): Used to determine the hidden layer dimension of the MLP. (default 4)
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
-            dropout_1 (float): dropout probability for the MLP block (default 0.0)
-            dropout_2 (float): dropout probability for the MLP block (default 0.0)
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `depth` (int): number of encoder blocks. 
+            `num_heads` (int): Number of attention heads.
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
     
         """
 
@@ -494,19 +494,19 @@ class Encoder(nn.Module):
         Encoder block for factorised attention, factorised self attention and factorised dot product attention.
   
         Parameters:
-            model_name (string): One of 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
-            num_frames (int): Number of frames in the input video
-            num_patches (int): Number of patches per frame in the input video
-            d_model (int): Dimension of the tensors used to compute attention
-            depth (int): number of encoder blocks. 
-            num_heads (int): Number of attention heads.
-            mlp_ratio (int): Used to determine the hidden layer dimension of the MLP. (default 4)
-            qkv_bias (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            positional_embedding_dropout (float): dropout probability for the positional embeddings (default 0.0)
-            attention_dropout (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
-            projection_dropout (float): Dropout probability for the layer after the projection layer (default 0.0)
-            dropout_1 (float): dropout probability for the MLP block (default 0.0)
-            dropout_2 (float): dropout probability for the MLP block (default 0.0)
+            `model_name` (string): One of 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
+            `num_frames` (int): Number of frames in the input video
+            `num_patches` (int): Number of patches per frame in the input video
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `depth` (int): number of encoder blocks. 
+            `num_heads` (int): Number of attention heads.
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `positional_embedding_dropout` (float): Dropout probability for the positional embeddings (default 0.0)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
     
         """
 
