@@ -637,7 +637,7 @@ class Encoder(nn.Module):
 
             cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
             x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
-            
+
             x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches + 1, d_model))
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches + 1, d_model)
 

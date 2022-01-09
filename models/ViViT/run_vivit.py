@@ -1,8 +1,13 @@
+import sys
+sys.path.insert(0, '/home/arnav/Documents/projects/multimodal-feature-learning/dataset')
+
 import torch
 import numpy as np
 import timm
 import time
 from vivit import VideoVisionTransformer
+import kinetics
+
 
 
 # Helpers
@@ -22,8 +27,8 @@ models = ['spatio temporal attention', 'factorised encoder', 'factorised self at
 tokenization_method = ['filter inflation', 'central frame']
 
 custom_config = {
-        "model_name": models[0],
-        "num_frames": 100,
+        "model_name": models[1],
+        "num_frames": 5,
         "num_patches": 196,
         "img_size": 224,
         "spatial_patch_size": 16,
@@ -50,13 +55,11 @@ custom_config = {
 }
 
 
-
 start_time = time.time()
 
 model_custom = VideoVisionTransformer(**custom_config)
-# # model_custom = model_custom.to(torch.device("cuda:0"))
 model_custom.eval()
-print(f"--- {time.time() - start_time} seconds ---")
+
 
 # for (name_custom, parameter_custom) in model_custom.named_parameters():
 #     print(f"{name_custom}, {parameter_custom.shape}")
@@ -67,8 +70,17 @@ print(f"--- {time.time() - start_time} seconds ---")
 #     print(f"{name_official} , {parameter_official.shape}")
 
 
-# a = torch.zeros(1, 3, 100, 224, 224)
-# # a = a.to(torch.device("cuda:0"))
-# res = model_custom(a)
-# print(res.shape)
+dataset, loader = kinetics.get_kinetics(
+        kinetics_root="../../data/sample",
+        num_temporal_samples=10,
+        frame_size=(224, 224),
+        batch_size=3
+    )
 
+for i, batch in enumerate(iter(loader)):
+        res = model_custom(batch['video'])
+        print(res.shape)
+
+
+
+print(f"--- {time.time() - start_time} seconds ---")

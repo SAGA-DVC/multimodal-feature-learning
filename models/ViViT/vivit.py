@@ -171,16 +171,16 @@ class VideoVisionTransformer(nn.Module):
             `model_official`: The model which would be used to load the pre-trained weights
             `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
         """
-
+        num_frames = model_custom.encoder.add_positional_embedding_spatial.positional_embedding.shape[1]
         # only spatial for now
         if model_name == 'factorised encoder':
             model_custom.encoder.add_positional_embedding_spatial \
-                    .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data, 1).repeat(1, 100, 1, 1)
+                    .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data, 1).repeat(1, num_frames, 1, 1)
 
         # no cls token
         elif model_name == 'factorised self attention' or model_name == 'factorised dot product attention':
             model_custom.encoder.add_positional_embedding \
-                        .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data[:, 1:], 1).repeat(1, 100, 1, 1)
+                        .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data[:, 1:], 1).repeat(1, num_frames, 1, 1)
 
 
     # only spatial (for factorised encoder) for now
