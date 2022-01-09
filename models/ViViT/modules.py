@@ -24,6 +24,7 @@ class TokenEmbedding(nn.Module):
         super(TokenEmbedding, self).__init__()
 
         self.num_patches = (img_size // spatial_patch_size) ** 2
+        self.temporal_patch_size = temporal_patch_size
 
         self.project_to_patch_embeddings = nn.Conv3d(in_channels, d_model, 
                                                     kernel_size=(temporal_patch_size, spatial_patch_size, spatial_patch_size), 
@@ -303,7 +304,7 @@ class MLP(nn.Module):
         return x
 
 
-class FactorisedEncoder(nn.Module):
+class BasicEncoder(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
                 attention_dropout=0., projection_dropout=0.):
 
@@ -322,7 +323,7 @@ class FactorisedEncoder(nn.Module):
     
         """
 
-        super(FactorisedEncoder, self).__init__()
+        super(BasicEncoder, self).__init__()
 
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
@@ -487,18 +488,19 @@ class FactorisedDotProductAttentionEncoder(nn.Module):
 
 class Encoder(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, 
-                depth, num_heads, mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
+                depth, temporal_depth, num_heads, mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
         
         """
-        Encoder block for factorised attention, factorised self attention and factorised dot product attention.
+        Encoder block for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
   
         Parameters:
-            `model_name` (string): One of 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
+            `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
             `num_frames` (int): Number of frames in the input video
             `num_patches` (int): Number of patches per frame in the input video
             `d_model` (int): Dimension of the tensors used to compute attention
             `depth` (int): number of encoder blocks. 
+            `temporal_depth` (int): number of temporal encoder blocks (for factorised encoder model only)
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
@@ -514,7 +516,26 @@ class Encoder(nn.Module):
 
         self.model_name = model_name
 
-        if self.model_name == 'factorised encoder':
+        if self.model_name == 'spatio temporal attention':
+            self.cls = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+            self.add_positional_embedding = PositionalEmbedding(num_frames, num_patches, d_model, positional_embedding_dropout)
+            self.basicEncoder = nn.Sequential(
+            *[
+                BasicEncoder(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    attention_dropout=attention_dropout,
+                    projection_dropout=projection_dropout,
+                    dropout_1=dropout_1,
+                    dropout_2=dropout_2
+                )
+                for _ in range(depth)
+                ]
+            )
+
+        elif self.model_name == 'factorised encoder':
 
             self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
             self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
@@ -524,7 +545,7 @@ class Encoder(nn.Module):
             
             self.spatialEncoder = nn.Sequential(
             *[
-                FactorisedEncoder(
+                BasicEncoder(
                     d_model=d_model,
                     num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
@@ -540,7 +561,7 @@ class Encoder(nn.Module):
 
             self.temporalEncoder = nn.Sequential(
                 *[
-                    FactorisedEncoder(
+                    BasicEncoder(
                         d_model=d_model,
                         num_heads=num_heads,
                         mlp_ratio=mlp_ratio,
@@ -550,7 +571,7 @@ class Encoder(nn.Module):
                         dropout_1=dropout_1,
                         dropout_2=dropout_2
                     )
-                    for _ in range(depth)
+                    for _ in range(temporal_depth)
                 ]
             )
 
@@ -602,7 +623,8 @@ class Encoder(nn.Module):
             x (tensor): Tensor of dimension (batch_size, num_frames, num_patches, d_model)
         
         Returns:
-            x (tensor): if model_name is 'factorised encoder', Tensor of dimension (batch_size, num_frames + 1, d_model) 
+            x (tensor): if model_name is 'spatio temporal attention', Tensor of dimension (batch_size, num_frames * num_patches + 1, d_model)
+                        if model_name is 'factorised encoder', Tensor of dimension (batch_size, num_frames + 1, d_model) 
                         if model _name is 'factorised self attention' or 'factorised dot product attention', 
                         Tensor of dimension (batch_size, num_frames, num_patches, d_model)  
 
@@ -610,7 +632,18 @@ class Encoder(nn.Module):
         
         batch_size, num_frames, num_patches, d_model = x.shape
 
-        if self.model_name == 'factorised encoder':
+        if self.model_name == 'spatio temporal attention':
+            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+
+            cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
+            
+            x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches + 1, d_model))
+            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches + 1, d_model)
+
+            x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 1, d_model)
+
+        elif self.model_name == 'factorised encoder':
             x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
 
             cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
