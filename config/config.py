@@ -19,7 +19,7 @@ def load_config():
     cfg.vivit = ml_collections.ConfigDict()
 
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.vivit.model_name = models[1]
+    cfg.vivit.model_name = models[3]
 
     cfg.vivit.num_frames = 5
     cfg.vivit.num_patches = 196
@@ -58,6 +58,8 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
-    cfg.pretrained_models.for_vivit = 'vit_base_patch16_224'
+    cfg.pretrained_models.for_vivit = ml_collections.ConfigDict()
+    cfg.pretrained_models.for_vivit.vit = 'vit_base_patch16_224'
+    cfg.pretrained_models.for_vivit.deit = ''
     
     return cfg

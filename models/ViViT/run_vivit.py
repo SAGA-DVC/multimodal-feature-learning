@@ -1,6 +1,6 @@
 import sys
-sys.path.insert(0, '/home/arnav/Documents/projects/multimodal-feature-learning/dataset')
-sys.path.insert(1, '/home/arnav/Documents/projects/multimodal-feature-learning/config')
+sys.path.insert(0, '../../dataset')
+sys.path.insert(1, '../../config')
 
 import torch
 import numpy as np
@@ -22,11 +22,10 @@ def assert_tensors_equal(t1, t2):
 
 cfg = load_config()
 
-model_name = cfg.pretrained_models.for_vivit
+model_name = cfg.pretrained_models.for_vivit.vit
 model_official = timm.create_model(model_name, pretrained=True)
 model_official.eval()
 
-start_time = time.time()
 
 model_custom = VideoVisionTransformer(**cfg.vivit, model_official=model_official)
 model_custom.eval()
@@ -42,10 +41,13 @@ model_custom.eval()
 
 dataset, loader = get_kinetics(**cfg.dataset.kinetics)
 
+
+start_time = time.time()
+
+
 for i, batch in enumerate(iter(loader)):
         res = model_custom(batch['video'])
         print(res.shape)
-
 
 
 print(f"--- {time.time() - start_time} seconds ---")
