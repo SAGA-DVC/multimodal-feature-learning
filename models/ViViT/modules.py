@@ -518,6 +518,9 @@ class Encoder(nn.Module):
 
         if self.model_name == 'spatio temporal attention':
             self.cls = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+            self.add_positional_embedding_to_cls = nn.Parameter(torch.zeros(1, 1, d_model))
+            self.positional_embedding_dropout_for_cls = nn.Dropout(p=positional_embedding_dropout)
+
             self.add_positional_embedding = PositionalEmbedding(num_frames, num_patches, d_model, positional_embedding_dropout)
             self.basicEncoder = nn.Sequential(
             *[
@@ -636,10 +639,11 @@ class Encoder(nn.Module):
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
 
             cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
-            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
+            cls_token = self.positional_embedding_dropout_for_cls(cls_token + self.add_positional_embedding_to_cls) # (batch_size, 1, d_model)
 
-            x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches + 1, d_model))
-            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches + 1, d_model)
+            x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches, d_model))
+            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
 
             x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 1, d_model)
 

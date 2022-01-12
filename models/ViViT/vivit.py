@@ -61,7 +61,7 @@ class VideoVisionTransformer(nn.Module):
 
         self.model_name = model_name
         self.num_frames = num_frames
-        self.num_patches = num_patches
+        self.num_patches = num_patches # remove num_patches as parameter later and replace with img_size//spatial_patch_size
         self.num_classes = num_classes
         self.depth = depth
 
@@ -172,15 +172,25 @@ class VideoVisionTransformer(nn.Module):
             `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
         """
 
+        if model_name == 'spatio temporal attention':
+            num_frames = model_custom.encoder.add_positional_embedding.positional_embedding.shape[1]
+
+            model_custom.encoder.add_positional_embedding_to_cls.data[:] = torch.unsqueeze(model_official.pos_embed.data[:, 0], 1)
+
+            model_custom.encoder.add_positional_embedding \
+                        .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data[:, 1:], 1).repeat(1, num_frames, 1, 1)
+
         # only spatial for now
-        if model_name == 'factorised encoder':
+        elif model_name == 'factorised encoder':
             num_frames = model_custom.encoder.add_positional_embedding_spatial.positional_embedding.shape[1]
+
             model_custom.encoder.add_positional_embedding_spatial \
                     .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data, 1).repeat(1, num_frames, 1, 1)
 
         # no cls token
         elif model_name == 'factorised self attention' or model_name == 'factorised dot product attention':
             num_frames = model_custom.encoder.add_positional_embedding.positional_embedding.shape[1]
+            
             model_custom.encoder.add_positional_embedding \
                         .positional_embedding.data[:] = torch.unsqueeze(model_official.pos_embed.data[:, 1:], 1).repeat(1, num_frames, 1, 1)
 
@@ -221,7 +231,7 @@ class VideoVisionTransformer(nn.Module):
             depth = len(model_custom.encoder.basicEncoder)
 
             for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[4 : (12 * depth) + 4], 
+                list(model_custom.named_parameters())[5 : (12 * depth) + 5], 
                 list(model_official.named_parameters())[4 : 144 + 4]):
 
                 # print(f"{name_official} | {name_custom}")

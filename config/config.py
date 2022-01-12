@@ -19,7 +19,7 @@ def load_config():
     cfg.vivit = ml_collections.ConfigDict()
 
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.vivit.model_name = models[3]
+    cfg.vivit.model_name = models[0]
 
     cfg.vivit.num_frames = 5
     cfg.vivit.num_patches = 196
