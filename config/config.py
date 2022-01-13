@@ -19,7 +19,7 @@ def load_config():
     cfg.vivit = ml_collections.ConfigDict()
 
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.vivit.model_name = models[0]
+    cfg.vivit.model_name = models[1]
 
     cfg.vivit.num_frames = 5
     cfg.vivit.num_patches = 196
@@ -41,6 +41,8 @@ def load_config():
     cfg.vivit.mlp_ratio = 4
     cfg.vivit.qkv_bias = True
 
+    cfg.vivit.distilled = True
+
     cfg.vivit.positional_embedding_dropout = 0
     cfg.vivit.attention_dropout = 0
     cfg.vivit.projection_dropout = 0
@@ -51,15 +53,15 @@ def load_config():
     cfg.vivit.num_classes = 400
 
     cfg.vivit.return_preclassifier = False
-    cfg.vivit.return_prelogits = False
+    cfg.vivit.return_prelogits = True
 
-    cfg.vivit.weight_init = True
+    cfg.vivit.weight_init = False
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.for_vivit = ml_collections.ConfigDict()
     cfg.pretrained_models.for_vivit.vit = 'vit_base_patch16_224'
-    cfg.pretrained_models.for_vivit.deit = ''
+    cfg.pretrained_models.for_vivit.deit = 'deit_base_patch16_224'
     
     return cfg
