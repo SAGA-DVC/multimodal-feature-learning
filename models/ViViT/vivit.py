@@ -17,7 +17,7 @@ from modules import TokenEmbedding, Encoder
 class VideoVisionTransformer(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
-                mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
+                mlp_ratio=4., qkv_bias=True, distilled=False, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., classification_head=False, num_classes=None,
                 return_preclassifier=False, return_prelogits=False, weight_init=False, model_official=None):
         
@@ -40,6 +40,7 @@ class VideoVisionTransformer(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `distilled` (boolean): If True, the model uses a distillation token (default False)
             `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
@@ -65,6 +66,8 @@ class VideoVisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.depth = depth
 
+        self.distilled = distilled
+
         self.return_prelogits = return_prelogits
         self.return_preclassifier = return_preclassifier
 
@@ -81,6 +84,7 @@ class VideoVisionTransformer(nn.Module):
                             temporal_depth=temporal_depth,
                             mlp_ratio=mlp_ratio,
                             qkv_bias=qkv_bias,
+                            distilled=distilled,
                             positional_embedding_dropout=positional_embedding_dropout,
                             dropout_1=dropout_1,
                             dropout_2=dropout_2,
@@ -90,12 +94,16 @@ class VideoVisionTransformer(nn.Module):
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
 
         self.head = nn.Linear(d_model, num_classes) if classification_head else nn.Identity() 
+        
+        if distilled:
+            self.head_dist = nn.Linear(d_model, num_classes) if classification_head else nn.Identity() 
+
 
         if weight_init and model_official is not None:
-            self.load_weights(self, model_official, model_name, tokenization_method)
+            self.load_weights(self, model_official, model_name, tokenization_method, distilled)
 
     @staticmethod
-    def load_weights(model_custom, model_official, model_name, tokenization_method):
+    def load_weights(model_custom, model_official, model_name, tokenization_method, distilled):
 
         """
         Loads the weights and biases from the pre-trained model to the current model, given a specific model_name/attention architecture.
@@ -338,21 +346,23 @@ class VideoVisionTransformer(nn.Module):
                         if return_prelogits is True, Tensor of dimension (batch_size, 1, d_model)
                         else Tensor of dimension (batch_size, num_classes)
 
+                        if distilled is True, two Tensors of the above dimension would be returned
+
         """
 
         x = self.token_embeddings_layer(x) # (batch_size, num_frames, num_patches, d_model)
 
         batch_size, num_frames, num_patches, d_model = x.shape
         
-        assert self.num_frames == num_frames, f"number of frames should be equal to {self.num_frames}. You \
-                                                have num_frames={num_frames}. Adjust the video dimensions or \
-                                                patch sizes accordingly."
 
-        assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You \
-                                                have num_patches={num_patches}. Adjust the video dimensions or \
-                                                patch sizes accordingly."
+        assert self.num_frames == num_frames, f"number of frames should be equal to {self.num_frames}. You have num_frames={num_frames}. Adjust the video dimensions or patch sizes accordingly."
+
+        assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You have num_patches={num_patches}. Adjust the video dimensions or patch sizes accordingly."
                                                 
-        # (batch_size, num_frames * num_patches + 1, d_model) OR (batch_size, num_frames + 1, d_model) OR 
+
+
+        # (batch_size, num_frames * num_patches + 1, d_model) OR (batch_size, num_frames * num_patches + 2, d_model) OR
+        # (batch_size, num_frames + 1, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
         x = self.encoder(x) 
         
@@ -360,20 +370,43 @@ class VideoVisionTransformer(nn.Module):
             return x 
 
         # (batch_size, num_frames * num_patches + 1, d_model) -> (batch_size, 1, d_model) OR
-        # (batch_size, num_frames + 1, d_model) -> (batch_size, 1, d_model)
-        if self.model_name == 'spatio temporal attention' or self.model_name == 'factorised encoder':
-            x = x[:, 0] 
+        # (batch_size, num_frames * num_patches + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        if self.model_name == 'spatio temporal attention': 
+            if self.distilled:
+                x_dist = torch.unsqueeze(x[:, 1], 1)
+            x = torch.unsqueeze(x[:, 0], 1)  
         
+        # (batch_size, num_frames + 1, d_model) -> (batch_size, 1, d_model) OR
+        # (batch_size, num_frames + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        elif self.model_name == 'factorised encoder':
+            if self.distilled:
+                x_dist = torch.unsqueeze(x[:, 1], 1)
+            x = torch.unsqueeze(x[:, 0], 1) 
+
         # (batch_size, num_frames, num_patches, d_model) -> (batch_size, 1, d_model)
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention':
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_tokens, d_model)
-            x = x.mean(dim=1) # (batch_size, 1, d_model)
+            x = torch.unsqueeze(x.mean(dim=1), 1) 
         
-        x = self.layer_norm(x)
 
-        if self.return_prelogits :
-            return x # (batch_size, 1, d_model)
+        if self.distilled:
+            x = self.layer_norm(x)
+            x_dist = self.layer_norm(x_dist) # check
 
-        x = self.head(x) # (batch_size, num_classes)
+            if self.return_prelogits :
+                return x, x_dist # (batch_size, 1, d_model)
+            
+            x = self.head(x) # (batch_size, num_classes)
+            x_dist = self.head_dist(x_dist) # (batch_size, num_classes)
 
-        return x 
+            return x, x_dist # test time (x + x_dist) / 2
+        
+        else:
+            x = self.layer_norm(x)
+
+            if self.return_prelogits:
+                return x # (batch_size, 1, d_model)
+            
+            x = self.head(x) # (batch_size, num_classes)
+            
+            return x

@@ -487,8 +487,8 @@ class FactorisedDotProductAttentionEncoder(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, model_name, num_frames, num_patches, d_model, 
-                depth, temporal_depth, num_heads, mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
+    def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
+                mlp_ratio=4., qkv_bias=False, distilled=False, positional_embedding_dropout=0.,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
         
         """
@@ -504,6 +504,7 @@ class Encoder(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `distilled` (boolean): If True, the model uses a distillation token (default False)
             `positional_embedding_dropout` (float): Dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
@@ -515,11 +516,17 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.model_name = model_name
+        self.distilled = distilled
 
         if self.model_name == 'spatio temporal attention':
             self.cls = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
             self.add_positional_embedding_to_cls = nn.Parameter(torch.zeros(1, 1, d_model))
             self.positional_embedding_dropout_for_cls = nn.Dropout(p=positional_embedding_dropout)
+
+            if self.distilled:
+                self.dist = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
+                # self.add_positional_embedding_to_dist = nn.Parameter(torch.zeros(1, 1, d_model))
+                # self.positional_embedding_dropout_for_dist = nn.Dropout(p=positional_embedding_dropout)
 
             self.add_positional_embedding = PositionalEmbedding(num_frames, num_patches, d_model, positional_embedding_dropout)
             self.basicEncoder = nn.Sequential(
@@ -543,8 +550,16 @@ class Encoder(nn.Module):
             self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
             self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
 
-            self.add_positional_embedding_spatial = PositionalEmbedding(num_frames, num_patches + 1, d_model, positional_embedding_dropout)
-            self.add_positional_embedding_temporal = PositionalEmbedding(num_frames + 1, 1, d_model, positional_embedding_dropout)
+            if self.distilled:
+                self.spacial_dist_token = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
+                self.temporal_dist_token = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
+
+                self.add_positional_embedding_spatial = PositionalEmbedding(num_frames, num_patches + 2, d_model, positional_embedding_dropout)
+                self.add_positional_embedding_temporal = PositionalEmbedding(num_frames + 2, 1, d_model, positional_embedding_dropout)
+            
+            else:
+                self.add_positional_embedding_spatial = PositionalEmbedding(num_frames, num_patches + 1, d_model, positional_embedding_dropout)
+                self.add_positional_embedding_temporal = PositionalEmbedding(num_frames + 1, 1, d_model, positional_embedding_dropout)
             
             self.spatialEncoder = nn.Sequential(
             *[
@@ -634,41 +649,101 @@ class Encoder(nn.Module):
         """
         
         batch_size, num_frames, num_patches, d_model = x.shape
+        
 
+        # change pos embed for this model?
         if self.model_name == 'spatio temporal attention':
-            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
 
-            cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
-            cls_token = self.positional_embedding_dropout_for_cls(cls_token + self.add_positional_embedding_to_cls) # (batch_size, 1, d_model)
+            if self.distilled:
 
-            x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches, d_model))
-            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
-            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
+                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+                
+                cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+                cls_token = self.positional_embedding_dropout_for_cls(cls_token + self.add_positional_embedding_to_cls) # (batch_size, 1, d_model)
+                
+                dist_token = self.dist.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+                # dist_token = self.positional_embedding_dropout_for_dist(dist_token + self.add_positional_embedding_to_dist) # (batch_size, 1, d_model)
 
-            x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 1, d_model)
+                x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches, d_model))
+                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+
+                x = torch.cat((cls_token, dist_token, x), dim=1) # (batch_size, num_frames * num_patches + 2, d_model)
+
+                x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 2, d_model)
+
+
+            else:
+
+                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+
+                cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+                cls_token = self.positional_embedding_dropout_for_cls(cls_token + self.add_positional_embedding_to_cls) # (batch_size, 1, d_model)
+
+                x = self.add_positional_embedding(x.reshape(batch_size, num_frames, num_patches, d_model))
+                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+                
+                x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
+
+                x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 1, d_model)
+
 
         elif self.model_name == 'factorised encoder':
-            x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
 
-            cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
-            x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
+            if self.distilled:
+
+                x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
             
-            x = self.add_positional_embedding_spatial(x.reshape(batch_size, num_frames, num_patches + 1, d_model))
-            x = x.reshape(-1, num_patches + 1, d_model) # (batch_size * num_frames, num_patches + 1, d_model)
+                cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
+                dist_token_spatial = self.spacial_dist_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
+                
+                x = torch.cat((cls_token_spatial, dist_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 2, d_model)
+                
+                x = self.add_positional_embedding_spatial(x.reshape(batch_size, num_frames, num_patches + 2, d_model))
+                x = x.reshape(-1, num_patches + 2, d_model) # (batch_size * num_frames, num_patches + 2, d_model)
 
-            x = self.spatialEncoder(x) # (batch_size * num_frames, num_patches + 1, d_model)
+                x = self.spatialEncoder(x) # (batch_size * num_frames, num_patches + 2, d_model)
 
-            x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
-            x = x[:, :, 0] # (batch_size, num_frames, d_model)
+                cls_token_temporal = self.temporal_token.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+                dist_token_temporal = self.temporal_dist_token.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
 
-            cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
-            x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
+                x = x.reshape(batch_size, num_frames, num_patches + 2, d_model)
 
-            x = self.add_positional_embedding_temporal(x.reshape(batch_size, num_frames + 1, 1, d_model))
+                dist_token_temporal = torch.unsqueeze(x[:, :, 1].mean(dim=1), 1) # (batch_size, 1, d_model)
 
-            x = x.reshape(-1, num_frames + 1, d_model) # (batch_size, num_frames + 1, d_model)
+                x = x[:, :, 0] # (batch_size, num_frames, d_model)
 
-            x = self.temporalEncoder(x) # (batch_size, num_frames + 1, d_model)
+                x = torch.cat((cls_token_temporal, dist_token_temporal, x), dim=1) # (batch_size, num_frames + 2, d_model)
+
+                x = self.add_positional_embedding_temporal(x.reshape(batch_size, num_frames + 2, 1, d_model))
+
+                x = x.reshape(-1, num_frames + 2, d_model) # (batch_size, num_frames + 2, d_model)
+
+                x = self.temporalEncoder(x) # (batch_size, num_frames + 2, d_model)
+
+
+            else:
+
+                x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
+            
+                cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
+
+                x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
+                x = self.add_positional_embedding_spatial(x.reshape(batch_size, num_frames, num_patches + 1, d_model))
+                x = x.reshape(-1, num_patches + 1, d_model) # (batch_size * num_frames, num_patches + 1, d_model)
+            
+                x = self.spatialEncoder(x) # (batch_size * num_frames, num_patches + 1, d_model) 
+
+                x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
+                x = x[:, :, 0] # (batch_size, num_frames, d_model)
+
+                cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+                x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
+
+                x = self.add_positional_embedding_temporal(x.reshape(batch_size, num_frames + 1, 1, d_model))
+
+                x = x.reshape(-1, num_frames + 1, d_model) # (batch_size, num_frames + 1, d_model)
+
+                x = self.temporalEncoder(x) # (batch_size, num_frames + 1, d_model)
 
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention': 
             x = self.add_positional_embedding(x) # (batch_size, num_frames, num_patches, d_model)
