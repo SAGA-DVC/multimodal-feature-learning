@@ -16,8 +16,8 @@ def get_n_params(module):
     return sum(p.numel() for p in module.parameters() if p.requires_grad)
 
 def assert_tensors_equal(t1, t2):
-        a1, a2 = t1.detach().numpy(), t2.detach().numpy()
-        np.testing.assert_allclose(a1, a2)
+    a1, a2 = t1.detach().numpy(), t2.detach().numpy()
+    np.testing.assert_allclose(a1, a2)
 
 
 cfg = load_config()
@@ -46,8 +46,11 @@ start_time = time.time()
 
 
 for i, batch in enumerate(iter(loader)):
-        res = model_custom(batch['video'])
-        print(res.shape)
+	res = model_custom(batch['video'])
+	if len(res) == 2:
+			print(res[0].shape, res[1].shape)
+	else : 
+			print(res.shape)
 
 
 print(f"--- {time.time() - start_time} seconds ---")
