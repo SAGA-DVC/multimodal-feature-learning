@@ -41,7 +41,7 @@ def load_config():
     cfg.vivit.mlp_ratio = 4
     cfg.vivit.qkv_bias = True
 
-    cfg.vivit.distilled = True
+    cfg.vivit.distilled = False
 
     cfg.vivit.positional_embedding_dropout = 0
     cfg.vivit.attention_dropout = 0
@@ -55,7 +55,8 @@ def load_config():
     cfg.vivit.return_preclassifier = False
     cfg.vivit.return_prelogits = True
 
-    cfg.vivit.weight_init = False
+    cfg.vivit.weight_init = True
+    cfg.vivit.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
