@@ -655,7 +655,6 @@ class Encoder(nn.Module):
         if self.model_name == 'spatio temporal attention':
 
             if self.distilled:
-
                 x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
                 
                 cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
@@ -671,9 +670,7 @@ class Encoder(nn.Module):
 
                 x = self.basicEncoder(x) # (batch_size, num_frames * num_patches + 2, d_model)
 
-
             else:
-
                 x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
 
                 cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
@@ -690,7 +687,6 @@ class Encoder(nn.Module):
         elif self.model_name == 'factorised encoder':
 
             if self.distilled:
-
                 x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
             
                 cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
@@ -720,9 +716,7 @@ class Encoder(nn.Module):
 
                 x = self.temporalEncoder(x) # (batch_size, num_frames + 2, d_model)
 
-
             else:
-
                 x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
             
                 cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
