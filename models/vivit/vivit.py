@@ -11,10 +11,9 @@ Code used from the following repositories:
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
-import numpy as np
 
 
-from modules import TokenEmbedding, Encoder
+from modules import TokenEmbedding, VivitEncoderBlock
 from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_encoder_weights, load_classification_weights
 
 
@@ -83,7 +82,7 @@ class VideoVisionTransformer(nn.Module):
                                                     temporal_patch_size=temporal_patch_size, in_channels=in_channels, 
                                                     d_model=d_model, layer_norm=None)
         
-        self.encoder = Encoder(model_name=model_name,
+        self.encoder = VivitEncoderBlock(model_name=model_name,
                             num_frames=num_frames,
                             num_patches=num_patches,
                             d_model=d_model,
@@ -131,7 +130,6 @@ class VideoVisionTransformer(nn.Module):
                         else Tensor of dimension (batch_size, num_classes)
 
                         if distilled is True, two Tensors of the above dimension would be returned
-
         """
 
         x = self.token_embeddings_layer(x) # (batch_size, num_frames, num_patches, d_model)

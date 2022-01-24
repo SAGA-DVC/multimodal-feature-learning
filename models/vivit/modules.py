@@ -98,11 +98,10 @@ class Attention(nn.Module):
   
         Parameters:
             `d_model` (int): Dimension of the tensors used to compute attention
-            `num_heads` (int): Number of attention heads.
+            `num_heads` (int): Number of attention heads. (default 12)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
-            `init` (string): Intialisation method for the parameters in the attenion block (default )
         """
 
         super(Attention, self).__init__()
@@ -165,7 +164,7 @@ class DotProductAttention(nn.Module):
   
         Parameters:
             `d_model` (int): Dimension of the tensors used to compute attention
-            `num_heads` (int): Number of attention heads.
+            `num_heads` (int): Number of attention heads. (default 12)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
@@ -313,7 +312,7 @@ class BasicEncoder(nn.Module):
   
         Parameters:
             `d_model` (int): Dimension of the tensors used to compute attention
-            `num_heads` (int): Number of attention heads.
+            `num_heads` (int): Number of attention heads. 
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
             `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
@@ -486,13 +485,13 @@ class FactorisedDotProductAttentionEncoder(nn.Module):
         return x
 
 
-class Encoder(nn.Module):
+class VivitEncoderBlock(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
                 mlp_ratio=4., qkv_bias=False, distilled=False, positional_embedding_dropout=0.,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
         
         """
-        Encoder block for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
+        ViViT Encoder block for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
   
         Parameters:
             `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
@@ -513,7 +512,7 @@ class Encoder(nn.Module):
     
         """
 
-        super(Encoder, self).__init__()
+        super(VivitEncoderBlock, self).__init__()
 
         self.model_name = model_name
         self.distilled = distilled
@@ -635,7 +634,7 @@ class Encoder(nn.Module):
     def forward(self, x):
 
         """
-        Performs a forward pass over the specified attention architecture for all layers of the encoder.
+        Performs a forward pass over the specified attention architecture for all layers of the ViViT encoder.
   
         Parameters:
             x (tensor): Tensor of dimension (batch_size, num_frames, num_patches, d_model)
@@ -744,3 +743,158 @@ class Encoder(nn.Module):
             x = self.encoder(x) # (batch_size, num_frames, num_patches, d_model)
 
         return x
+
+
+
+class CrossAttention(nn.Module):
+
+    def __init__(self, d_model, num_heads=12, qkv_bias=False, attention_dropout=0., projection_dropout=0.):
+
+        """
+        Initialises all the attributes of the for the cross attention block which involves different modalities (eg. video and audio). 
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads. (default 12)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+        """
+
+        super(CrossAttention, self).__init__()
+
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        assert d_model == self.head_dim * num_heads, "The model dimension must be divisible by the number of heads."
+
+        self.scale = self.head_dim ** -0.5
+
+        self.q_linear = nn.Linear(d_model, d_model, bias=qkv_bias)
+        self.k_linear = nn.Linear(d_model, d_model, bias=qkv_bias)
+        self.v_linear = nn.Linear(d_model, d_model, bias=qkv_bias)
+
+        self.attention_dropout = nn.Dropout(attention_dropout)
+
+        self.projection_layer = nn.Linear(d_model, d_model)
+        self.projection_dropout = nn.Dropout(projection_dropout)
+
+
+    def forward(self, q, k, v):
+
+        """
+        Performs a forward pass on the cross attention block followed by a linear (projection) layer.
+  
+        Parameters:
+            q (tensor): Tensor of dimension (batch_size, num_tokens_q, d_model) represeting a query vector
+            k (tensor): Tensor of dimension (batch_size, num_tokens_k, d_model) represeting a key vector
+            v (tensor): Tensor of dimension (batch_size, num_tokens_v, d_model) represeting a value vector
+
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens_q, d_model)
+
+        """
+
+        assert k.shape == v.shape, f"The keys and values inputted to the cross attention module should have the same shape. However, key has {k.shape} and value has {v.shape}."
+
+        batch_size, num_tokens_q, _ = q.shape
+        _, num_tokens_k, _ = k.shape
+        
+        q = self.q_linear(q) # (batch_size, num_tokens_q, d_model)
+        k = self.k_linear(k) # (batch_size, num_tokens_k, d_model)
+        v = self.v_linear(v) # (batch_size, num_tokens_k, d_model)
+
+        q = q.reshape(batch_size, num_tokens_q, self.num_heads, self.head_dim)
+        q = q.permute(0, 2, 1, 3) # (batch_size, num_heads, num_tokens_q, head_dim)
+
+        k = k.reshape(batch_size, num_tokens_k, self.num_heads, self.head_dim)
+        k = k.permute(0, 2, 1, 3) # (batch_size, num_heads, num_tokens_k, head_dim)
+
+        v = v.reshape(batch_size, num_tokens_k, self.num_heads, self.head_dim)
+        v = v.permute(0, 2, 1, 3) # (batch_size, num_heads, num_tokens_k, head_dim)
+        
+        # (batch_size, num_heads, num_tokens_q, head_dim) * (batch_size, num_heads, head_dim, num_tokens_k) 
+        # -> (batch_size, num_heads, num_tokens_q, num_tokens_k)
+        cross_attention = torch.matmul(q, k.transpose(-2, -1)) * self.scale
+        cross_attention = cross_attention.softmax(dim=-1)
+        cross_attention = self.attention_dropout(cross_attention)
+
+        weighted_cross_attention = torch.matmul(cross_attention, v) # (batch_size, num_heads, num_tokens_q, head_dim)
+        weighted_cross_attention = weighted_cross_attention.transpose(1, 2).flatten(2) # (batch_size, num_tokens_q, d_model)
+        
+        x = self.projection_layer(weighted_cross_attention) # (batch_size, num_tokens_q, d_model)
+        x = self.projection_dropout(x)
+
+        return x
+
+
+class BiModalEncoderBlock(nn.Module):
+    def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+
+        """
+        Bi-modal encoder block for cross attention b/w video and audio features.
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads.
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+    
+        """
+        
+        super(BiModalEncoderBlock, self).__init__()
+
+        self.layer_norm_av_1 = nn.LayerNorm(d_model, eps=1e-6) 
+
+        self.attention_av = CrossAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_va_1 = nn.LayerNorm(d_model, eps=1e-6)
+
+        self.attention_va = CrossAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+
+        self.layer_norm_av_2 = nn.LayerNorm(d_model, eps=1e-6) 
+
+        self.mlp_av = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=dropout_1, dropout_2=dropout_2)
+
+        self.layer_norm_va_2 = nn.LayerNorm(d_model, eps=1e-6)
+
+        self.mlp_va = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=dropout_1, dropout_2=dropout_2)
+
+
+
+    def forward(self, vid, aud):
+
+        """
+        Performs a forward pass over the Bi-modal encoder with video and audio features.
+  
+        Parameters:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features
+        
+        Returns:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features after cross attention with audio features 
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features after cross attention with video features 
+
+        """
+        
+        vid = self.layer_norm_av_1(vid)
+        aud = self.layer_norm_va_1(aud)
+
+        vid = vid + self.attention_av(vid, aud, aud) # (batch_size, num_tokens, d_model)
+        aud = aud + self.attention_va(aud, vid, vid) # (batch_size, num_tokens, d_model)
+
+        vid = vid + self.mlp_av(self.layer_norm_av_2(vid)) # (batch_size, num_tokens, d_model)
+        aud = aud + self.mlp_va(self.layer_norm_va_2(aud)) # (batch_size, num_tokens, d_model)
+
+        return vid, aud

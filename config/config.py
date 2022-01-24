@@ -58,6 +58,33 @@ def load_config():
     cfg.vivit.weight_init = True
     cfg.vivit.weight_load = False
 
+
+    #-------------------------------------------------------------------------------------------------
+    # Bimodal encoder
+    cfg.bimodal = ml_collections.ConfigDict()
+
+    cfg.bimodal.d_model = 768
+
+    cfg.bimodal.depth = 12
+
+    cfg.bimodal.num_heads = 12
+    cfg.bimodal.mlp_ratio = 4
+    cfg.bimodal.qkv_bias = True
+
+    cfg.bimodal.attention_dropout = 0
+    cfg.bimodal.projection_dropout = 0
+    cfg.bimodal.dropout_1 = 0
+    cfg.bimodal.dropout_2 = 0
+
+    cfg.bimodal.classification_head = False
+    cfg.bimodal.num_classes = 400
+
+    cfg.bimodal.return_preclassifier = False
+    cfg.bimodal.return_prelogits = True
+
+    cfg.bimodal.weight_init = True
+    cfg.bimodal.weight_load = False
+
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
