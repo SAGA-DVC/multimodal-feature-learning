@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 
 
+# --------------------------------------------------------------
+# Modules used by ViViT
+
 class TokenEmbedding(nn.Module):
     def __init__(self, img_size=224, spatial_patch_size=16, temporal_patch_size=1, in_channels=3, d_model=768, layer_norm=None):
         
@@ -745,6 +748,8 @@ class VivitEncoderBlock(nn.Module):
         return x
 
 
+# --------------------------------------------------------------
+# Modules used by the Bi-modal encoder
 
 class CrossAttention(nn.Module):
 

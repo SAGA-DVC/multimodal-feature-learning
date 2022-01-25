@@ -88,8 +88,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
-    cfg.pretrained_models.for_vivit = ml_collections.ConfigDict()
-    cfg.pretrained_models.for_vivit.vit = 'vit_base_patch16_224'
-    cfg.pretrained_models.for_vivit.deit = 'deit_base_patch16_224'
+    cfg.pretrained_models.vit = 'vit_base_patch16_224'
+    cfg.pretrained_models.deit = 'deit_base_patch16_224'
     
     return cfg

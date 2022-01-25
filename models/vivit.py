@@ -14,7 +14,7 @@ from torch.nn.init import trunc_normal_, zeros_, ones_
 
 
 from modules import TokenEmbedding, VivitEncoderBlock
-from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_encoder_weights, load_classification_weights
+from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
 class VideoVisionTransformer(nn.Module):
@@ -172,11 +172,11 @@ class VideoVisionTransformer(nn.Module):
         
 
         if self.distilled:
-            x = self.layer_norm(x)
-            # x_dist = self.layer_norm(x_dist) # check
-
             if self.return_prelogits :
                 return x, x_dist # (batch_size, 1, d_model)
+            
+            x = self.layer_norm(x)
+            # x_dist = self.layer_norm(x_dist) # check
             
             x = self.head(x) # (batch_size, num_classes)
             x_dist = self.head_dist(x_dist) # (batch_size, num_classes)
@@ -184,10 +184,10 @@ class VideoVisionTransformer(nn.Module):
             return x, x_dist # test time (x + x_dist) / 2
         
         else:
-            x = self.layer_norm(x)
-
             if self.return_prelogits:
                 return x # (batch_size, 1, d_model)
+
+            x = self.layer_norm(x) # check placement before after return_prelogits
             
             x = self.head(x) # (batch_size, num_classes)
             
@@ -218,10 +218,10 @@ class VideoVisionTransformer(nn.Module):
             
             self.encoder.basicEncoder.apply(init_encoder_block_weights)
 
-            ones_(self.layer_norm.weight)
-            zeros_(self.layer_norm.bias)
-
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
 
@@ -244,6 +244,9 @@ class VideoVisionTransformer(nn.Module):
             zeros_(self.layer_norm.bias)
 
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
         
@@ -256,6 +259,9 @@ class VideoVisionTransformer(nn.Module):
             zeros_(self.layer_norm.bias)
 
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+                
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
                 if self.distilled:
@@ -272,25 +278,24 @@ class VideoVisionTransformer(nn.Module):
         Parameters:
             `model_custom`: The current ViViT model
             `model_official`: The model which would be used to load the pre-trained weights
-            `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
         """
 
-        load_token_embeddings(self, model_official, self.tokenization_method)
+        load_token_embeddings(self, model_official)
 
-        load_positional_embeddings(self, model_official, self.model_name)
+        load_positional_embeddings(self, model_official)
 
         if self.model_name == 'spatio temporal attention':
-            load_cls_tokens(self, model_official, self.model_name)
+            load_cls_tokens(self, model_official)
             if self.distilled:
                 trunc_normal_(self.encoder.dist, std=.02)
         
         elif  self.model_name == 'factorised encoder':
-            load_cls_tokens(self, model_official, self.model_name)
+            load_cls_tokens(self, model_official)
             if self.distilled:
                 trunc_normal_(self.encoder.spacial_dist_token, std=.02)
                 trunc_normal_(self.encoder.temporal_dist_token, std=.02)
 
-        load_encoder_weights(self, model_official, self.model_name)
+        load_vivit_encoder_weights(self, model_official)
 
         if self.classification_head:
             load_classification_weights(self, model_official)

@@ -1,6 +1,6 @@
 import sys
-sys.path.insert(0, '../../dataset')
-sys.path.insert(1, '../../config')
+sys.path.insert(0, '../dataset')
+sys.path.insert(1, '../config')
 
 import torch
 import numpy as np
@@ -22,7 +22,7 @@ def assert_tensors_equal(t1, t2):
 
 cfg = load_config()
 
-model_name = cfg.pretrained_models.for_vivit.vit
+model_name = cfg.pretrained_models.vit
 model_official = timm.create_model(model_name, pretrained=True)
 model_official.eval()
 
