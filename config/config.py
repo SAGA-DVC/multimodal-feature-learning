@@ -9,7 +9,7 @@ def load_config():
 
     # Kinetics 
     cfg.dataset.kinetics = ml_collections.ConfigDict()
-    cfg.dataset.kinetics.kinetics_root = '../../data/sample'
+    cfg.dataset.kinetics.kinetics_root = '../data/sample'
     cfg.dataset.kinetics.num_temporal_samples = 10
     cfg.dataset.kinetics.frame_size = (224, 224)
     cfg.dataset.kinetics.batch_size = 3
