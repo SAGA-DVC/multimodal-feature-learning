@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from modules import BiModalEncoderBlock
+from modules import BiModalEncoderLayer
 from load_weights import init_encoder_block_weights, load_bimodal_encoder_weights, load_classification_weights
 
 
@@ -23,14 +23,14 @@ class BiModalEncoder(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
+            `positional_embedding_dropout` (float): (Currently not being used) dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `dropout_1` (float): dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): dropout probability for the MLP block (default 0.0)
             `classification_head` (boolean): If True, a classification head (fully connected layer) is added on top of the model (default False)
             `num_classes` (int): number of classes for the prediction task (default None)
             `return_preclassifier` (boolean): If True, return the representation after the transformer encoder. Useful if using this as the backbone stem as part of a bigger architecture (default False)
-            `return_prelogits` (boolean): If True, return the final representation of the network before the classification head. Useful when using features for a downstream task (default False)
+            `return_prelogits` (boolean): (Currently not being used) If True, return the final representation of the network before the classification head. Useful when using features for a downstream task (default False)
             `weight_init` (boolean): If True, initialises the weights of the model (default True)
             `weight_load` (boolean): If True, loads the weights of the specified pre-trained model after initialisation (default False)
             `model_official`: This model's weights are used by ViViT
@@ -46,29 +46,29 @@ class BiModalEncoder(nn.Module):
         self.return_prelogits = return_prelogits
         self.return_preclassifier = return_preclassifier
         
-        self.bi_modal_encoder = nn.Sequential(
-            *[
-                BiModalEncoderBlock(d_model=d_model,
-                            num_heads=num_heads,
-                            mlp_ratio=mlp_ratio,
-                            qkv_bias=qkv_bias,
-                            dropout_1=dropout_1,
-                            dropout_2=dropout_2,
-                            attention_dropout=attention_dropout,
-                            projection_dropout=projection_dropout
-                        )
-                for _ in range(depth)
+        self.bi_modal_encoder = nn.ModuleList(
+                [
+                    BiModalEncoderLayer(d_model=d_model,
+                                num_heads=num_heads,
+                                mlp_ratio=mlp_ratio,
+                                qkv_bias=qkv_bias,
+                                dropout_1=dropout_1,
+                                dropout_2=dropout_2,
+                                attention_dropout=attention_dropout,
+                                projection_dropout=projection_dropout
+                            )
+                    for _ in range(depth)
                 ]
             )
 
-        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
-
-        self.head = nn.Linear(d_model, num_classes) if classification_head else nn.Identity() 
+        if classification_head:
+            self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
+            self.head = nn.Linear(d_model, num_classes)
 
         if weight_load and model_official is not None:
             self.load_weights(model_official)
 
-        else:
+        elif weight_init:
             self.init_weights()
 
 
@@ -92,22 +92,22 @@ class BiModalEncoder(nn.Module):
                         else Tensor of dimension (batch_size, num_classes)
         """
 
-        vid, aud = self.bi_modal_encoder(vid, aud) # (batch_size, num_frames, d_model), (batch_size, num_tokens, d_model)
+        for layer in self.bi_modal_encoder:
+            vid, aud = layer(vid, aud) # (batch_size, num_frames, d_model), (batch_size, num_tokens, d_model)
 
         if self.return_preclassifier :
             return vid, aud
 
-        # some processing
+        # TODO-some processing/combination of video and audio features
         x = vid 
-
-        if self.return_prelogits:
+        
+        if self.classification_head:
+            x = self.layer_norm(x)
+            x = self.head(x) # (batch_size, num_classes)
+            return x
+        
+        else:
             return x # (batch_size, 1, d_model)
-        
-        x = self.layer_norm(x)
-
-        x = self.head(x) # (batch_size, num_classes)
-        
-        return x
 
 
     def init_weights(self):

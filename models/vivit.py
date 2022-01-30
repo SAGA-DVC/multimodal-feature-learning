@@ -123,7 +123,6 @@ class VideoVisionTransformer(nn.Module):
         
         if classification_head:
             self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
-
             self.head = nn.Linear(d_model, num_classes)
             
             if distilled:
