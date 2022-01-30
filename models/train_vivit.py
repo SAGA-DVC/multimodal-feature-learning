@@ -1,8 +1,10 @@
 import sys
-sys.path.insert(0, '../../dataset')
-sys.path.insert(1, '../../config')
+sys.path.insert(0, '../dataset')
+sys.path.insert(1, '../config')
 
 import torch
+import torch.nn as nn
+import torch.optim as optim
 import numpy as np
 import timm
 import time
@@ -22,13 +24,12 @@ def assert_tensors_equal(t1, t2):
 
 cfg = load_config()
 
-model_name = cfg.pretrained_models.for_vivit.vit
+model_name = cfg.pretrained_models.vit
 model_official = timm.create_model(model_name, pretrained=True)
 model_official.eval()
 
 
 model_custom = VideoVisionTransformer(**cfg.vivit, model_official=model_official)
-model_custom.eval()
 
 # for (name_custom, parameter_custom) in model_custom.named_parameters():
 #     print(f"{name_custom}, {parameter_custom.shape}")
@@ -41,16 +42,30 @@ model_custom.eval()
 
 dataset, loader = get_kinetics(**cfg.dataset.kinetics)
 
-
-start_time = time.time()
-
-
-for i, batch in enumerate(iter(loader)):
-	res = model_custom(batch['video'])
-	if len(res) == 2:
-			print(res[0].shape, res[1].shape)
-	else : 
-			print(res.shape)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(model_custom.parameters(), lr=0.001, momentum=0.9)
+epochs = 1
 
 
-print(f"--- {time.time() - start_time} seconds ---")
+
+for epoch in range(epochs):
+    for i, batch in enumerate(iter(loader)):
+
+        input, labels = batch['video'], batch['label']
+
+        optimizer.zero_grad()
+
+        res = model_custom(input)
+        loss = criterion(res, labels)
+        loss.backward()
+        optimizer.step()
+
+        if i % 5 == 0:    # print every 5 batches
+            print(f'epoch: {epoch + 1}, batch: {i + 1}, loss: {loss.item() / 2000}')
+
+print('Finished Training')
+
+
+
+# PATH = './vivit.pth'
+# torch.save(model_custom.state_dict(), PATH)

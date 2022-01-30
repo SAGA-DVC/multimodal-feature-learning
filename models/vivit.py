@@ -11,11 +11,10 @@ Code used from the following repositories:
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
-import numpy as np
 
 
-from modules import TokenEmbedding, Encoder
-from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_encoder_weights, load_classification_weights
+from modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
+from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
 class VideoVisionTransformer(nn.Module):
@@ -53,7 +52,7 @@ class VideoVisionTransformer(nn.Module):
             `classification_head` (boolean): If True, a classification head (fully connected layer) is added on top of the model (default False)
             `num_classes` (int): number of classes for the prediction task (default None)
             `return_preclassifier` (boolean): If True, return the representation after the transformer encoder. Useful if using this as the backbone stem as part of a bigger architecture (default False)
-            `return_prelogits` (boolean): If True, return the final representation of the network before the classification head. Useful when using features for a downstream task (default False)
+            `return_prelogits` (boolean): (Currently not being used) If True, return the final representation of the network before the classification head. Useful when using features for a downstream task (default False) 
             `weight_init` (boolean): If True, initialises the weights of the model (default True)
             `weight_load` (boolean): If True, loads the weights of the specified pre-trained model after initialisation (default False)
             `model_official`: This model's weights are used by ViViT
@@ -82,8 +81,30 @@ class VideoVisionTransformer(nn.Module):
         self.token_embeddings_layer = TokenEmbedding(img_size=img_size, spatial_patch_size=spatial_patch_size, 
                                                     temporal_patch_size=temporal_patch_size, in_channels=in_channels, 
                                                     d_model=d_model, layer_norm=None)
+
+        self.positional_embedding_layer = None
+        self.spatial_positional_embedding_layer = None
+        self.temporal_positional_embedding_layer = None
+
+        if model_name == 'spatio temporal attention':
+            if distilled:
+                self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 2, d_model), positional_embedding_dropout) 
+            else:
+                self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
+            
+        elif model_name == 'factorised encoder':
+            if distilled:
+                self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 2, d_model), positional_embedding_dropout)
+                self.temporal_positional_embedding_layer = PositionalEmbedding((1, num_frames + 2, d_model), positional_embedding_dropout)
+            else:
+                self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
+                self.temporal_positional_embedding_layer = PositionalEmbedding((1, num_frames + 1, d_model), positional_embedding_dropout)
+
+        else:
+            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
+
         
-        self.encoder = Encoder(model_name=model_name,
+        self.vivitEncoder = VivitEncoder(model_name=model_name,
                             num_frames=num_frames,
                             num_patches=num_patches,
                             d_model=d_model,
@@ -99,20 +120,20 @@ class VideoVisionTransformer(nn.Module):
                             attention_dropout=attention_dropout,
                             projection_dropout=projection_dropout
                         )
-        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
-
-        self.head = nn.Linear(d_model, num_classes) if classification_head else nn.Identity() 
         
-        if distilled:
-            self.head_dist = nn.Linear(d_model, num_classes) if classification_head else nn.Identity() 
+        if classification_head:
+            self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
+            self.head = nn.Linear(d_model, num_classes)
+            
+            if distilled:
+                self.head_dist = nn.Linear(d_model, num_classes)
 
 
         if weight_load and model_official is not None:
             self.load_weights(model_official)
 
-        else:
+        elif weight_init:
             self.init_weights()
-
 
     def forward(self, x):
 
@@ -131,7 +152,6 @@ class VideoVisionTransformer(nn.Module):
                         else Tensor of dimension (batch_size, num_classes)
 
                         if distilled is True, two Tensors of the above dimension would be returned
-
         """
 
         x = self.token_embeddings_layer(x) # (batch_size, num_frames, num_patches, d_model)
@@ -141,13 +161,12 @@ class VideoVisionTransformer(nn.Module):
 
         assert self.num_frames == num_frames, f"number of frames should be equal to {self.num_frames}. You have num_frames={num_frames}. Adjust the video dimensions or patch sizes accordingly."
 
-        assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You have num_patches={num_patches}. Adjust the video dimensions or patch sizes accordingly."
-                                                
+        assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You have num_patches={num_patches}. Adjust the video dimensions or patch sizes accordingly."               
 
         # (batch_size, num_frames * num_patches + 1, d_model) OR (batch_size, num_frames * num_patches + 2, d_model) OR
         # (batch_size, num_frames + 1, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
-        x = self.encoder(x) 
+        x = self.vivitEncoder(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer, self.temporal_positional_embedding_layer,) 
         x_dist = None
         
         if self.return_preclassifier :
@@ -174,27 +193,27 @@ class VideoVisionTransformer(nn.Module):
         
 
         if self.distilled:
-            x = self.layer_norm(x)
-            # x_dist = self.layer_norm(x_dist) # check
+            if self.classification_head:
+                x = self.layer_norm(x)
+                # x_dist = self.layer_norm(x_dist) # check
+                
+                x = self.head(x) # (batch_size, num_classes)
+                x_dist = self.head_dist(x_dist) # (batch_size, num_classes)
 
-            if self.return_prelogits :
+                return x, x_dist # test time (x + x_dist) / 2
+            
+            else:
                 return x, x_dist # (batch_size, 1, d_model)
             
-            x = self.head(x) # (batch_size, num_classes)
-            x_dist = self.head_dist(x_dist) # (batch_size, num_classes)
-
-            return x, x_dist # test time (x + x_dist) / 2
         
         else:
-            x = self.layer_norm(x)
+            if self.classification_head:
+                x = self.layer_norm(x) # check placement before after return_prelogits
+                x = self.head(x) # (batch_size, num_classes)
+                return x
 
-            if self.return_prelogits:
+            else:
                 return x # (batch_size, 1, d_model)
-            
-            x = self.head(x) # (batch_size, num_classes)
-            
-            return x
-
 
 
     def init_weights(self):
@@ -208,56 +227,61 @@ class VideoVisionTransformer(nn.Module):
         """
 
         if self.model_name == 'spatio temporal attention':
-            trunc_normal_(self.encoder.cls, std=.02)
+            trunc_normal_(self.vivitEncoder.cls, std=.02)
             if self.distilled:
-                trunc_normal_(self.encoder.dist, std=.02)
+                trunc_normal_(self.vivitEncoder.dist, std=.02)
 
-            trunc_normal_(self.encoder.add_positional_embedding_to_cls, std=.02)
-            trunc_normal_(self.encoder.add_positional_embedding.positional_embedding, std=.02)
+            trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
 
             if self.distilled:
-                trunc_normal_(self.encoder.dist, std=.02)
+                trunc_normal_(self.vivitEncoder.dist, std=.02)
             
-            self.encoder.basicEncoder.apply(init_encoder_block_weights)
-
-            ones_(self.layer_norm.weight)
-            zeros_(self.layer_norm.bias)
+            self.vivitEncoder.encoder.apply(init_encoder_block_weights)
 
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
 
 
         elif self.model_name == 'factorised encoder':
-            trunc_normal_(self.encoder.spacial_token, std=.02)
-            trunc_normal_(self.encoder.temporal_token, std=.02)
+            trunc_normal_(self.vivitEncoder.spacial_token, std=.02)
+            trunc_normal_(self.vivitEncoder.temporal_token, std=.02)
 
-            trunc_normal_(self.encoder.add_positional_embedding_spatial.positional_embedding, std=.02)
-            trunc_normal_(self.encoder.add_positional_embedding_temporal.positional_embedding, std=.02)
+            trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
+            trunc_normal_(self.temporal_positional_embedding_layer.positional_embedding, std=.02)
 
             if self.distilled:
-                trunc_normal_(self.encoder.spacial_dist_token, std=.02)
-                trunc_normal_(self.encoder.temporal_dist_token, std=.02)
+                trunc_normal_(self.vivitEncoder.spacial_dist_token, std=.02)
+                trunc_normal_(self.vivitEncoder.temporal_dist_token, std=.02)
             
-            self.encoder.spatialEncoder.apply(init_encoder_block_weights)
-            self.encoder.temporalEncoder.apply(init_encoder_block_weights)
+            self.vivitEncoder.spatialEncoder.apply(init_encoder_block_weights)
+            self.vivitEncoder.temporalEncoder.apply(init_encoder_block_weights)
             
             ones_(self.layer_norm.weight)
             zeros_(self.layer_norm.bias)
 
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
         
         else:
-            trunc_normal_(self.encoder.add_positional_embedding.positional_embedding, std=.02)
+            trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
 
-            self.encoder.encoder.apply(init_encoder_block_weights)
+            self.vivitEncoder.encoder.apply(init_encoder_block_weights)
 
             ones_(self.layer_norm.weight)
             zeros_(self.layer_norm.bias)
 
             if self.classification_head:
+                ones_(self.layer_norm.weight)
+                zeros_(self.layer_norm.bias)
+                
                 trunc_normal_(self.head.weight, std=.02)
                 trunc_normal_(self.head.bias, std=.02)
                 if self.distilled:
@@ -274,25 +298,24 @@ class VideoVisionTransformer(nn.Module):
         Parameters:
             `model_custom`: The current ViViT model
             `model_official`: The model which would be used to load the pre-trained weights
-            `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
         """
 
-        load_token_embeddings(self, model_official, self.tokenization_method)
+        load_token_embeddings(self, model_official)
 
-        load_positional_embeddings(self, model_official, self.model_name)
+        load_positional_embeddings(self, model_official)
 
         if self.model_name == 'spatio temporal attention':
-            load_cls_tokens(self, model_official, self.model_name)
+            load_cls_tokens(self, model_official)
             if self.distilled:
-                trunc_normal_(self.encoder.dist, std=.02)
+                trunc_normal_(self.vivitEncoder.dist, std=.02)
         
         elif  self.model_name == 'factorised encoder':
-            load_cls_tokens(self, model_official, self.model_name)
+            load_cls_tokens(self, model_official)
             if self.distilled:
-                trunc_normal_(self.encoder.spacial_dist_token, std=.02)
-                trunc_normal_(self.encoder.temporal_dist_token, std=.02)
+                trunc_normal_(self.vivitEncoder.spacial_dist_token, std=.02)
+                trunc_normal_(self.vivitEncoder.temporal_dist_token, std=.02)
 
-        load_encoder_weights(self, model_official, self.model_name)
+        load_vivit_encoder_weights(self, model_official)
 
         if self.classification_head:
             load_classification_weights(self, model_official)
