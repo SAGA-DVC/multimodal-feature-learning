@@ -50,13 +50,13 @@ def load_config():
     cfg.vivit.dropout_2 = 0
 
     cfg.vivit.classification_head = False
-    cfg.vivit.num_classes = 400
+    cfg.vivit.num_classes = 1000
 
     cfg.vivit.return_preclassifier = False
-    cfg.vivit.return_prelogits = True
+    cfg.vivit.return_prelogits = False
 
-    cfg.vivit.weight_init = True
-    cfg.vivit.weight_load = False
+    cfg.vivit.weight_init = False
+    cfg.vivit.weight_load = True
 
 
     #-------------------------------------------------------------------------------------------------

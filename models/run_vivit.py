@@ -30,6 +30,8 @@ model_official.eval()
 model_custom = VideoVisionTransformer(**cfg.vivit, model_official=model_official)
 model_custom.eval()
 
+
+
 # for (name_custom, parameter_custom) in model_custom.named_parameters():
 #     print(f"{name_custom}, {parameter_custom.shape}")
 
