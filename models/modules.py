@@ -74,22 +74,29 @@ class PositionalEmbedding(nn.Module):
         self.positional_embedding = nn.Parameter(torch.zeros(*shape)) 
         self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
     
-    def forward(self, x):
+    def forward(self, x, for_decoder=False):
 
         """
         Adds positional embeddings to the input tensors. 
   
         Parameters:
-           x (tensor): Tensor of dimension (batch_size, num_frames, num_patches, d_model)
+           x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
+           for_decoder (boolean): If True, the positional embeddings will only be added for the number of tokens in the input 
+                                (specifically for the decoder to avoid cls/dist tokens) (default False)
 
         Returns:
-            x (tensor): Tensor of dimension (batch_size, num_frames, num_patches, d_model)
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
 
         """
+        
+        if for_decoder:
+            num_tokens = x.shape(1)
+            x = self.positional_embedding_dropout(x + self.positional_embedding[:, -num_tokens:])
+        else:
+            assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape[1:]} set at initialisation time does not match shape of input {x.shape[1:]} (batch_size is ommitted)."
 
-        assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape[1:]} set at initialisation time does not match shape of input {x.shape[1:]} (batch_size is ommitted)."
+            x = self.positional_embedding_dropout(x + self.positional_embedding) 
 
-        x = self.positional_embedding_dropout(x + self.positional_embedding) 
         return x
         
 
@@ -816,7 +823,7 @@ class CrossAttention(nn.Module):
         return x
 
 
-class BiModalEncoderBlock(nn.Module):
+class BiModalEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
 
@@ -837,24 +844,21 @@ class BiModalEncoderBlock(nn.Module):
         
         super(BiModalEncoderBlock, self).__init__()
 
-        self.layer_norm_av_1 = nn.LayerNorm(d_model, eps=1e-6) 
-
         self.attention_av = CrossAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
-        self.layer_norm_va_1 = nn.LayerNorm(d_model, eps=1e-6)
 
         self.attention_va = CrossAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
-        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.layer_norm_av_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_va_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_av_2 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_va_2 = nn.LayerNorm(d_model, eps=1e-6)
 
-        self.layer_norm_av_2 = nn.LayerNorm(d_model, eps=1e-6) 
+        mlp_hidden_dim = int(d_model * mlp_ratio)
 
         self.mlp_av = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
                        dropout_1=dropout_1, dropout_2=dropout_2)
-
-        self.layer_norm_va_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         self.mlp_va = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
                        dropout_1=dropout_1, dropout_2=dropout_2)
@@ -886,3 +890,73 @@ class BiModalEncoderBlock(nn.Module):
         aud = aud + self.mlp_va(self.layer_norm_va_2(aud)) # (batch_size, num_tokens, d_model)
 
         return vid, aud
+
+
+
+
+# --------------------------------------------------------------
+# Modules used by the Decoder
+
+# TODO-add pre/post for layer norm
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+
+        """
+        Decoder consisting of the basic attention architecture.
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads. 
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+    
+        """
+
+        super(DecoderLayer, self).__init__()
+
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=dropout_1, dropout_2=dropout_2)
+
+    
+    def forward(self, target, memory, position_embedding_layer, query_embedding):
+
+        """
+        Performs a forward pass on the Decoder block.
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            memory: the sequence from the last layer of the encoder
+            position_embedding_layer: position embedding layer for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        """
+
+        q = k = target + query_embedding
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target))
+
+        q = target + query_embedding
+        k = position_embedding_layer(memory, for_decoder=True)
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory))
+
+        target = target + self.mlp(target)
+        target = self.layer_norm_3(target)
+
+        return target

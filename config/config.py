@@ -86,6 +86,22 @@ def load_config():
     cfg.bimodal.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
+    # Decoder
+    cfg.decoder = ml_collections.ConfigDict()
+    
+    cfg.decoder.d_model = 768
+    cfg.decoder.num_heads = 12
+    cfg.decoder.mlp_ratio = 4
+    cfg.decoder.qkv_bias = True
+    
+    cfg.decoder.positional_embedding_dropout = 0
+    cfg.decoder.attention_dropout = 0
+    cfg.decoder.projection_dropout = 0
+    cfg.decoder.dropout_1 = 0
+    cfg.decoder.dropout_2 = 0
+
+    
+    #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
