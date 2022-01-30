@@ -8,8 +8,8 @@ from modules import DecoderLayer
 
 class Decoder(nn.Module):
     
-    def __init__(self, d_model, depth, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
-                attention_dropout=0., projection_dropout=0.,
+    def __init__(self, d_model, depth, num_heads, mlp_ratio=4., qkv_bias=False, 
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True,
                 weight_init=False, weight_load=False, model_official=None):
 
         """
@@ -25,6 +25,7 @@ class Decoder(nn.Module):
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `dropout_1` (float): dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
             `weight_init` (boolean): If True, initialises the weights of the model (default True)
             `weight_load` (boolean): If True, loads the weights of the specified pre-trained model after initialisation (default False)
             `model_official`: This model's weights are used by ViViT
@@ -46,7 +47,8 @@ class Decoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(depth)
                 ]

@@ -9,7 +9,7 @@ from load_weights import init_encoder_block_weights, load_bimodal_encoder_weight
 
 
 class BiModalEncoder(nn.Module):
-    def __init__(self, d_model=768, depth=12, num_heads=12, mlp_ratio=4., qkv_bias=True, 
+    def __init__(self, d_model=768, depth=12, num_heads=12, mlp_ratio=4., qkv_bias=True, pre_norm=True,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., 
                 classification_head=False, num_classes=None, return_preclassifier=False, return_prelogits=False, 
                 weight_init=False, weight_load=False, model_official=None):
@@ -27,6 +27,7 @@ class BiModalEncoder(nn.Module):
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `dropout_1` (float): dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
             `classification_head` (boolean): If True, a classification head (fully connected layer) is added on top of the model (default False)
             `num_classes` (int): number of classes for the prediction task (default None)
             `return_preclassifier` (boolean): If True, return the representation after the transformer encoder. Useful if using this as the backbone stem as part of a bigger architecture (default False)
@@ -52,10 +53,11 @@ class BiModalEncoder(nn.Module):
                                 num_heads=num_heads,
                                 mlp_ratio=mlp_ratio,
                                 qkv_bias=qkv_bias,
+                                attention_dropout=attention_dropout,
+                                projection_dropout=projection_dropout,
                                 dropout_1=dropout_1,
                                 dropout_2=dropout_2,
-                                attention_dropout=attention_dropout,
-                                projection_dropout=projection_dropout
+                                pre_norm=pre_norm
                             )
                     for _ in range(depth)
                 ]

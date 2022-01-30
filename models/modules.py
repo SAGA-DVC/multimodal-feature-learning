@@ -313,7 +313,7 @@ class MLP(nn.Module):
 
         return x
 
-
+# TODO- dropout before/after each layer_norm?
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
                 attention_dropout=0., projection_dropout=0.):
@@ -335,12 +335,11 @@ class EncoderLayer(nn.Module):
 
         super(EncoderLayer, self).__init__()
 
-        #eps for compatibility with ViT pretrained weights??
-        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
-
         self.attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -388,17 +387,15 @@ class FactorisedSelfAttentionEncoderLayer(nn.Module):
 
         super(FactorisedSelfAttentionEncoderLayer, self).__init__()
 
-        #eps for compatibility with ViT pretrained weights??
-        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
-
         self.spatial_attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
-        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         self.temporal_attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
         self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -458,12 +455,11 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
         super(FactorisedDotProductAttentionEncoderLayer, self).__init__()
         
-        #eps for compatibility with ViT pretrained weights??
-        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
-
         self.attention = DotProductAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -739,7 +735,7 @@ class VivitEncoder(nn.Module):
 
 
 # --------------------------------------------------------------
-# Modules used by the Bi-modal encoder
+# Modules used by the Decoder and Bi-modal encoder
 
 class CrossAttention(nn.Module):
 
@@ -822,10 +818,11 @@ class CrossAttention(nn.Module):
 
         return x
 
-
+# TODO- dropout before/after each layer_norm?
+# TODO- check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class BiModalEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
 
         """
         Bi-modal encoder block for cross attention b/w video and audio features.
@@ -839,10 +836,13 @@ class BiModalEncoderLayer(nn.Module):
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
     
         """
         
-        super(BiModalEncoderBlock, self).__init__()
+        super(BiModalEncoderLayer, self).__init__()
+
+        self.pre_norm = pre_norm
 
         self.attention_av = CrossAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
@@ -880,27 +880,72 @@ class BiModalEncoderLayer(nn.Module):
 
         """
         
-        vid = self.layer_norm_av_1(vid)
-        aud = self.layer_norm_va_1(aud)
+        if self.pre_norm:
+            return self.forward_pre(vid, aud)
+        
+        else:
+            return self.forward_post(vid, aud)
+        
+    
 
-        vid = vid + self.attention_av(vid, aud, aud) # (batch_size, num_tokens, d_model)
-        aud = aud + self.attention_va(aud, vid, vid) # (batch_size, num_tokens, d_model)
+    def forward_pre(self, vid, aud):
+
+        """
+        Performs a forward pass over the Bi-modal encoder with video and audio features and normalisation layers before attention and mlp blocks.
+  
+        Parameters:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features
+        
+        Returns:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features after cross attention with audio features 
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features after cross attention with video features 
+
+        """
+
+        vid_after_norm = self.layer_norm_av_1(vid)
+        aud_after_norm = self.layer_norm_va_1(aud)
+
+        vid = vid + self.attention_av(vid_after_norm, aud_after_norm, aud_after_norm) # (batch_size, num_tokens, d_model)
+        aud = aud + self.attention_va(aud_after_norm, vid_after_norm, vid_after_norm) # (batch_size, num_tokens, d_model)
 
         vid = vid + self.mlp_av(self.layer_norm_av_2(vid)) # (batch_size, num_tokens, d_model)
         aud = aud + self.mlp_va(self.layer_norm_va_2(aud)) # (batch_size, num_tokens, d_model)
 
         return vid, aud
 
+    
+    def forward_post(self, vid, aud):
 
+        """
+        Performs a forward pass over the Bi-modal encoder with video and audio features and normalisation layers after attention and mlp blocks.
+  
+        Parameters:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features
+        
+        Returns:
+            vid (tensor): Tensor of dimension (batch_size, num_frames, d_model) representing video features after cross attention with audio features 
+            aud (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing audio features after cross attention with video features 
+
+        """
+
+        vid = self.layer_norm_av_1(vid + self.attention_av(vid, aud, aud)) # (batch_size, num_tokens, d_model)
+        aud = self.layer_norm_va_1(aud + self.attention_va(aud, vid, vid)) # (batch_size, num_tokens, d_model)
+
+        vid = self.layer_norm_av_2(vid + self.mlp_av(vid)) # (batch_size, num_tokens, d_model)
+        aud = self.layer_norm_va_2(aud + self.mlp_va(aud)) # (batch_size, num_tokens, d_model)
+
+        return vid, aud
 
 
 # --------------------------------------------------------------
 # Modules used by the Decoder
 
-# TODO-add pre/post for layer norm
+# TODO- dropout before/after each layer_norm?
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
 
         """
         Decoder consisting of the basic attention architecture.
@@ -910,15 +955,17 @@ class DecoderLayer(nn.Module):
             `num_heads` (int): Number of attention heads. 
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
-            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
-    
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
         """
 
         super(DecoderLayer, self).__init__()
 
+        self.pre_norm=pre_norm
+        
         self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                 attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
@@ -937,7 +984,7 @@ class DecoderLayer(nn.Module):
     def forward(self, target, memory, position_embedding_layer, query_embedding):
 
         """
-        Performs a forward pass on the Decoder block.
+        Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
   
         Parameters:
             target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
@@ -949,6 +996,57 @@ class DecoderLayer(nn.Module):
             target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
         """
 
+        if self.pre_norm:
+            return self.forward_pre(target, memory, position_embedding_layer, query_embedding)
+        else:
+            return self.forward_post(target, memory, position_embedding_layer, query_embedding)
+
+    
+    def forward_pre(self, target, memory, position_embedding_layer, query_embedding):
+        
+        """
+        Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            memory: the sequence from the last layer of the encoder
+            position_embedding_layer: position embedding layer for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        """
+
+        target_after_norm = self.layer_norm_1(target)
+        q = k = target_after_norm + query_embedding
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm)
+
+        target_after_norm = self.layer_norm_2(target)
+        q = target_after_norm + query_embedding
+        k = position_embedding_layer(memory, for_decoder=True)
+        target = target + self.cross_attention(q=q, k=k, v=memory)
+        
+        target_after_norm = self.layer_norm_3(target)
+        target = target + self.mlp(target_after_norm)
+
+        return target
+
+
+    def forward_post(self, target, memory, position_embedding_layer, query_embedding):
+
+        """
+        Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            memory: the sequence from the last layer of the encoder
+            position_embedding_layer: position embedding layer for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        """
+       
         q = k = target + query_embedding
         target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target))
 
