@@ -6,7 +6,7 @@ import torch
 import numpy as np
 import timm
 import time
-from vivit import VideoVisionTransformer
+from transformer import Transformer 
 from kinetics import get_kinetics
 from config import load_config
 
@@ -27,10 +27,12 @@ model_official = timm.create_model(model_name, pretrained=True)
 model_official.eval()
 
 
-model_custom = VideoVisionTransformer(**cfg.vivit, model_official=model_official)
+model_custom = Transformer(**cfg.transformer, model_official=model_official)
 model_custom.eval()
 
-
+target = torch.rand(1, 100, 768)
+query_embedding = torch.rand(1, 100, 768)
+vid = torch.rand(1, 3, 10, 224, 224)
 
 # for (name_custom, parameter_custom) in model_custom.named_parameters():
 #     print(f"{name_custom}, {parameter_custom.shape}")
@@ -41,15 +43,19 @@ model_custom.eval()
 #     print(f"{name_official} , {parameter_official.shape}")
 
 
-# dataset, loader = get_kinetics(**cfg.dataset.kinetics)
+dataset, loader = get_kinetics(**cfg.dataset.kinetics)
 
 
-# start_time = time.time()
+start_time = time.time()
 
 
 # for i, batch in enumerate(iter(loader)):
-# 	res = model_custom(batch['video'])
+# 	res = model_custom(batch['video'], target, query_embedding)
 # 	print(res.shape)
 
+res = model_custom(vid, target, query_embedding)
+print(res.shape)
 
-# print(f"--- {time.time() - start_time} seconds ---")
+
+
+print(f"--- {time.time() - start_time} seconds ---")

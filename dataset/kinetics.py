@@ -40,7 +40,7 @@ if __name__ == '__main__':
         kinetics_root="../data/sample",
         num_temporal_samples=10,
         frame_size=(224, 224),
-        batch_size=3
+        batch_size=1
     )
 
     for i, batch in enumerate(iter(loader)):

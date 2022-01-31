@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
 from modules import DecoderLayer
+from load_weights import init_encoder_block_weights
 
 class Decoder(nn.Module):
     
@@ -21,8 +22,8 @@ class Decoder(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): dropout probability for the MLP block (default 0.0)
             `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
@@ -60,8 +61,10 @@ class Decoder(nn.Module):
         # else:
         #     self.init_weights()
 
+        self.init_weights()
+
     
-    def forward(self, target, memory, position_embedding_layer, query_embedding):
+    def forward(self, target, memory, positional_embedding_layer, query_embedding):
 
         """
         Pass the inputs (and mask) through the decoder layer in turn.
@@ -78,7 +81,7 @@ class Decoder(nn.Module):
         output = target
 
         for layer in self.decoder:
-            output = layer(output, memory, position_embedding_layer, query_embedding)
+            output = layer(output, memory, positional_embedding_layer, query_embedding)
 
         # if self.norm is not None:
         #     output = self.norm(output)
@@ -88,5 +91,12 @@ class Decoder(nn.Module):
         return output
 
 
+    def init_weights(self):
+
+        """
+        Initialises the weights and biases of all the Decoder layers.
+        """
+
+        self.decoder.apply(init_encoder_block_weights)
 
     

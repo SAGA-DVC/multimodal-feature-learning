@@ -43,7 +43,6 @@ class VideoVisionTransformer(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): dropout probability for the MLP block (default 0.0)
@@ -78,21 +77,6 @@ class VideoVisionTransformer(nn.Module):
         self.token_embeddings_layer = TokenEmbedding(img_size=img_size, spatial_patch_size=spatial_patch_size, 
                                                     temporal_patch_size=temporal_patch_size, in_channels=in_channels, 
                                                     d_model=d_model, layer_norm=None)
-
-        self.positional_embedding_layer = None
-        self.spatial_positional_embedding_layer = None
-        self.temporal_positional_embedding_layer = None
-
-        if model_name == 'spatio temporal attention':
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches, d_model), positional_embedding_dropout) 
-            
-        elif model_name == 'factorised encoder':
-            self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, d_model), positional_embedding_dropout)
-
-        else:
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
-
         
         self.vivitEncoder = VivitEncoder(model_name=model_name,
                             num_frames=num_frames,
@@ -120,7 +104,7 @@ class VideoVisionTransformer(nn.Module):
         elif weight_init:
             self.init_weights()
 
-    def forward(self, x):
+    def forward(self, x, positional_embedding_layer, spatial_positional_embedding_layer):
 
         """
         Performs a forward pass on the ViViT model, based on the given attention architecture.
@@ -151,7 +135,7 @@ class VideoVisionTransformer(nn.Module):
         # (batch_size, num_frames * num_patches, d_model) OR
         # (batch_size, num_frames, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
-        x = self.vivitEncoder(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer) 
+        x = self.vivitEncoder(x, positional_embedding_layer, spatial_positional_embedding_layer) 
         
         if self.return_preclassifier :
             return x 
@@ -190,8 +174,6 @@ class VideoVisionTransformer(nn.Module):
         """
 
         if self.model_name == 'spatio temporal attention':
-            trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
-            
             self.vivitEncoder.encoder.apply(init_encoder_block_weights)
 
             if self.classification_head:
@@ -204,15 +186,9 @@ class VideoVisionTransformer(nn.Module):
 
         elif self.model_name == 'factorised encoder':
             trunc_normal_(self.vivitEncoder.spacial_token, std=.02)
-
-            trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
-            trunc_normal_(self.temporal_positional_embedding_layer.positional_embedding, std=.02)
             
             self.vivitEncoder.spatialEncoder.apply(init_encoder_block_weights)
             self.vivitEncoder.temporalEncoder.apply(init_encoder_block_weights)
-            
-            ones_(self.layer_norm.weight)
-            zeros_(self.layer_norm.bias)
 
             if self.classification_head:
                 ones_(self.layer_norm.weight)
@@ -222,12 +198,7 @@ class VideoVisionTransformer(nn.Module):
                 trunc_normal_(self.head.bias, std=.02)
         
         else:
-            trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
-
             self.vivitEncoder.encoder.apply(init_encoder_block_weights)
-
-            ones_(self.layer_norm.weight)
-            zeros_(self.layer_norm.bias)
 
         if self.classification_head:
             ones_(self.layer_norm.weight)
@@ -249,9 +220,6 @@ class VideoVisionTransformer(nn.Module):
         """
 
         load_token_embeddings(self, model_official)
-
-        load_positional_embeddings(self, model_official)
-
         
         if self.model_name == 'factorised encoder':
             load_cls_tokens(self, model_official)

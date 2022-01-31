@@ -88,16 +88,62 @@ def load_config():
     cfg.decoder = ml_collections.ConfigDict()
     
     cfg.decoder.d_model = 768
+    cfg.decoder.depth = 12
     cfg.decoder.num_heads = 12
     cfg.decoder.mlp_ratio = 4
     cfg.decoder.qkv_bias = True
     
-    cfg.decoder.positional_embedding_dropout = 0
     cfg.decoder.attention_dropout = 0
     cfg.decoder.projection_dropout = 0
     cfg.decoder.dropout_1 = 0
     cfg.decoder.dropout_2 = 0
 
+    cfg.decoder.pre_norm=True
+    cfg.bimodal.weight_init = True
+    cfg.bimodal.weight_load = False
+
+    #-------------------------------------------------------------------------------------------------
+    # Transformer
+    cfg.transformer = ml_collections.ConfigDict()
+
+    models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
+    cfg.transformer.model_name = models[0]
+
+    cfg.transformer.num_frames = 5
+    cfg.transformer.num_patches = 196
+    cfg.transformer.img_size = 224
+
+    cfg.transformer.spatial_patch_size = 16
+    cfg.transformer.temporal_patch_size = 2
+
+    tokenization_method = ['filter inflation', 'central frame']
+    cfg.transformer.tokenization_method = tokenization_method[1]
+
+    cfg.transformer.in_channels = 3
+    cfg.transformer.d_model = 768
+
+    cfg.transformer.depth = 12
+    cfg.transformer.temporal_depth = 4
+
+    cfg.transformer.num_heads = 12
+    cfg.transformer.mlp_ratio = 4
+    cfg.transformer.qkv_bias = True
+
+    cfg.transformer.positional_embedding_dropout = 0
+    cfg.transformer.attention_dropout = 0
+    cfg.transformer.projection_dropout = 0
+    cfg.transformer.dropout_1 = 0
+    cfg.transformer.dropout_2 = 0
+
+    cfg.transformer.classification_head = False
+    cfg.transformer.num_classes = 1000
+
+    cfg.transformer.return_preclassifier = True
+    cfg.transformer.return_prelogits = False
+
+    cfg.transformer.weight_init = True
+    cfg.transformer.weight_load = False
+    
     
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models

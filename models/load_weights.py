@@ -133,7 +133,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
         depth = len(model_custom.vivitEncoder.encoder)
 
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[3 : (12 * depth) + 3], 
+            list(model_custom.named_parameters())[2 : (12 * depth) + 2], 
             list(model_official.named_parameters())[4 : 144 + 4]):
 
             # print(f"{name_official} | {name_custom}")
@@ -147,7 +147,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
        
         #spatial
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[5 : (12 * spatial_depth) + 5], 
+            list(model_custom.named_parameters())[3 : (12 * spatial_depth) + 3], 
             list(model_official.named_parameters())[4 : 144 + 4]):
 
             # print(f"{name_official} | {name_custom}")
@@ -156,7 +156,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
 
         #temporal
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[144 + 5 : 144 + (12 * temporal_depth) + 5], 
+            list(model_custom.named_parameters())[144 + 3 : 144 + (12 * temporal_depth) + 3], 
             list(model_official.named_parameters())[4 : 144 + 4]):
 
             # print(f"{name_official} | {name_custom}")
