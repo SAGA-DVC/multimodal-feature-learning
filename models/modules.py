@@ -335,11 +335,12 @@ class EncoderLayer(nn.Module):
 
         super(EncoderLayer, self).__init__()
 
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
+
         self.attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
-        #eps for compatibility with ViT pretrained weights??
-        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -387,15 +388,17 @@ class FactorisedSelfAttentionEncoderLayer(nn.Module):
 
         super(FactorisedSelfAttentionEncoderLayer, self).__init__()
 
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
+
         self.spatial_attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         self.temporal_attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
-        #eps for compatibility with ViT pretrained weights??
-        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
-        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
         self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -455,11 +458,12 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
         super(FactorisedDotProductAttentionEncoderLayer, self).__init__()
         
-        self.attention = DotProductAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
-                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
+
+        self.attention = DotProductAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+        
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
