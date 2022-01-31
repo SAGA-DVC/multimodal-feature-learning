@@ -49,10 +49,7 @@ start_time = time.time()
 
 for i, batch in enumerate(iter(loader)):
 	res = model_custom(batch['video'])
-	if len(res) == 2:
-			print(res[0].shape, res[1].shape)
-	else : 
-			print(res.shape)
+	print(res.shape)
 
 
 print(f"--- {time.time() - start_time} seconds ---")
