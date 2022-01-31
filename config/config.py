@@ -19,7 +19,7 @@ def load_config():
     cfg.vivit = ml_collections.ConfigDict()
 
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.vivit.model_name = models[1]
+    cfg.vivit.model_name = models[0]
 
     cfg.vivit.num_frames = 5
     cfg.vivit.num_patches = 196
@@ -41,8 +41,6 @@ def load_config():
     cfg.vivit.mlp_ratio = 4
     cfg.vivit.qkv_bias = True
 
-    cfg.vivit.distilled = False
-
     cfg.vivit.positional_embedding_dropout = 0
     cfg.vivit.attention_dropout = 0
     cfg.vivit.projection_dropout = 0
@@ -52,7 +50,7 @@ def load_config():
     cfg.vivit.classification_head = False
     cfg.vivit.num_classes = 1000
 
-    cfg.vivit.return_preclassifier = False
+    cfg.vivit.return_preclassifier = True
     cfg.vivit.return_prelogits = False
 
     cfg.vivit.weight_init = False

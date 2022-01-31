@@ -59,7 +59,7 @@ def load_token_embeddings(model_custom, model_official):
                 .bias.data[:] = model_official.patch_embed.proj.bias.data
 
 
-# TODO - check if dist token has pos embed for model 1 & 2
+
 # TODO - check weights for temporal positional embeddings in model 2 
 def load_positional_embeddings(model_custom, model_official):
 
@@ -72,44 +72,24 @@ def load_positional_embeddings(model_custom, model_official):
     """
 
     num_frames = model_custom.num_frames
-    distilled = model_custom.distilled
 
     if model_custom.model_name == 'spatio temporal attention':
         
-        # (1, num_frames * num_tokens + 1/2, d_model) -> model_custom positional embeddings
+        # (1, num_frames * num_tokens, d_model) -> model_custom positional embeddings
         # (1, num_patches + 1, d_model) -> model_official positional embeddings
-        # First, the positional embedding for the cls token is initialised followed by those for num_frames * num_patches tokens
-
-        model_custom.positional_embedding_layer.positional_embedding.data[:, 0] = model_official.pos_embed.data[:, 0]
-
-        if distilled:
-            model_custom.positional_embedding_layer.positional_embedding.data[:, 2:] = model_official.pos_embed.data[:, 1:].repeat(1, num_frames, 1)
-
-        else:
-            model_custom.positional_embedding_layer.positional_embedding.data[:, 1:] = model_official.pos_embed.data[:, 1:].repeat(1, num_frames, 1)
+    
+        model_custom.positional_embedding_layer.positional_embedding.data[:] = model_official.pos_embed.data[:, 1:].repeat(1, num_frames, 1)
 
 
     elif model_custom.model_name == 'factorised encoder':
 
-        # (1, num_patches + 1/2, d_model) -> model_custom spatial positional embeddings
-        # (1, num_frames + 1, d_model) -> model_custom temporal positional embeddings
+        # (1, num_patches + 1, d_model) -> model_custom spatial positional embeddings
+        # (1, num_frames, d_model) -> model_custom positional embeddings
         # (1, num_patches + 1, d_model) -> model_official positional embeddings
-        # First, the positional embedding for the cls token is initialised followed by those for num_patches tokens
 
-        if model_custom.distilled:
-            # cls
-            model_custom.spatial_positional_embedding_layer.positional_embedding.data[:, 0] = model_official.pos_embed.data[:, 0]
-            
-            # other tokens
-            model_custom.spatial_positional_embedding_layer.positional_embedding.data[:, 2:] = model_official.pos_embed.data[:, 1:]
+        model_custom.spatial_positional_embedding_layer.positional_embedding.data[:] = model_official.pos_embed.data
 
-            # temporal
-            trunc_normal_(model_custom.temporal_positional_embedding_layer.positional_embedding, std=.02)
-
-        else:
-            model_custom.spatial_positional_embedding_layer.positional_embedding.data[:] = model_official.pos_embed.data
-
-            trunc_normal_(model_custom.temporal_positional_embedding_layer.positional_embedding, std=.02)
+        trunc_normal_(model_custom.positional_embedding_layer.positional_embedding, std=.02)
 
 
     # no cls token
@@ -118,7 +98,6 @@ def load_positional_embeddings(model_custom, model_official):
 
 
 
-# TODO - check if temporal cls token weights should be same as cls token of vit
 def load_cls_tokens(model_custom, model_official):
     
     """
@@ -129,15 +108,11 @@ def load_cls_tokens(model_custom, model_official):
         `model_official`: The model which would be used to load the pre-trained weights
     """
 
-    # (1, 1, d_model) -> model_custom cls token
+    # (1, 1, d_model) -> model_custom spatial cls token
     # (1, 1, d_model) -> model_official cls token
 
-    if model_custom.model_name == 'spatio temporal attention' :
-        model_custom.vivitEncoder.cls.data[:] = model_official.cls_token.data
-
-    elif model_custom.model_name == 'factorised encoder':
+    if model_custom.model_name == 'factorised encoder':
         model_custom.vivitEncoder.spacial_token.data[:] = model_official.cls_token.data
-        model_custom.vivitEncoder.temporal_token.data[:] = model_official.cls_token.data
 
 
 
@@ -157,66 +132,36 @@ def load_vivit_encoder_weights(model_custom, model_official):
 
         depth = len(model_custom.vivitEncoder.encoder)
 
-        if model_custom.distilled:
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[5 : (12 * depth) + 5], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
+        for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
+            list(model_custom.named_parameters())[3 : (12 * depth) + 3], 
+            list(model_official.named_parameters())[4 : 144 + 4]):
 
-                # print(f"{name_official} | {name_custom}")
+            # print(f"{name_official} | {name_custom}")
 
-                parameter_custom.data[:] = parameter_official.data
-
-        else:
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[4 : (12 * depth) + 4], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
-
-                # print(f"{name_official} | {name_custom}")
-
-                parameter_custom.data[:] = parameter_official.data
+            parameter_custom.data[:] = parameter_official.data
 
     elif model_custom.model_name == 'factorised encoder':
 
         spatial_depth = len(model_custom.vivitEncoder.spatialEncoder)
         temporal_depth = len(model_custom.vivitEncoder.temporalEncoder)
-        
-        if model_custom.distilled:
-            #spatial
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[8 : (12 * spatial_depth) + 8], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
+       
+        #spatial
+        for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
+            list(model_custom.named_parameters())[5 : (12 * spatial_depth) + 5], 
+            list(model_official.named_parameters())[4 : 144 + 4]):
 
-                # print(f"{name_official} | {name_custom}")
+            # print(f"{name_official} | {name_custom}")
 
-                parameter_custom.data[:] = parameter_official.data
+            parameter_custom.data[:] = parameter_official.data
 
-            #temporal
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[144 + 8 : 144 + (12 * temporal_depth) + 8], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
+        #temporal
+        for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
+            list(model_custom.named_parameters())[144 + 5 : 144 + (12 * temporal_depth) + 5], 
+            list(model_official.named_parameters())[4 : 144 + 4]):
 
-                # print(f"{name_official} | {name_custom}")
+            # print(f"{name_official} | {name_custom}")
 
-                parameter_custom.data[:] = parameter_official.data
-
-        else:
-            #spatial
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[6 : (12 * spatial_depth) + 6], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
-
-                # print(f"{name_official} | {name_custom}")
-
-                parameter_custom.data[:] = parameter_official.data
-
-            #temporal
-            for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-                list(model_custom.named_parameters())[144 + 6 : 144 + (12 * temporal_depth) + 6], 
-                list(model_official.named_parameters())[4 : 144 + 4]):
-
-                # print(f"{name_official} | {name_custom}")
-
-                parameter_custom.data[:] = parameter_official.data
+            parameter_custom.data[:] = parameter_official.data
     
     elif model_custom.model_name == 'factorised self attention':
 

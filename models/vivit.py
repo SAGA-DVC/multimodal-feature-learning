@@ -20,7 +20,7 @@ from load_weights import init_encoder_block_weights, load_token_embeddings, load
 class VideoVisionTransformer(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
-                mlp_ratio=4., qkv_bias=True, distilled=False, positional_embedding_dropout=0., attention_dropout=0., 
+                mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., classification_head=False, num_classes=None,
                 return_preclassifier=False, return_prelogits=False, weight_init=False, weight_load=False, model_official=None):
         
@@ -43,7 +43,6 @@ class VideoVisionTransformer(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `distilled` (boolean): If True, the model uses a distillation token (default False)
             `positional_embedding_dropout` (float): dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
@@ -72,8 +71,6 @@ class VideoVisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.depth = depth
 
-        self.distilled = distilled
-
         self.classification_head = classification_head
         self.return_prelogits = return_prelogits
         self.return_preclassifier = return_preclassifier
@@ -87,18 +84,11 @@ class VideoVisionTransformer(nn.Module):
         self.temporal_positional_embedding_layer = None
 
         if model_name == 'spatio temporal attention':
-            if distilled:
-                self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 2, d_model), positional_embedding_dropout) 
-            else:
-                self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
+            self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches, d_model), positional_embedding_dropout) 
             
         elif model_name == 'factorised encoder':
-            if distilled:
-                self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 2, d_model), positional_embedding_dropout)
-                self.temporal_positional_embedding_layer = PositionalEmbedding((1, num_frames + 2, d_model), positional_embedding_dropout)
-            else:
-                self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
-                self.temporal_positional_embedding_layer = PositionalEmbedding((1, num_frames + 1, d_model), positional_embedding_dropout)
+            self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
+            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, d_model), positional_embedding_dropout)
 
         else:
             self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
@@ -113,7 +103,6 @@ class VideoVisionTransformer(nn.Module):
                             temporal_depth=temporal_depth,
                             mlp_ratio=mlp_ratio,
                             qkv_bias=qkv_bias,
-                            distilled=distilled,
                             positional_embedding_dropout=positional_embedding_dropout,
                             dropout_1=dropout_1,
                             dropout_2=dropout_2,
@@ -124,10 +113,6 @@ class VideoVisionTransformer(nn.Module):
         if classification_head:
             self.layer_norm = nn.LayerNorm(d_model, eps=1e-6) 
             self.head = nn.Linear(d_model, num_classes)
-            
-            if distilled:
-                self.head_dist = nn.Linear(d_model, num_classes)
-
 
         if weight_load and model_official is not None:
             self.load_weights(model_official)
@@ -163,57 +148,35 @@ class VideoVisionTransformer(nn.Module):
 
         assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You have num_patches={num_patches}. Adjust the video dimensions or patch sizes accordingly."               
 
-        # (batch_size, num_frames * num_patches + 1, d_model) OR (batch_size, num_frames * num_patches + 2, d_model) OR
-        # (batch_size, num_frames + 1, d_model) OR 
+        # (batch_size, num_frames * num_patches, d_model) OR
+        # (batch_size, num_frames, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
-        x = self.vivitEncoder(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer, self.temporal_positional_embedding_layer,) 
-        x_dist = None
+        x = self.vivitEncoder(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer) 
         
         if self.return_preclassifier :
             return x 
 
-        # (batch_size, num_frames * num_patches + 1, d_model) -> (batch_size, 1, d_model) OR
-        # (batch_size, num_frames * num_patches + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        # (batch_size, num_frames * num_patches, d_model) -> (batch_size, 1, d_model)
         if self.model_name == 'spatio temporal attention': 
-            if self.distilled:
-                x_dist = torch.unsqueeze(x[:, 1], 1)
-            x = torch.unsqueeze(x[:, 0], 1)  
+            x = torch.unsqueeze(x.mean(dim=1), 1)  
         
-        # (batch_size, num_frames + 1, d_model) -> (batch_size, 1, d_model) OR
-        # (batch_size, num_frames + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        # (batch_size, num_frames, d_model) -> (batch_size, 1, d_model)
         elif self.model_name == 'factorised encoder':
-            if self.distilled:
-                x_dist = torch.unsqueeze(x[:, 1], 1)
-            x = torch.unsqueeze(x[:, 0], 1) 
+            x = torch.unsqueeze(x.mean(dim=1), 1) 
 
         # (batch_size, num_frames, num_patches, d_model) -> (batch_size, 1, d_model)
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention':
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_tokens, d_model)
             x = torch.unsqueeze(x.mean(dim=1), 1) 
-        
+       
 
-        if self.distilled:
-            if self.classification_head:
-                x = self.layer_norm(x)
-                # x_dist = self.layer_norm(x_dist) # check
-                
-                x = self.head(x) # (batch_size, num_classes)
-                x_dist = self.head_dist(x_dist) # (batch_size, num_classes)
+        if self.classification_head:
+            x = self.layer_norm(x) # check placement before after return_prelogits
+            x = self.head(x) # (batch_size, num_classes)
+            return x
 
-                return x, x_dist # test time (x + x_dist) / 2
-            
-            else:
-                return x, x_dist # (batch_size, 1, d_model)
-            
-        
         else:
-            if self.classification_head:
-                x = self.layer_norm(x) # check placement before after return_prelogits
-                x = self.head(x) # (batch_size, num_classes)
-                return x
-
-            else:
-                return x # (batch_size, 1, d_model)
+            return x # (batch_size, 1, d_model)
 
 
     def init_weights(self):
@@ -227,14 +190,7 @@ class VideoVisionTransformer(nn.Module):
         """
 
         if self.model_name == 'spatio temporal attention':
-            trunc_normal_(self.vivitEncoder.cls, std=.02)
-            if self.distilled:
-                trunc_normal_(self.vivitEncoder.dist, std=.02)
-
             trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
-
-            if self.distilled:
-                trunc_normal_(self.vivitEncoder.dist, std=.02)
             
             self.vivitEncoder.encoder.apply(init_encoder_block_weights)
 
@@ -248,14 +204,9 @@ class VideoVisionTransformer(nn.Module):
 
         elif self.model_name == 'factorised encoder':
             trunc_normal_(self.vivitEncoder.spacial_token, std=.02)
-            trunc_normal_(self.vivitEncoder.temporal_token, std=.02)
 
             trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
             trunc_normal_(self.temporal_positional_embedding_layer.positional_embedding, std=.02)
-
-            if self.distilled:
-                trunc_normal_(self.vivitEncoder.spacial_dist_token, std=.02)
-                trunc_normal_(self.vivitEncoder.temporal_dist_token, std=.02)
             
             self.vivitEncoder.spatialEncoder.apply(init_encoder_block_weights)
             self.vivitEncoder.temporalEncoder.apply(init_encoder_block_weights)
@@ -278,15 +229,12 @@ class VideoVisionTransformer(nn.Module):
             ones_(self.layer_norm.weight)
             zeros_(self.layer_norm.bias)
 
-            if self.classification_head:
-                ones_(self.layer_norm.weight)
-                zeros_(self.layer_norm.bias)
-                
-                trunc_normal_(self.head.weight, std=.02)
-                trunc_normal_(self.head.bias, std=.02)
-                if self.distilled:
-                    trunc_normal_(self.head_dist.weight, std=.02)
-                    trunc_normal_(self.head_dist.bias, std=.02)
+        if self.classification_head:
+            ones_(self.layer_norm.weight)
+            zeros_(self.layer_norm.bias)
+            
+            trunc_normal_(self.head.weight, std=.02)
+            trunc_normal_(self.head.bias, std=.02)
 
 
     def load_weights(self, model_official):
@@ -304,16 +252,9 @@ class VideoVisionTransformer(nn.Module):
 
         load_positional_embeddings(self, model_official)
 
-        if self.model_name == 'spatio temporal attention':
-            load_cls_tokens(self, model_official)
-            if self.distilled:
-                trunc_normal_(self.vivitEncoder.dist, std=.02)
         
-        elif  self.model_name == 'factorised encoder':
+        if self.model_name == 'factorised encoder':
             load_cls_tokens(self, model_official)
-            if self.distilled:
-                trunc_normal_(self.vivitEncoder.spacial_dist_token, std=.02)
-                trunc_normal_(self.vivitEncoder.temporal_dist_token, std=.02)
 
         load_vivit_encoder_weights(self, model_official)
 
