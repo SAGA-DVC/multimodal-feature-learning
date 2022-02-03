@@ -11,7 +11,7 @@ class Decoder(nn.Module):
     
     def __init__(self, d_model, depth, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True,
-                weight_init=False, weight_load=False, model_official=None):
+                weight_init=False, weight_load=False, model_official=None, return_intermediate=False):
 
         """
         Decoder is Stack of N decoder layers
@@ -30,6 +30,7 @@ class Decoder(nn.Module):
             `weight_init` (boolean): If True, initialises the weights of the model (default True)
             `weight_load` (boolean): If True, loads the weights of the specified pre-trained model after initialisation (default False)
             `model_official`: This model's weights are used by ViViT
+            `return_intermediate` (boolean) : If True, output from intermediate layers of the decoder are also returned along with the output from the final layer. (default False)
     
         """
 
@@ -37,6 +38,8 @@ class Decoder(nn.Module):
 
         self.d_model = d_model
         self.depth = depth
+
+        self.return_intermediate = return_intermediate
 
         self.decoder = nn.ModuleList(
                 [
@@ -54,6 +57,8 @@ class Decoder(nn.Module):
                     for _ in range(depth)
                 ]
             )
+        
+        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
         # if weight_load and model_official is not None:
         #     self.load_weights(model_official)
@@ -75,20 +80,26 @@ class Decoder(nn.Module):
             query_embedding (tensor): event queries
         
         Returns:
-            output (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            output (tensor): if return_intermediate is True:
+                                Tensor of dimension (1, batch_size, num_tokens, d_model)
+                             else:
+                                 Tensor of dimension (depth, batch_size, num_tokens, d_model)
         """
 
         output = target
 
+        intermediate = []
+        
         for layer in self.decoder:
             output = layer(output, memory, positional_embedding_layer, query_embedding)
 
-        # if self.norm is not None:
-        #     output = self.norm(output)
+            if self.return_intermediate:
+                intermediate.append(self.layer_norm(output))
 
-        # return output.unsqueeze(0)
+        if self.return_intermediate:
+            return torch.stack(intermediate)
 
-        return output
+        return output.unsqueeze(0)
 
 
     def init_weights(self):
