@@ -23,6 +23,7 @@ class VideoVisionTransformer(nn.Module):
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., classification_head=False, num_classes=None,
                 return_preclassifier=False, return_prelogits=False, weight_init=False, weight_load=False, model_official=None):
+    
         
         """
         The Video Vision Transformer (ViViT) which consists of 3 attention architectures, namely, 
@@ -104,7 +105,7 @@ class VideoVisionTransformer(nn.Module):
         elif weight_init:
             self.init_weights()
 
-    def forward(self, x, positional_embedding_layer, spatial_positional_embedding_layer):
+    def forward(self, x, positional_embedding_layer=None, spatial_positional_embedding_layer=None):
 
         """
         Performs a forward pass on the ViViT model, based on the given attention architecture.
