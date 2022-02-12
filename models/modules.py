@@ -651,7 +651,7 @@ class VivitEncoder(nn.Module):
                             factorised self attention or factorised dot product attention')
 
 
-    def forward(self, x, positional_embedding_layer, spatial_positional_embedding_layer):
+    def forward(self, x, positional_embedding_layer=None, spatial_positional_embedding_layer=None):
 
         """
         Performs a forward pass over the specified attention architecture for all layers of the ViViT encoder.
@@ -669,6 +669,11 @@ class VivitEncoder(nn.Module):
         
         batch_size, num_frames, num_patches, d_model = x.shape
         
+        if positional_embedding_layer == None:
+            positional_embedding_layer = nn.Identity()
+
+        if spatial_positional_embedding_layer == None:
+            spatial_positional_embedding_layer = nn.Identity()
 
         # change pos embed for this model?
         if self.model_name == 'spatio temporal attention':

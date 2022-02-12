@@ -47,14 +47,14 @@ def load_config():
     cfg.vivit.dropout_1 = 0
     cfg.vivit.dropout_2 = 0
 
-    cfg.vivit.classification_head = False
+    cfg.vivit.classification_head = True
     cfg.vivit.num_classes = 1000
 
     cfg.vivit.return_preclassifier = True
     cfg.vivit.return_prelogits = False
 
-    cfg.vivit.weight_init = False
-    cfg.vivit.weight_load = True
+    cfg.vivit.weight_init = True
+    cfg.vivit.weight_load = False
 
 
     #-------------------------------------------------------------------------------------------------
@@ -143,6 +143,52 @@ def load_config():
 
     cfg.transformer.weight_init = True
     cfg.transformer.weight_load = False
+
+
+    #-------------------------------------------------------------------------------------------------
+    # DVC model
+    cfg.dvc = ml_collections.ConfigDict()
+
+    cfg.dvc.num_queries = 100
+    cfg.dvc.aux_loss = False
+
+    models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
+    cfg.dvc.model_name = models[0]
+
+    cfg.dvc.num_frames = 5
+    cfg.dvc.num_patches = 196
+    cfg.dvc.img_size = 224
+
+    cfg.dvc.spatial_patch_size = 16
+    cfg.dvc.temporal_patch_size = 2
+
+    tokenization_method = ['filter inflation', 'central frame']
+    cfg.dvc.tokenization_method = tokenization_method[1]
+
+    cfg.dvc.in_channels = 3
+    cfg.dvc.d_model = 768
+
+    cfg.dvc.depth = 12
+    cfg.dvc.temporal_depth = 4
+
+    cfg.dvc.num_heads = 12
+    cfg.dvc.mlp_ratio = 4
+    cfg.dvc.qkv_bias = True
+
+    cfg.dvc.positional_embedding_dropout = 0
+    cfg.dvc.attention_dropout = 0
+    cfg.dvc.projection_dropout = 0
+    cfg.dvc.dropout_1 = 0
+    cfg.dvc.dropout_2 = 0
+
+    cfg.dvc.classification_head = False
+    cfg.dvc.num_classes = 1000
+
+    cfg.dvc.return_preclassifier = True
+    cfg.dvc.return_prelogits = False
+
+    cfg.dvc.weight_init = True
+    cfg.dvc.weight_load = False
     
     
     #-------------------------------------------------------------------------------------------------

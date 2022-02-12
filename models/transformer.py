@@ -115,13 +115,11 @@ class Transformer(nn.Module):
         # check grad later
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
             x = x.reshape(x.shape[0], -1, x.shape[-1])
-        
-        
 
-        # (batch_size, num_tokens, d_model)
+        # (batch_size, 1, num_tokens, d_model) OR # (batch_size, depth, num_tokens, d_model)
         x = self.decoder(target=target, memory=x, 
                         positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding)
-
+        
         return x
     
 

@@ -30,8 +30,7 @@ model_official.eval()
 model_custom = Transformer(**cfg.transformer, model_official=model_official)
 model_custom.eval()
 
-target = torch.rand(1, 100, 768)
-query_embedding = torch.rand(1, 100, 768)
+query_embedding = torch.rand(100, 768)
 vid = torch.rand(1, 3, 10, 224, 224)
 
 # for (name_custom, parameter_custom) in model_custom.named_parameters():
@@ -53,7 +52,7 @@ start_time = time.time()
 # 	res = model_custom(batch['video'], target, query_embedding)
 # 	print(res.shape)
 
-res = model_custom(vid, target, query_embedding)
+res = model_custom(vid, query_embedding)
 print(res.shape)
 
 

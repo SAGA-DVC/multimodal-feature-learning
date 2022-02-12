@@ -41,15 +41,15 @@ model_custom.eval()
 #     print(f"{name_official} , {parameter_official.shape}")
 
 
-# dataset, loader = get_kinetics(**cfg.dataset.kinetics)
+dataset, loader = get_kinetics(**cfg.dataset.kinetics)
 
 
-# start_time = time.time()
+start_time = time.time()
 
 
-# for i, batch in enumerate(iter(loader)):
-# 	res = model_custom(batch['video'])
-# 	print(res.shape)
+for i, batch in enumerate(iter(loader)):
+	res = model_custom(batch['video'])
+	print(res.shape)
 
 
-# print(f"--- {time.time() - start_time} seconds ---")
+print(f"--- {time.time() - start_time} seconds ---")
