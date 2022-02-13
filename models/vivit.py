@@ -177,19 +177,19 @@ class VideoVisionTransformer(nn.Module):
         if self.model_name == 'spatio temporal attention': 
             if self.distilled:
                 x_dist = torch.unsqueeze(x[:, 1], 1)
-            x = torch.unsqueeze(x[:, 0], 1)  
+            x = x[:, 0]
         
         # (batch_size, num_frames + 1, d_model) -> (batch_size, 1, d_model) OR
         # (batch_size, num_frames + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
         elif self.model_name == 'factorised encoder':
             if self.distilled:
                 x_dist = torch.unsqueeze(x[:, 1], 1)
-            x = torch.unsqueeze(x[:, 0], 1) 
+            x = x[:, 0]
 
         # (batch_size, num_frames, num_patches, d_model) -> (batch_size, 1, d_model)
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention':
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_tokens, d_model)
-            x = torch.unsqueeze(x.mean(dim=1), 1) 
+            x = x.mean(dim=1)
         
 
         if self.distilled:

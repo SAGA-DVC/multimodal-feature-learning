@@ -8,7 +8,6 @@ from ..models.vivit import VideoVisionTransformer
 import torch
 import torch.nn as nn
 import timm
-from config import load_config
 
 class TSPModel(nn.Module):
 
@@ -63,13 +62,11 @@ class TSPModel(nn.Module):
     @staticmethod
     def _build_feature_backbone(backbone, **kwargs):
         if backbone == 'vivit':
-            cfg = load_config
-            model_name = cfg.pretrained_models.vit
-            model_official = timm.create_model(model_name, pretrained=True)
+            model_official = timm.create_model(kwargs['vit_name'], pretrained=True)
             model_official.eval()
 
             # Use return_preclassifier=True for VideoVisionTransformer
-            feature_backbone = VideoVisionTransformer(**cfg.vivit, model_official=model_official, **kwargs)
+            feature_backbone = VideoVisionTransformer(model_official=model_official, **kwargs)
 
             feature_size = feature_backbone.d_model
         else:
