@@ -7,20 +7,24 @@ import json
 import torch
 import torchvision
 
+import wandb
+from pprint import pprint
+
 from tsp.model import TSPModel
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
 from tsp.config import load_config
+from tsp import utils
 
 def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas):
     model.train()
     
-    for sample in dataloader:
-        clip = sample['clip'].to(device)
-        gvf = sample['gvf'].to(device) if 'gvf' in sample else None
-        targets = [sample[x].to(device) for x in label_columns]  # [(B, 1), (B, 1)]
+    for (batch_idx, batch) in enumerate(dataloader):
+        clip = batch['clip'].to(device)
+        gvf = batch['gvf'].to(device) if 'gvf' in batch else None
+        targets = [batch[x].to(device) for x in label_columns]  # [(B, 2), (B, c)] (len=2)
         
-        outputs = model(clip, gvf=gvf)  # [(B, 1), (B, 1)]
+        outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
 
         # compute losses
         head_losses, loss = [], 0
@@ -34,7 +38,16 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         loss.backward()
         optimizer.step()
 
-        # TODO: compute accuracies and log metrics
+        compute_and_log_metrics(
+            phase="train",
+            loss=loss, 
+            outputs=outputs, 
+            targets=targets, 
+            head_losses=head_losses, 
+            label_columns=label_columns, 
+            epoch=epoch, 
+            batch_idx=batch_idx
+        )
 
         lr_scheduler.step()
 
@@ -42,11 +55,11 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
     model.eval()
     
     with torch.no_grad():
-        for sample in dataloader:
-            clip = sample['clip'].to(device, non_blocking=True)
-            gvf = sample['gvf'].to(device, non_blocking=True) if 'gvf' in sample else None
-            targets = [sample[x].to(device, non_blocking=True) for x in label_columns]
-            
+        for (batch_idx, batch) in enumerate(dataloader):
+            clip = batch['clip'].to(device, non_blocking=True)
+            gvf = batch['gvf'].to(device, non_blocking=True) if 'gvf' in batch else None
+            targets = [batch[x].to(device, non_blocking=True) for x in label_columns]
+
             outputs = model(clip, gvf=gvf)
 
             # compute loss
@@ -56,16 +69,56 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
                 head_losses.append(head_loss)
                 loss += alpha * head_loss
             
-            # TODO: Log metrics
+            compute_and_log_metrics(
+                phase="val",
+                loss=loss,
+                outputs=outputs,
+                targets=targets,
+                head_losses=head_losses,
+                label_columns=label_columns,
+                epoch=epoch,
+                batch_idx=batch_idx
+            )
         
         # TODO: Save results to file, print
+
+def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx):
+    log = {
+        "epoch": epoch,
+        "batch": batch_idx,
+        "loss": loss.item()
+    }
+    for output, target, head_loss, label_column in zip(outputs, targets, head_losses, label_columns):
+        mask = target != -1   # target == -1 => sample has no output for this head
+        output, target = output[mask], target[mask]  # filter out -1
+        head_num_samples = output.shape[0]
+
+        if head_num_samples:
+            head_acc = utils.accuracy(output, target, topk=(1,))
+            log[f"accuracy_{label_column}"] = head_acc.item()
+            log[f"num_samples_{label_column}"] = head_num_samples
+
+        log[f"loss_{label_column}"] = head_loss.item()
+
+    wandb.log({
+        f"{phase}/{key}": value
+        for key, value in log
+    })
+    pprint(log)
+    print()
 
 
 
 def main(args):
+    print('TORCH VERSION: ', torch.__version__)
+    print('TORCHVISION VERSION: ', torchvision.__version__)
     cfg = load_config()
 
     # TODO: Distributed mode setup
+    utils.init_distributed_mode(cfg.distributed)
+
+    # wandb
+    wandb.init(project=cfg.wandb.project, config=cfg.to_dict(), notes=cfg.wandb.notes)
 
     device = torch.device(cfg.device)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -87,7 +140,7 @@ def main(args):
         std=[0.22803, 0.22145, 0.216989])
 
     resize = torchvision.transforms.Resize((128, 171))
-    
+
     train_transform = torchvision.transforms.Compose([
         float_zero_to_one,
         resize,
@@ -161,7 +214,7 @@ def main(args):
         concat_gvf=cfg.tsp.global_video_features is not None,
         **cfg.vivit
     )
-    
+
     tsp_model.to(device)
     if cfg.distributed and cfg.distributed.sync_bn:
         tsp_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(tsp_model)
@@ -174,7 +227,7 @@ def main(args):
         fc_params = chain(tsp_model.action_class_fc.parameters(), tsp_model.region_fc.parameters())
     else:
         raise NotImplementedError
-    
+
     params = [
         {
             "params": tsp_model.feature_extractor.parameters(),
@@ -232,14 +285,14 @@ def main(args):
             output_dir=cfg.output_dir
         )
         return
-    
+
     print("Starting training")
     start_time = time.time()
     for epoch in range(cfg.start_epoch, cfg.epochs):
         if cfg.distributed:
             train_sampler.set_epoch(epoch)
             valid_sampler.set_epoch(epoch)
-        
+
         epoch_loop(
             model=tsp_model,
             criterion=criterion,
@@ -262,7 +315,17 @@ def main(args):
                 'cfg': cfg
             }
 
-            # TODO: save checkpoint on master
+            # save by eopch
+            utils.torch_save_on_master(
+                checkpoint,
+                os.path.join(cfg.output_dir, f"epoch_{epoch}.pth")
+            )
+
+            # latest
+            utils.torch_save_on_master(
+                checkpoint,
+                os.path.join(cfg.output_dir, "checkpoint.pth")
+            )
 
         if cfg.train_only_one_epoch:
             break
@@ -278,7 +341,7 @@ def main(args):
                 loss_alphas=cfg.tsp.loss_alphas,
                 output_dir=cfg.output_dir
             )
-    
+
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Total training time: {total_time_str}")

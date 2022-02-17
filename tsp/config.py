@@ -132,7 +132,7 @@ def load_config():
     if distributed:
         cfg.distributed = ml_collections.ConfigDict()
         cfg.distributed.sync_bn = True  # Use sync batch norm
-        cfg.distributed.world_size = 1
+        cfg.distributed.url = "env://"  # URL used to setup dist processing (see init_process_group)
 
     # Config Assertions
     assert len(cfg.dataset.label_columns) == len(cfg.dataset.label_mapping_jsons), f"Unequal number of label columns ({len(cfg.dataset.label_columns)}) and label mapping JSON files ({len(cfg.dataset.label_mapping_jsons)})"
