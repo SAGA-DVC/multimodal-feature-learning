@@ -141,18 +141,18 @@ class VideoVisionTransformer(nn.Module):
         if self.return_preclassifier :
             return x 
 
-        # (batch_size, num_frames * num_patches, d_model) -> (batch_size, 1, d_model)
+        # (batch_size, num_frames * num_patches, d_model) -> (batch_size, d_model)
         if self.model_name == 'spatio temporal attention': 
-            x = torch.unsqueeze(x.mean(dim=1), 1)  
+            x = x.mean(dim=1) 
         
-        # (batch_size, num_frames, d_model) -> (batch_size, 1, d_model)
+        # (batch_size, num_frames, d_model) -> (batch_size, d_model)
         elif self.model_name == 'factorised encoder':
-            x = torch.unsqueeze(x.mean(dim=1), 1) 
+            x = x.mean(dim=1)
 
-        # (batch_size, num_frames, num_patches, d_model) -> (batch_size, 1, d_model)
+        # (batch_size, num_frames, num_patches, d_model) -> (batch_size, d_model)
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention':
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_tokens, d_model)
-            x = torch.unsqueeze(x.mean(dim=1), 1) 
+            x = x.mean(dim=1)
        
 
         if self.classification_head:
@@ -161,7 +161,7 @@ class VideoVisionTransformer(nn.Module):
             return x
 
         else:
-            return x # (batch_size, 1, d_model)
+            return x # (batch_size, d_model)
 
 
     def init_weights(self):

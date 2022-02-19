@@ -96,8 +96,8 @@ class HungarianMatcher(nn.Module):
 
 
 def build_matcher(args):
-    return HungarianMatcher(cost_class=args.set_cost_class, 
-                            cost_segment=args.set_cost_segment, 
-                            cost_giou=args.set_cost_giou,
+    return HungarianMatcher(cost_class=args.cost_class, 
+                            cost_segment=args.cost_segment, 
+                            cost_giou=args.cost_giou,
                             cost_alpha = args.cost_alpha,
                             cost_gamma = args.cost_gamma)

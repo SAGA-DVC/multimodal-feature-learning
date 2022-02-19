@@ -144,6 +144,7 @@ def load_config():
     cfg.transformer.weight_init = True
     cfg.transformer.weight_load = False
 
+    cfg.transformer.return_intermediate = False
 
     #-------------------------------------------------------------------------------------------------
     # DVC model
