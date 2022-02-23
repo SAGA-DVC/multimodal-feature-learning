@@ -124,7 +124,7 @@ class SetCriterion(nn.Module):
         """
         Compute the losses related to the bounding segments, the L1 regression loss and the GIoU loss
            targets dicts must contain the key "segments" containing a tensor of dim [nb_target_segments, 2]
-           The target segments are expected in format (center_x, center_y, w, h), normalized by the image size.
+           The target segments are expected in format (center, length), normalized by the video duration.
         """
 
         assert 'pred_segments' in outputs

@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from typing import Iterable
+from collections import defaultdict
 
 import torch
 
@@ -24,12 +25,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     header = f'Epoch: [{epoch}]'
     print_freq = 10
 
-    for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
-        samples = samples.to(device)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+    for obj in metric_logger.log_every(data_loader, print_freq, header):
 
-        outputs = model(samples)
-        loss_dict = criterion(outputs, targets)
+        obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
+        obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
+                                for vid_info in obj['video_target']]
+
+        obj = defaultdict(lambda: None, obj)
+        outputs = model(obj)
+        
+        loss_dict = criterion(outputs, obj['video_target'])
         weight_dict = criterion.weight_dict
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
 

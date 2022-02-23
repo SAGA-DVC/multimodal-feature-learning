@@ -62,13 +62,16 @@ class DVC(nn.Module):
                     )
         
     
-    def forward(self, x):
+    def forward(self, obj):
 
         """
         Performs a forward pass on the Transformer model
   
         Parameters:
-            x (tensor): Tensor of dimension (batch_size, in_channels, num_frames, img_size, img_size)
+            obj (collections.defaultdict): Consisitng of various keys including 
+                                           video_tensor (batch_size, in_channels, num_frames, img_size, img_size)
+                                           video_mask (batch_size, num_frames)
+                                           video_length (batch_size, 3) - num_frames, duration, gt_target_segments
         
         Returns:
             out (dictionary) : It returns a dict with the following elements:
@@ -84,6 +87,8 @@ See PostProcess for information on how to retrieve the unnormalized bounding box
                                 - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
                                                     dictionnaries containing the two above keys for each decoder layer.
         """
+
+        x = obj['video_tensor'] # (batch_size, in_channels, num_frames, img_size, img_size)
 
         # (1, batch_size, num_tokens, d_model) OR (depth, batch_size, num_tokens, d_model)
         res = self.transformer(x, self.query_embedding.weight) 

@@ -391,14 +391,14 @@ def collate_fn(batch):
     target = [{'segments': torch.tensor([[(ts[1] + ts[0]) / (2 * raw_duration[i]), 
                             (ts[1] - ts[0]) / raw_duration[i]] 
                             for ts in gt_raw_timestamps[i]]).float(), # (max_gt_target_segments, 2)
-               'action_labels': torch.tensor(action_labels[i]).long(), # (max_gt_target_segments)
+               'labels': torch.tensor(action_labels[i]).long(), # (max_gt_target_segments)
                'masks': None,
                'vid_id': vid} for i, vid in enumerate(list(key))]
 
-    dt = {
+    obj = {
         "video":
             {
-                "tensor": video_tensor,  # (batch_size, max_video_length, height, width, num_channels)
+                "tensor": video_tensor.permute(0, 4, 1, 2, 3),  # (batch_size, num_channels, max_video_length, height, width)
                 "length": video_length, # (batch_size, 3) - num_frames, duration, gt_target_segments
                 "mask": video_mask,  # (batch_size, max_video_length)
                 "key": list(key),  # list, (batch_size)
@@ -422,8 +422,8 @@ def collate_fn(batch):
                 "raw": list(raw_caption),  # list of strings, (batch_size, gt_target_segments) {variable dim 1}
             }
     }
-    dt = {k1 + '_' + k2: v2 for k1, v1 in dt.items() for k2, v2 in v1.items()}
-    return dt
+    obj = {k1 + '_' + k2: v2 for k1, v1 in obj.items() for k2, v2 in v1.items()}
+    return obj
 
 
 
