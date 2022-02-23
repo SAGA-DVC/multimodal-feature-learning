@@ -10,6 +10,8 @@ from config.config_dvc import load_config
 from utils.misc import *
 from engine import train_one_epoch
 
+from .dataset.anet import build_dataset, collate_fn 
+
 
 def main(args):
     init_distributed_mode(args.distributed)
@@ -42,9 +44,8 @@ def main(args):
                                   weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
-    # TODO - build dataset
-    dataset_train = build_dataset(image_set='train', args=args.dataset)
-    dataset_val = build_dataset(image_set='val', args=args.dataset)
+    dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
@@ -66,7 +67,7 @@ def main(args):
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
 
-        if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+        if 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1

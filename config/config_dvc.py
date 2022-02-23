@@ -22,9 +22,32 @@ def load_config():
     cfg.epochs = 5
     cfg.clip_max_norm = 0.1
 
+
+
     #-------------------------------------------------------------------------------------------------
     # Dataset
     cfg.dataset = ml_collections.ConfigDict()
+
+    # ActivityNet
+    cfg.dataset.activity_net = ml_collections.ConfigDict()
+
+    cfg.dataset.activity_net.anet_path = ''
+    cfg.dataset.activity_net.video_folder = ''
+    cfg.dataset.activity_net.invalid_videos_json = None
+
+    cfg.dataset.activity_net.tokenizer_json = ''
+
+    cfg.dataset.activity_net.max_caption_len = 30
+    cfg.dataset.activity_net.vocab_size = 5747
+    
+    cfg.dataset.activity_net.feature_sample_rate = 2
+    cfg.dataset.activity_net.data_rescale = False
+    cfg.dataset.activity_net.frame_rescale_len = 100
+
+    cfg.dataset.activity_net.gt_target_segments_max = 10
+
+    cfg.dataset.activity_net.num_queries = 100
+    cfg.dataset.activity_net.num_classes = 100
 
     # Kinetics 
     cfg.dataset.kinetics = ml_collections.ConfigDict()
