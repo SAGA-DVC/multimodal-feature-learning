@@ -1,3 +1,6 @@
+import sys
+sys.path.insert(0, '../config')
+
 import os
 import json
 from pathlib import Path
@@ -11,6 +14,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision.io import read_video
 from torchvision import transforms
+
+from config_dvc import load_config
 
 
 class DVCdataset(Dataset):
@@ -448,7 +453,8 @@ def build_dataset(video_set, args):
 
     annotation_file = PATHS[video_set]
 
-    float_zero_to_one = transforms.Lambda(lambda video: video.permute(3, 0, 1, 2).to(torch.float32) / 255)
+    float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255)
+    permute_frames_and_channels = transforms.Lambda(lambda video: video.permute(1, 0, 2, 3))
 
     normalize = transforms.Normalize(
         mean=[0.43216, 0.394666, 0.37645], 
@@ -461,6 +467,7 @@ def build_dataset(video_set, args):
         resize,
         transforms.RandomHorizontalFlip(),
         normalize,
+        permute_frames_and_channels,
         transforms.RandomCrop((112, 112))
     ])
 
@@ -468,6 +475,7 @@ def build_dataset(video_set, args):
         float_zero_to_one,
         resize,
         normalize,
+        permute_frames_and_channels,
         transforms.CenterCrop((112, 112))
     ])
 
@@ -481,3 +489,11 @@ def build_dataset(video_set, args):
                           is_training = (video_set == 'train'),
                           args = args)
     return dataset
+
+
+if __name__ == '__main__':
+    args = load_config()
+    dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
+
+    for obj in dataset_train:
+        print('done')

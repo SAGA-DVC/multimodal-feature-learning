@@ -64,6 +64,7 @@ class VideoVisionTransformer(nn.Module):
                             "factorised encoder", "factorised self attention" or "factorised dot product attention"')
 
         self.model_name = model_name
+        self.d_model = d_model
         self.num_frames = num_frames
         self.num_patches = num_patches # remove num_patches as parameter later and replace with img_size//spatial_patch_size
         self.tokenization_method = tokenization_method
