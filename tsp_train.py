@@ -2,14 +2,15 @@ import datetime
 from itertools import chain
 import os
 import time
-
 import json
-import torch
-import torchvision
-
-import wandb
 from pprint import pprint
 
+import torch
+import torchvision
+import wandb
+import timm
+
+from models.vivit import VideoVisionTransformer
 from tsp.model import TSPModel
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
@@ -23,7 +24,6 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         clip = batch['clip'].to(device)
         gvf = batch['gvf'].to(device) if 'gvf' in batch else None
         targets = [batch[x].to(device) for x in label_columns]  # [(B, 2), (B, c)] (len=2)
-        
         outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
 
         # compute losses
@@ -109,19 +109,19 @@ def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_co
 
 
 
-def main(args):
+def main():
     print('TORCH VERSION: ', torch.__version__)
     print('TORCHVISION VERSION: ', torchvision.__version__)
     cfg = load_config()
 
-    # TODO: Distributed mode setup
     utils.init_distributed_mode(cfg.distributed)
 
     # wandb
+    wandb.login(host=cfg.wandb.url)
     wandb.init(project=cfg.wandb.project, config=cfg.to_dict(), notes=cfg.wandb.notes)
 
     device = torch.device(cfg.device)
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(cfg.output_dir, exist_ok=True)
 
     train_dir = os.path.join(cfg.data_dir, cfg.train_subdir)
     valid_dir = os.path.join(cfg.data_dir, cfg.valid_subdir)
@@ -133,7 +133,7 @@ def main(args):
             label_mapping = json.load(f)
             label_mappings.append(dict(zip(label_mapping, range(len(label_mapping)))))
 
-    float_zero_to_one = torchvision.transforms.Lambda(lambda video: video.permute(3, 0, 1, 2).to(torch.float32) / 255)
+    float_zero_to_one = torchvision.transforms.Lambda(lambda video: video.to(torch.float32) / 255)
 
     normalize = torchvision.transforms.Normalize(
         mean=[0.43216, 0.394666, 0.37645], 
@@ -143,9 +143,11 @@ def main(args):
 
     train_transform = torchvision.transforms.Compose([
         float_zero_to_one,
+        torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
         resize,
         torchvision.transforms.RandomHorizontalFlip(),
         normalize,
+        torchvision.transforms.Lambda(lambda video: video.permute(1, 0, 2, 3)),
         torchvision.transforms.RandomCrop((112, 112))
     ])
 
@@ -154,7 +156,7 @@ def main(args):
         root_dir=train_dir,
         clip_length=cfg.video.clip_len,
         frame_rate=cfg.video.frame_rate,
-        clips_per_segment=cfg.video.clip_per_segment,
+        clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=True,
         transforms=train_transform,
         label_columns=cfg.dataset.label_columns,
@@ -165,8 +167,10 @@ def main(args):
 
     valid_transform = torchvision.transforms.Compose([
         float_zero_to_one,
+        torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
         resize,
         normalize,
+        torchvision.transforms.Lambda(lambda video: video.permute(1, 0, 2, 3)),
         torchvision.transforms.CenterCrop((112, 112))
     ])
 
@@ -175,7 +179,7 @@ def main(args):
         root_dir=valid_dir,
         clip_length=cfg.video.clip_len,
         frame_rate=cfg.video.frame_rate,
-        clips_per_segment=cfg.video.clip_per_segment,
+        clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=False,
         transforms=valid_transform,
         label_columns=cfg.dataset.label_columns,
@@ -185,8 +189,8 @@ def main(args):
     )
 
     print("Creating dataloaders")
-    train_sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True) if cfg.distributed else None
-    valid_sampler = torch.utils.data.DistributedSampler(valid_dataset, shuffle=False) if cfg.distributed else None
+    train_sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True) if cfg.distributed.on else None
+    valid_sampler = torch.utils.data.DistributedSampler(valid_dataset, shuffle=False) if cfg.distributed.on else None
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -207,36 +211,48 @@ def main(args):
     )
 
     print("Creating model")
+
+    # Create backbone
+    if cfg.tsp.backbone == 'vivit':
+        model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
+        model_official.eval()
+
+      # Use return_preclassifier=True for VideoVisionTransformer
+        feature_backbone = VideoVisionTransformer(model_official=model_official, **cfg.vivit)
+        d_feat = feature_backbone.d_model
+    else:
+        raise NotImplementedError
+
     tsp_model = TSPModel(
-        backbone=cfg.tsp.backbone, 
-        num_classes=[len(l) for l in label_mappings],
-        num_heads=len(cfg.dataset.label_columns),
+        backbone=feature_backbone,
+        d_feat=d_feat,
+        num_tsp_classes=[len(l) for l in label_mappings],
+        num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.global_video_features is not None,
-        **cfg.vivit
     )
 
     tsp_model.to(device)
-    if cfg.distributed and cfg.distributed.sync_bn:
+    if cfg.distributed.on and cfg.distributed.sync_bn:
         tsp_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(tsp_model)
 
     criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)  # label == -1 => missing label
 
     if len(cfg.dataset.label_columns) == 1:
-        fc_params = tsp_model.action_class_fc.parameters()
-    elif len(cfg.label_columns) == 2:
-        fc_params = chain(tsp_model.action_class_fc.parameters(), tsp_model.region_fc.parameters())
+        fc_params = tsp_model.action_fc.parameters()
+    elif len(cfg.dataset.label_columns) == 2:
+        fc_params = chain(tsp_model.action_fc.parameters(), tsp_model.region_fc.parameters())
     else:
         raise NotImplementedError
 
     params = [
         {
             "params": tsp_model.feature_extractor.parameters(),
-            "lr": cfg.tsp.backbone_lr * (cfg.distributed.world_size if cfg.distributed else 1),
+            "lr": cfg.tsp.backbone_lr * (cfg.distributed.world_size if cfg.distributed.on else 1),
             "name": "backbone"
         },
         {
             "params": fc_params,
-            "lr": cfg.tsp.fc_lr * (cfg.distributed.world_size if cfg.distributed else 1),
+            "lr": cfg.tsp.fc_lr * (cfg.distributed.world_size if cfg.distributed.on else 1),
             "name": "fc"
         }
     ]
@@ -249,7 +265,7 @@ def main(args):
 
     # Scheduler per iteration, not per epoch for warmup that lasts
     warmup_iters = cfg.lr_warmup_epochs * len(train_dataloader)
-    lr_milestones = [len(train_dataloader) * m for m in args.lr_milestones]
+    lr_milestones = [len(train_dataloader) * m for m in cfg.lr_milestones]
     lr_scheduler = WarmupMultiStepLR(
         optimizer,
         milestones=lr_milestones,
@@ -259,7 +275,7 @@ def main(args):
     )
 
     model_without_ddp = tsp_model
-    if cfg.distributed:
+    if cfg.distributed.on:
         tsp_model = torch.nn.parallel.DistributedDataParallel(tsp_model, device_ids=[cfg.gpu])
         model_without_ddp = tsp_model.module
 
@@ -289,7 +305,7 @@ def main(args):
     print("Starting training")
     start_time = time.time()
     for epoch in range(cfg.start_epoch, cfg.epochs):
-        if cfg.distributed:
+        if cfg.distributed.on:
             train_sampler.set_epoch(epoch)
             valid_sampler.set_epoch(epoch)
 
@@ -315,7 +331,7 @@ def main(args):
                 'cfg': cfg
             }
 
-            # save by eopch
+            # save by epoch
             utils.torch_save_on_master(
                 checkpoint,
                 os.path.join(cfg.output_dir, f"epoch_{epoch}.pth")

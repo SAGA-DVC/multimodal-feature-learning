@@ -7,12 +7,12 @@ def load_config():
     # Dataset
     cfg.dataset = ml_collections.ConfigDict()
     cfg.dataset.label_mapping_jsons = [
-        "../data/activitynet/activitynet_v1-3_action_label_mapping.json", 
-        "../data/activitynet/activitynet_v1-3_temporal_region_label_mapping.json"
+        "tsp/dataset/activitynet_v1-3_action_label_mapping.json", 
+        "tsp/dataset/activitynet_v1-3_temporal_region_label_mapping.json"
     ]  # Paths to the mappings of each label column
     cfg.dataset.label_columns = ["action-label", "temporal-region-label"]  # Names of the label columns in the CSV files
-    cfg.dataset.train_csv_filename = None  # Path to the training CSV file
-    cfg.dataset.valid_csv_filename = None  # Path to the validation CSV file
+    cfg.dataset.train_csv_filename = "tsp/dataset/activitynet_v1-3_train_tsp_groundtruth.csv"  # Path to the training CSV file
+    cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
 
     #-------------------------------------------------------------------------------------------------
 
@@ -30,8 +30,8 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.vivit.model_name = models[1]
 
-    cfg.vivit.num_frames = 5
-    cfg.vivit.num_patches = 196
+    cfg.vivit.num_frames = 8
+    cfg.vivit.num_patches = 49
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
@@ -88,14 +88,14 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda'
+    cfg.device = 'cpu'
     cfg.gpu = 0
     cfg.data_dir = 'data'  # Path to root directory containing the videos files
     
     # TODO: Better values for these so that working with different datasets or
     # feature extractors is convenient and output isn't inadvertently replaced 
-    cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
-    cfg.valid_subdir = 'valid'  # Validation subdirectory inside the data directory
+    cfg.train_subdir = 'train_30fps'  # Training subdirectory inside the data directory
+    cfg.valid_subdir = 'train_30fps'  # Validation subdirectory inside the data directory
     cfg.output_dir = 'output'  # Path for saving checkpoints and results output  # TODO
 
     cfg.epochs = 8
@@ -111,7 +111,7 @@ def load_config():
     cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     cfg.lr_warmup_factor = 1e-5
 
-    cfg.resume = "PATH/TO/CHECHPOINTS"  # Resume from checkpoint (path specified)
+    cfg.resume = None  # Resume from checkpoint (path specified)
     cfg.start_epoch = 0
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
@@ -128,14 +128,26 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # Distributed Processing  # TODO
-    distributed = True
+    distributed = False
+    cfg.distributed = ml_collections.ConfigDict()
     if distributed:
-        cfg.distributed = ml_collections.ConfigDict()
+        cfg.distributed.on = True
         cfg.distributed.sync_bn = True  # Use sync batch norm
         cfg.distributed.url = "env://"  # URL used to setup dist processing (see init_process_group)
+    else:
+        cfg.distributed.on = False
 
     # Config Assertions
     assert len(cfg.dataset.label_columns) == len(cfg.dataset.label_mapping_jsons), f"Unequal number of label columns ({len(cfg.dataset.label_columns)}) and label mapping JSON files ({len(cfg.dataset.label_mapping_jsons)})"
     assert len(cfg.dataset.label_columns) == len(cfg.tsp.loss_alphas), f"Unequal number of label columns ({len(cfg.dataset.label_columns)}) and loss alphas ({len(cfg.tsp.loss_alphas)})"
+
+    #-------------------------------------------------------------------------------------------------
+    
+    # Wandb (Weights and Biases)
+    cfg.wandb = ml_collections.ConfigDict()
+    cfg.wandb.url = "http://localhost:8080"
+    cfg.wandb.project = "TSP"
+    cfg.wandb.notes = "Test"
+
 
     return cfg

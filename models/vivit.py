@@ -13,8 +13,8 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
 
-from modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
-from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
+from .modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
+from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
 class VideoVisionTransformer(nn.Module):
@@ -134,6 +134,9 @@ class VideoVisionTransformer(nn.Module):
 
         elif weight_init:
             self.init_weights()
+        
+        # TODO: Give this a more apt name
+        self.d_model = d_model
 
     def forward(self, x):
 

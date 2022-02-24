@@ -129,12 +129,21 @@ class UntrimmedVideoDataset(Dataset):
 
     @staticmethod
     def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):
+        # get all available videos from root_dir
+        videos = list(map(lambda video: video, os.listdir(root_dir)))
+        # remove unavailable videos from dataframe
+        df = df.loc[df['filename'].isin(videos)]
+        
         df['filename'] = df['filename'].map(lambda f: os.path.join(root_dir, f))
         filenames = df.drop_duplicates('filename')['filename'].values
         for f in filenames:
-            if not os.path.exists(f):
-                raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
-                                 f'Double-check root_dir and csv_filename inputs.')
+            try:
+                if not os.path.exists(f):
+                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
+                                    f'Double-check root_dir and csv_filename inputs.')
+            except ValueError:
+                # print(f"Video {f} not present")
+                pass
         return df
 
     @staticmethod
