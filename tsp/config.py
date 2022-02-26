@@ -133,7 +133,7 @@ def load_config():
     if distributed:
         cfg.distributed.on = True
         cfg.distributed.sync_bn = True  # Use sync batch norm
-        cfg.distributed.url = "env://"  # URL used to setup dist processing (see init_process_group)
+        cfg.distributed.dist_url = "env://"  # URL used to setup dist processing (see init_process_group)
     else:
         cfg.distributed.on = False
 
