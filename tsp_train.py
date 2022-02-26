@@ -17,13 +17,16 @@ from tsp.lr_scheduler import WarmupMultiStepLR
 from tsp.config import load_config
 from tsp import utils
 
-def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas):
+def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log):
     model.train()
     
     for (batch_idx, batch) in enumerate(dataloader):
         clip = batch['clip'].to(device)
         gvf = batch['gvf'].to(device) if 'gvf' in batch else None
-        targets = [batch[x].to(device) for x in label_columns]  # [(B, 2), (B, c)] (len=2)
+
+        # targets has the class index directly, not one-hot-encoded
+        # See https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html
+        targets = [batch[x].to(device) for x in label_columns]  # [(B, 1), (B, 1)]
         outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
 
         # compute losses
@@ -46,12 +49,13 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
             head_losses=head_losses, 
             label_columns=label_columns, 
             epoch=epoch, 
-            batch_idx=batch_idx
+            batch_idx=batch_idx,
+            wandb_log=wandb_log
         )
 
         lr_scheduler.step()
 
-def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir):
+def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir, wandb_log):
     model.eval()
     
     with torch.no_grad():
@@ -77,12 +81,13 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
                 head_losses=head_losses,
                 label_columns=label_columns,
                 epoch=epoch,
-                batch_idx=batch_idx
+                batch_idx=batch_idx,
+                wandb_log=wandb_log
             )
         
         # TODO: Save results to file, print
 
-def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx):
+def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx, wandb_log=False):
     log = {
         "epoch": epoch,
         "batch": batch_idx,
@@ -94,19 +99,19 @@ def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_co
         head_num_samples = output.shape[0]
 
         if head_num_samples:
-            head_acc = utils.accuracy(output, target, topk=(1,))
+            head_acc = utils.accuracy(output, target, topk=(1,))[0]
             log[f"accuracy_{label_column}"] = head_acc.item()
             log[f"num_samples_{label_column}"] = head_num_samples
 
         log[f"loss_{label_column}"] = head_loss.item()
 
-    wandb.log({
-        f"{phase}/{key}": value
-        for key, value in log
-    })
+    if wandb_log:
+        wandb.log({
+            f"{phase}/{key}": value
+            for key, value in log.items()
+        })
     pprint(log)
     print()
-
 
 
 def main():
@@ -116,9 +121,9 @@ def main():
 
     utils.init_distributed_mode(cfg.distributed)
 
-    # wandb
-    wandb.login(host=cfg.wandb.url)
-    wandb.init(project=cfg.wandb.project, config=cfg.to_dict(), notes=cfg.wandb.notes)
+    if cfg.wandb.on:
+        wandb.login(host=cfg.wandb.url)
+        wandb.init(project=cfg.wandb.project, config=cfg.to_dict(), notes=cfg.wandb.notes)
 
     device = torch.device(cfg.device)
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -139,7 +144,7 @@ def main():
         mean=[0.43216, 0.394666, 0.37645], 
         std=[0.22803, 0.22145, 0.216989])
 
-    resize = torchvision.transforms.Resize((128, 171))
+    resize = torchvision.transforms.Resize(256)  # As used in ViViT
 
     train_transform = torchvision.transforms.Compose([
         float_zero_to_one,
@@ -148,7 +153,7 @@ def main():
         torchvision.transforms.RandomHorizontalFlip(),
         normalize,
         torchvision.transforms.Lambda(lambda video: video.permute(1, 0, 2, 3)),
-        torchvision.transforms.RandomCrop((112, 112))
+        torchvision.transforms.RandomCrop((cfg.vivit.img_size, cfg.vivit.img_size))
     ])
 
     train_dataset = UntrimmedVideoDataset(
@@ -171,7 +176,7 @@ def main():
         resize,
         normalize,
         torchvision.transforms.Lambda(lambda video: video.permute(1, 0, 2, 3)),
-        torchvision.transforms.CenterCrop((112, 112))
+        torchvision.transforms.CenterCrop((cfg.vivit.img_size, cfg.vivit.img_size))
     ])
 
     valid_dataset = UntrimmedVideoDataset(
@@ -298,7 +303,8 @@ def main():
             print_freq=cfg.print_freq,
             label_columns=cfg.dataset.label_columns,
             loss_alphas=cfg.tsp.loss_alphas,
-            output_dir=cfg.output_dir
+            output_dir=cfg.output_dir,
+            wandb_log=cfg.wandb.on
         )
         return
 
@@ -319,7 +325,8 @@ def main():
             epoch=epoch,
             print_freq=cfg.print_freq,
             label_columns=cfg.dataset.label_columns,
-            loss_alphas=cfg.tsp.loss_alphas
+            loss_alphas=cfg.tsp.loss_alphas,
+            wandb_log=cfg.wandb.on
         )
 
         if cfg.output_dir:
@@ -355,7 +362,8 @@ def main():
                 print_freq=cfg.print_freq,
                 label_columns=cfg.dataset.label_columns,
                 loss_alphas=cfg.tsp.loss_alphas,
-                output_dir=cfg.output_dir
+                output_dir=cfg.output_dir,
+                wandb_log=cfg.wandb.on
             )
 
     total_time = time.time() - start_time

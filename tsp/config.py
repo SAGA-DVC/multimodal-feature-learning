@@ -31,7 +31,7 @@ def load_config():
     cfg.vivit.model_name = models[1]
 
     cfg.vivit.num_frames = 8
-    cfg.vivit.num_patches = 49
+    cfg.vivit.num_patches = 196
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
@@ -43,8 +43,8 @@ def load_config():
     cfg.vivit.in_channels = 3
     cfg.vivit.d_model = 768
 
-    cfg.vivit.depth = 12
-    cfg.vivit.temporal_depth = 4
+    cfg.vivit.depth = 2
+    cfg.vivit.temporal_depth = 1
 
     cfg.vivit.num_heads = 12
     cfg.vivit.mlp_ratio = 4
@@ -61,8 +61,8 @@ def load_config():
     cfg.vivit.classification_head = False
     cfg.vivit.num_classes = 1000
 
-    cfg.vivit.return_preclassifier = True  # Required for TSP
-    cfg.vivit.return_prelogits = False
+    cfg.vivit.return_preclassifier = False
+    cfg.vivit.return_prelogits = True  # Required for TSP
 
     cfg.vivit.weight_init = False
     cfg.vivit.weight_load = True
@@ -145,6 +145,7 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
+    cfg.wandb.on = False
     cfg.wandb.url = "http://localhost:8080"
     cfg.wandb.project = "TSP"
     cfg.wandb.notes = "Test"

@@ -175,25 +175,27 @@ class VideoVisionTransformer(nn.Module):
         if self.return_preclassifier :
             return x 
 
-        # (batch_size, num_frames * num_patches + 1, d_model) -> (batch_size, 1, d_model) OR
-        # (batch_size, num_frames * num_patches + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        # (batch_size, num_frames * num_patches + 1, d_model) -> (batch_size, d_model) OR
+        # (batch_size, num_frames * num_patches + 2, d_model) -> (batch_size, d_model) AND (batch_size, d_model)
         if self.model_name == 'spatio temporal attention': 
             if self.distilled:
                 x_dist = torch.unsqueeze(x[:, 1], 1)
             x = x[:, 0]
         
-        # (batch_size, num_frames + 1, d_model) -> (batch_size, 1, d_model) OR
-        # (batch_size, num_frames + 2, d_model) -> (batch_size, 1, d_model) AND (batch_size, 1, d_model)
+        # (batch_size, num_frames + 1, d_model) -> (batch_size, d_model) OR
+        # (batch_size, num_frames + 2, d_model) -> (batch_size, d_model) AND (batch_size, d_model)
         elif self.model_name == 'factorised encoder':
             if self.distilled:
                 x_dist = torch.unsqueeze(x[:, 1], 1)
             x = x[:, 0]
 
-        # (batch_size, num_frames, num_patches, d_model) -> (batch_size, 1, d_model)
+        # (batch_size, num_frames, num_patches, d_model) -> (batch_size, d_model)
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention':
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_tokens, d_model)
             x = x.mean(dim=1)
         
+        elif self.return_prelogits:
+            return x  # (batch_size, d_model)
 
         if self.distilled:
             if self.classification_head:
@@ -206,7 +208,7 @@ class VideoVisionTransformer(nn.Module):
                 return x, x_dist # test time (x + x_dist) / 2
             
             else:
-                return x, x_dist # (batch_size, 1, d_model)
+                return x, x_dist # (batch_size, d_model)
             
         
         else:
@@ -216,7 +218,7 @@ class VideoVisionTransformer(nn.Module):
                 return x
 
             else:
-                return x # (batch_size, 1, d_model)
+                return x # (batch_size, d_model)
 
 
     def init_weights(self):
