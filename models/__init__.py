@@ -1,10 +1,10 @@
 import sys
-sys.path.insert(0, '..')
+# sys.path.insert(0, '..')
 
 import torch
-from dvc import DVC
-from matcher import build_matcher
-from criterion import SetCriterion
+from .dvc import DVC
+from .matcher import build_matcher
+from .criterion import SetCriterion
 from config.config_dvc import load_config
 
 
@@ -13,8 +13,7 @@ def build_model_and_criterion(args):
     device = torch.device(args.device)
 
     model = DVC(model_name=args.model_name, 
-                num_frames=args.num_frames, 
-                num_patches=args.num_patches, 
+                num_frames_in=args.num_frames_in, 
                 img_size=args.img_size, 
                 spatial_patch_size=args.spatial_patch_size, 
                 temporal_patch_size=args.temporal_patch_size,
@@ -61,7 +60,6 @@ def build_model_and_criterion(args):
 
     criterion = SetCriterion(num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
                              eos_coef=args.eos_coef, losses=losses)
-    criterion.to(device)
 
     # # postprocessors = {'bbox': PostProcess(args)}
 

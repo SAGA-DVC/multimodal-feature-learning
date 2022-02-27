@@ -9,13 +9,27 @@ from typing import Iterable
 from collections import defaultdict
 
 import torch
-
+from torch.nn.utils import clip_grad_norm_
 from utils.misc import MetricLogger, SmoothedValue, reduce_dict
 
 
-def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
-                    data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0):
+def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, max_norm=0):
+    
+    """
+    Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
+
+    Parameters:
+        `model` (torch.nn.Module) : Model to be trained
+        `criterion` (torch.nn.Module) : Losses used to train the model
+        `data_loader` (Iterable) : DataLoader for the associated dataset (ActivityNet)
+        `optimizer` (torch.optim.Optimizer) : Optimizer fused to train the model
+        `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
+        `epoch` (int) : Epoch number
+        `max_norm` (float) : max norm of the gradients. Used for gradient clipping.
+    
+    Returns: dictionary with keys as all the losses calculated by the criterion and values as their corresponding global average across all devices.
+    """
+
     model.train()
     criterion.train()
 
@@ -56,7 +70,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         optimizer.zero_grad()
         losses.backward()
         if max_norm > 0:
-            torch.nn.clip_grad_norm_(model.parameters(), max_norm)
+            clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)

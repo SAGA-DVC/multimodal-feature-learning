@@ -26,7 +26,6 @@ class TokenEmbedding(nn.Module):
         
         super(TokenEmbedding, self).__init__()
 
-        self.num_patches = (img_size // spatial_patch_size) ** 2
         self.temporal_patch_size = temporal_patch_size
 
         self.project_to_patch_embeddings = nn.Conv3d(in_channels, d_model, 
@@ -330,6 +329,7 @@ class FFN(nn.Module):
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([in_dim] + h, h + [out_dim]))
+        self.relu = nn.ReLU()
 
     def forward(self, x):
 
@@ -345,7 +345,7 @@ class FFN(nn.Module):
         """
 
         for i, layer in enumerate(self.layers):
-            x = nn.ReLU(layer(x)) if i < self.num_layers - 1 else layer(x)
+            x = self.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
 

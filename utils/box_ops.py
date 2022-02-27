@@ -1,14 +1,32 @@
 import torch
 
 def segment_cl_to_xy(x):
-    c, l = x.unbind(-1)
-    s = [c - 0.5 * l, c + 0.5 * l]
+    """
+    Converts the input segment's coordinates from (centre_offset, length) to (x, y)
+
+    Paramteres:
+        x : Tensor of dimension (N, 2)
+    
+    Returns: Tensor of dimention (N, 2)
+    """
+    
+    c, l = x.unbind(-1)  # (N, 1), (N, 1)
+    s = [c - 0.5 * l, c + 0.5 * l] # [(N, 1), (N, 1)]
     return torch.stack(s, dim=-1) # (N, 2)
 
 
 def segment_xy_to_cl(x):
-    x0, x1 = x.unbind(-1)
-    s = [(x0 + x1) / 2, (x1 - x0)]
+    """
+    Converts the input segment's coordinates from (x, y) to (centre_offset, length)
+
+    Paramteres:
+        x : Tensor of dimension (N, 2)
+    
+    Returns: Tensor of dimention (N, 2)
+    """
+
+    x, y = x.unbind(-1) # (N, 1), (N, 1)
+    s = [(x + y) / 2, (y - x)] # [(N, 1), (N, 1)]
     return torch.stack(s, dim=-1) # (N, 2)
 
 
@@ -32,7 +50,7 @@ def box_iou(segment1, segment2):
 def generalized_box_iou(segment1, segment2):
     """
     Generalized IoU from https://giou.stanford.edu/
-    The boxes should be in [x0, y0, x1, y1] format
+    The boxes should be in [x, y] format
     Returns a [N, M] pairwise matrix, where N = len(segment1)
     and M = len(segment2)
     """

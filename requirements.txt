@@ -1,0 +1,7 @@
+###### Requirements without Version Specifiers ######
+ml-collections
+av
+timm
+pytorchvideo
+
+###### Requirements with Version Specifiers ######

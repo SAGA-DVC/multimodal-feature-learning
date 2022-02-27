@@ -242,7 +242,7 @@ class MetricLogger(object):
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print('{} Total time: {} ({:.4f} s / it)'.format(
+        print('{} Total time: {} ({:.4f} s / epoch)'.format(
             header, total_time_str, total_time / len(iterable)))
 
 
@@ -414,10 +414,10 @@ def init_distributed_mode(args):
         args.gpu = args.rank % torch.cuda.device_count()
     else:
         print('Not using distributed mode')
-        args.distributed = False
+        args.is_distributed = False
         return
 
-    args.distributed = True
+    args.is_distributed = True
 
     torch.cuda.set_device(args.gpu)
     args.dist_backend = 'nccl'
@@ -431,20 +431,31 @@ def init_distributed_mode(args):
 
 @torch.no_grad()
 def accuracy(output, target, topk=(1,)):
-    """Computes the precision@k for the specified values of k"""
+    """
+    Computes the precision@k for the specified values of k
+    
+    Parameters:
+        `output` : Tensor of dimension (nb_target_segments, num_classes)
+        `target` : Tensor of dimension (nb_target_segments)
+        `topk` (tuple) : Determines what accuracy to calculate. Use top-1 accuracy for now.
+    
+    Returns:
+        res (list): len=len(topk) representing the precision@k for the specified values of k
+    """
+
     if target.numel() == 0:
         return [torch.zeros([], device=output.device)]
     maxk = max(topk)
-    batch_size = target.size(0)
+    nb_target_segments = target.size(0)
 
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    _, pred = output.topk(maxk, 1, True, True) # (nb_target_segments, maxk)
+    pred = pred.t() # (maxk, nb_target_segments)
+    correct = pred.eq(target.view(1, -1).expand_as(pred)) # (maxk, nb_target_segments) -- boolean
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
-        res.append(correct_k.mul_(100.0 / batch_size))
+        correct_k = correct[:k].view(-1).float().sum(0) # sum all elements that are True i.e. those which match with the targets
+        res.append(correct_k.mul_(100.0 / nb_target_segments))
     return res
 
 

@@ -13,8 +13,8 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
 
-from modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
-from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
+from .modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
+from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
 class VideoVisionTransformer(nn.Module):
@@ -31,8 +31,7 @@ class VideoVisionTransformer(nn.Module):
   
         Parameters:
             `model_name` (string): One of 'spatio temporal attention', 'factorised encoder', 'factorised self attention' or 'factorised dot product attention'
-            `num_frames` (int): Number of frames in the input video
-            `num_patches` (int): Number of patches per frame in the input video
+            `num_frames` (int): Number of frames of the input video used by the transformer after the token_embedding_layer
             `img_size` (int): dimension of one frame of the video (should be a square i.e. height=width) (default 224)
             `spatial_patch_size` (int): dimension of the patch that will be used to convolve over a frame (default 16)
             `temporal_patch_size` (int): dimension of the patch that will be used to convolve over multiple frames (default 1)
@@ -65,8 +64,14 @@ class VideoVisionTransformer(nn.Module):
 
         self.model_name = model_name
         self.d_model = d_model
+
+        self.img_size = img_size
+        self.spatial_patch_size = spatial_patch_size
+        self.temporal_patch_size = temporal_patch_size
+        
         self.num_frames = num_frames
-        self.num_patches = num_patches # remove num_patches as parameter later and replace with img_size//spatial_patch_size
+        self.num_patches = num_patches
+
         self.tokenization_method = tokenization_method
 
         self.num_classes = num_classes
@@ -125,14 +130,15 @@ class VideoVisionTransformer(nn.Module):
                         if distilled is True, two Tensors of the above dimension would be returned
         """
 
-        x = self.token_embeddings_layer(x) # (batch_size, num_frames, num_patches, d_model)
+        batch_size, in_channels, num_frames_in, height, width = x.shape
 
-        batch_size, num_frames, num_patches, d_model = x.shape
-        
+        assert height == width, f"height and width should be the same i.e. {self.img_size}. You have height={height} and width={width}."
+        img_size = height
 
-        assert self.num_frames == num_frames, f"number of frames should be equal to {self.num_frames}. You have num_frames={num_frames}. Adjust the video dimensions or patch sizes accordingly."
+        assert self.num_frames == num_frames_in // self.temporal_patch_size, f"number of frames in the input video should be equal to {self.num_frames * self.temporal_patch_size}. You have number of frames={num_frames_in}."
+        assert self.num_patches == (img_size // self.spatial_patch_size) ** 2, f"image size should be equal to {self.img_size}. You have image size={img_size}."
 
-        assert self.num_patches == num_patches, f"number of patches should be equal to {self.num_patches}. You have num_patches={num_patches}. Adjust the video dimensions or patch sizes accordingly."               
+        x = self.token_embeddings_layer(x) # (batch_size, num_frames, num_patches, d_model)              
 
         # (batch_size, num_frames * num_patches, d_model) OR
         # (batch_size, num_frames, d_model) OR 

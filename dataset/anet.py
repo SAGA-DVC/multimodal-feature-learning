@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, '../config')
+# sys.path.insert(0, '../config')
 
 import os
 import json
@@ -11,11 +11,11 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_video
 from torchvision import transforms
 
-from config_dvc import load_config
+from config.config_dvc import load_config
 
 
 class DVCdataset(Dataset):
@@ -56,6 +56,9 @@ class DVCdataset(Dataset):
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
         print(f'{len(self.keys)} videos are present in the dataset.')
+
+        # for testing purposes (remove later)
+        self.keys = self.keys[:2]
 
         self.video_folder = video_folder
         self.feature_sample_rate = args.feature_sample_rate
@@ -107,7 +110,7 @@ class ActivityNet(DVCdataset):
 
         Parameters:
             `annotation_file` (string) : path to json file consisting of a an object with the following format 
-                                {video_id : {"duration": 82.73, 
+                                {video_id : {"duration": total_time, 
                                             "timestamps": [[start_time_1, end_time_1], [start_time_2, end_time_2], [start_time_3, end_time_3]], 
                                             "sentences": [sentence_1, sentence_2, sentence_3],
                                             "action_labels" : [label_1, label_2, label_3]
@@ -169,7 +172,7 @@ class ActivityNet(DVCdataset):
         key = self.keys[idx] # string
 
         feature = self.load_feature(key) # (num_frames, height, width, num_channels) 
-        feature = self.transforms_fn(feature)
+        feature = self.transforms_fn(feature) # (num_frames, num_channels, img_size, img_size)
 
         duration = self.annotation[key]['duration'] # float
         captions = self.annotation[key]['sentences'] # [gt_target_segments] -- list of strings
@@ -300,7 +303,8 @@ def resizeFeature(input_data, new_size):
     f = interp1d(x, input_data, axis=0, kind='nearest')
     x_new = [i * float(originalSize - 1) / (new_size - 1) for i in range(new_size)]
     y_new = f(x_new)
-    return y_new
+
+    return torch.from_numpy(y_new)
 
 
 def iou(interval_1, interval_2):
@@ -327,7 +331,7 @@ def collate_fn(batch):
     Parameters:
         `batch` : list of shape (batch_size, 8) {8 attributes}
     Attributes
-        `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, height, width, num_channels) representing the video (RGB)
+        `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
         `gt_timestamps_list` (list, int): [batch_size, gt_target_segments, 2], representing the start and end frames of the events in the video 
         `action_labels` (list, int): [batch_size, gt_target_segments] representing class labels for each event in the video 
         `caption_list` (list, int): [batch_size, gt_target_segments, max_caption_len] representing the token labels for the caption of each event in the video
@@ -341,8 +345,8 @@ def collate_fn(batch):
     """
 
     batch_size = len(batch)
-    _, height, width, num_channels = batch[0][0].shape
-
+    _, num_channels, height, width = batch[0][0].shape
+    
     feature_list, gt_timestamps_list, action_labels, caption_list, gt_raw_timestamps, raw_duration, raw_caption, key = zip(*batch)
 
     max_video_length = max([x.shape[0] for x in feature_list]) 
@@ -351,7 +355,7 @@ def collate_fn(batch):
 
     gt_timestamps = list(chain(*gt_timestamps_list)) # (batch_size * gt_target_segments, 2) {dim 0 is an avg value}
 
-    video_tensor = torch.FloatTensor(batch_size, max_video_length, height, width, num_channels).zero_()
+    video_tensor = torch.FloatTensor(batch_size, max_video_length, num_channels, height, width).zero_()
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
 
@@ -371,7 +375,7 @@ def collate_fn(batch):
 
         gt_segment_length = len(gt_timestamps_list[idx])
 
-        video_tensor[idx, :video_len] = torch.from_numpy(feature_list[idx])
+        video_tensor[idx, :video_len] = feature_list[idx]
         video_length[idx, 0] = float(video_len)
         video_length[idx, 1] = raw_duration[idx]
         video_length[idx, 2] = gt_segment_length
@@ -403,7 +407,7 @@ def collate_fn(batch):
     obj = {
         "video":
             {
-                "tensor": video_tensor.permute(0, 4, 1, 2, 3),  # (batch_size, num_channels, max_video_length, height, width)
+                "tensor": video_tensor.permute(0, 2, 1, 3, 4),  # (batch_size, num_channels, max_video_length, height, width)
                 "length": video_length, # (batch_size, 3) - num_frames, duration, gt_target_segments
                 "mask": video_mask,  # (batch_size, max_video_length)
                 "key": list(key),  # list, (batch_size)
@@ -442,48 +446,59 @@ def build_dataset(video_set, args):
         `args` (ml_collections.ConfigDict) :  Configuration object for the dataset
     """
     
-    root = Path(args.anet_path)
-    assert root.exists(), f'Provided ActivityNet path {root} does not exist.'
+    root_annotation = Path(args.anet_path)
+    root_video = Path(args.video_folder)
+
+    assert root_annotation.exists(), f'Provided ActivityNet path {root_annotation} does not exist.'
+    assert root_video.exists(), f'Provided ActivityNet video folder path {root_video} does not exist.'
     
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
-    PATHS = {
-        "train": (root / 'train.json'),
-        "val": (root / 'val.json'),
+
+    PATHS_ANNOTATION = {
+        "train": (root_annotation / 'train.json'),
+        "val": (root_annotation / 'val_1.json'),
+    }
+    PATHS_VIDEO = {
+        "train": (root_video / 'train'),
+        "val": (root_video / 'val'),
     }
 
-    annotation_file = PATHS[video_set]
+    annotation_file = PATHS_ANNOTATION[video_set]
+    video_folder = PATHS_VIDEO[video_set]
 
-    float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255)
-    permute_frames_and_channels = transforms.Lambda(lambda video: video.permute(1, 0, 2, 3))
+    # (num_frames, height, width, num_channels) -> (num_frames, num_channels, height, width)
+    float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255) 
+
+    # permute_frames_and_channels = transforms.Lambda(lambda video: video.permute(1, 0, 2, 3))
 
     normalize = transforms.Normalize(
         mean=[0.43216, 0.394666, 0.37645], 
         std=[0.22803, 0.22145, 0.216989])
 
-    resize = transforms.Resize((128, 171))
+    resize = transforms.Resize((256))
 
     train_transform = transforms.Compose([
         float_zero_to_one,
         resize,
         transforms.RandomHorizontalFlip(),
         normalize,
-        permute_frames_and_channels,
-        transforms.RandomCrop((112, 112))
+        # permute_frames_and_channels,
+        transforms.RandomCrop((224, 224))
     ])
 
     val_transform = transforms.Compose([
         float_zero_to_one,
         resize,
         normalize,
-        permute_frames_and_channels,
-        transforms.CenterCrop((112, 112))
+        # permute_frames_and_channels,
+        transforms.CenterCrop((224, 224))
     ])
 
     transforms_fn = train_transform if video_set == 'train' else val_transform
     
 
     dataset = ActivityNet(annotation_file = annotation_file, 
-                          video_folder = args.video_folder,
+                          video_folder = video_folder,
                           transforms_fn = transforms_fn,
                           tokenizer_json = args.tokenizer_json,
                           is_training = (video_set == 'train'),
@@ -494,6 +509,12 @@ def build_dataset(video_set, args):
 if __name__ == '__main__':
     args = load_config()
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
+    sampler_train = torch.utils.data.RandomSampler(dataset_train)
+    batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
-    for obj in dataset_train:
-        print('done')
+    data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
+                                   collate_fn=collate_fn, num_workers=args.num_workers)
+
+    for obj in data_loader_train:
+        print(obj.keys())
+

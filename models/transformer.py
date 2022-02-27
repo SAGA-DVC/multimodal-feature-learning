@@ -7,14 +7,14 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from vivit import VideoVisionTransformer
-from decoder import Decoder
-from modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
-from load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
+from .vivit import VideoVisionTransformer
+from .decoder import Decoder
+from .modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
+from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
 class Transformer(nn.Module):
-    def __init__(self, model_name, num_frames, num_patches, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
+    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, num_classes=None,
@@ -26,6 +26,9 @@ class Transformer(nn.Module):
         """
 
         super(Transformer, self).__init__()
+        
+        num_frames = num_frames_in // temporal_patch_size
+        num_patches = (img_size // spatial_patch_size) ** 2
         
         self.positional_embedding_layer = None
         self.spatial_positional_embedding_layer = None
@@ -98,13 +101,13 @@ class Transformer(nn.Module):
   
         Parameters:
             x (tensor): Tensor of dimension (batch_size, in_channels, num_frames, img_size, img_size)
-            query_embedding (tensor): event queries, Tensor of dimension (batch_size, num_tokens, d_model)
+            query_embedding (tensor): event queries, Tensor of dimension (num_queries, d_model)
         
         Returns:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            x (tensor): Tensor of dimension (batch_size, 1, num_tokens, d_model) OR # (batch_size, depth, num_tokens, d_model)
         """
 
-        query_embedding = query_embedding.unsqueeze(0).repeat(x.shape[0], 1, 1)
+        query_embedding = query_embedding.unsqueeze(0).repeat(x.shape[0], 1, 1) # (batch_size, num_queries, d_model)
         target = torch.zeros_like(query_embedding)
 
         # (batch_size, num_frames * num_patches, d_model) OR
@@ -116,10 +119,10 @@ class Transformer(nn.Module):
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
             x = x.reshape(x.shape[0], -1, x.shape[-1])
 
-        # (batch_size, 1, num_tokens, d_model) OR # (batch_size, depth, num_tokens, d_model)
+        # (1, batch_size, num_tokens, d_model) OR # (depth, batch_size, num_tokens, d_model)
         x = self.decoder(target=target, memory=x, 
                         positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding)
-        
+
         return x
     
 

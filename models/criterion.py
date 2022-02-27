@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from utils.box_ops import segment_cl_to_xy, segment_xy_to_cl, generalized_box_iou, box_iou 
 from utils.misc import accuracy, is_dist_avail_and_initialized, get_world_size
 
-from dvc import DVC
-from matcher import build_matcher
+from .dvc import DVC
+from .matcher import build_matcher
 
 
 class SetCriterion(nn.Module):
@@ -52,23 +52,35 @@ class SetCriterion(nn.Module):
         """
         Classification loss (Negative Log Likelihood)
             targets dicts must contain the key "labels" containing a tensor of dim [nb_target_segments]
+        
+        Parameters:
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+            `log` (boolean) : If True, 'class_error' is also calculated and returned.
+        
+        Returns: dict {loss : value} where loss can be 'labels' and/or 'class_error'.
         """
         
-        assert 'pred_logits' in outputs
+        assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
+
         src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes {+ 1??})
 
-        # (nb_target_segments) contains batch numbers AND (nb_target_segments) contains target indices of matcher
-        # eg. [0, 0, 0,   1, 1] AND [2, 0, 1,   1, 0] 
+        # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
+        # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
+        # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
         idx = self._get_src_permutation_idx(indices) 
 
-        # (nb_target_segments) contains class labels
-        # eg. [6, 9, 25,   4, 7] (based on above eg - each index represents a class in its batch)
+        # tensor (nb_target_segments) contains class labels
+        # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
 
-        # (batch_size, num_queries)
+        # (batch_size, num_queries) where all elements have a value of self.num_classes
         target_classes = torch.full(src_logits.shape[:2], self.num_classes,
                                     dtype=torch.int64, device=src_logits.device)
         
+        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
         target_classes[idx] = target_classes_o
 
         # used in detr
@@ -91,7 +103,8 @@ class SetCriterion(nn.Module):
 
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
+            # only takes top-1 accuracy for now
+            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0] 
 
         return losses
 
@@ -101,10 +114,19 @@ class SetCriterion(nn.Module):
 
         """ 
         Compute the cardinality error, ie the absolute error in the number of predicted non-empty segments
-        This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
+        This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients.
+
+        Parameters:
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+        
+        Returns: dict {loss : value} where loss is 'cardinality_error'.
         """
 
-        pred_logits = outputs['pred_logits']
+        assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
+        pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes {+ 1??})
         device = pred_logits.device
 
         tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets], device=device) # (batch_size)
@@ -122,33 +144,40 @@ class SetCriterion(nn.Module):
     def loss_segments(self, outputs, targets, indices, num_segments):
 
         """
-        Compute the losses related to the bounding segments, the L1 regression loss and the GIoU loss
-           targets dicts must contain the key "segments" containing a tensor of dim [nb_target_segments, 2]
-           The target segments are expected in format (center, length), normalized by the video duration.
+        Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss.
+        targets dicts must contain the key "segments" containing a tensor of dim [nb_target_segments, 2]
+        The target segments are expected in format (center_offset, length), normalized by the video duration.
+        
+        Parameters:
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+        
+        Returns: dict {loss : value} where loss can be 'loss_bbox' or 'loss_giou'.
         """
 
-        assert 'pred_segments' in outputs
+        assert 'pred_segments' in outputs, "Outputs does not have the key 'pred_segments'."
 
-        # (nb_target_segments) contains batch numbers AND (nb_target_segments) contains target indices of matcher
-        # eg. [0, 0, 0,   1, 1] AND [2, 0, 1,   1, 0] 
+        # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
+        # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
+        # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
         idx = self._get_src_permutation_idx(indices)
 
         # (nb_target_segments, 2)
         src_segments = outputs['pred_segments'][idx]
 
         # (nb_target_segments, 2) contains segment coordinates
-        # eg. [6, 9, 25,   4, 7] (based on above eg - each index represents a class in its batch)
         target_segments = torch.cat([t['segments'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
+        # (nb_target_segments)
         loss_bbox = F.l1_loss(src_segments, target_segments, reduction='none')
 
         losses = {}
         losses['loss_bbox'] = loss_bbox.sum() / num_segments
 
-        # (nb_target_segments)
-        loss_giou = 1 - torch.diag(generalized_box_iou(
-            segment_cl_to_xy(src_segments),
-            segment_cl_to_xy(target_segments)))
+        # (nb_target_segments, nb_target_segments) -> (nb_target_segments)
+        loss_giou = 1 - torch.diag(generalized_box_iou(segment_cl_to_xy(src_segments), segment_cl_to_xy(target_segments)))
 
         losses['loss_giou'] = loss_giou.sum() / num_segments
 
@@ -183,6 +212,21 @@ class SetCriterion(nn.Module):
         return batch_idx, tgt_idx
 
     def get_loss(self, loss, outputs, targets, indices, num_segments, **kwargs):
+
+        """
+        Calculates a specific loss of the outputs w.r.t. the targets. 
+        The losses include classification loss, cardinality loss and segment loss
+        
+        Parameters:
+            `loss` (string) : Determines the loss to be calculated. Can be one of 'labels', 'cardinality' or 'segments'.
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+        
+        Returns: dict {loss : value} where loss is the one of 'labels', 'cardinality' or 'segments'.
+        """
+
         loss_map = {
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
@@ -196,15 +240,34 @@ class SetCriterion(nn.Module):
         """ 
         This performs the loss computation.
         Parameters:
-             outputs: dict of tensors, see the output specification of the model for the format
-             targets: list of dicts, such that len(targets) == batch_size.
-                      The expected keys in each dict depends on the losses applied, see each loss' doc
+            outputs: dict of tensors
+                    - "pred_logits": the classification logits (including no-object) for all queries
+                                    shape (batch_size, num_queries, num_classes + 1)
+                    - "pred_segments": The normalized segments for all queries, represented as
+                                    (center_offset, length). Shape (batch_size, num_queries, 2)
+                    - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
+                                    dictionaries containing the two above keys for each decoder layer.
+
+            targets: list of dicts, such that len(targets) == batch_size. Each dict constains:
+                    - "segments": Tensor of dimension (max_gt_target_segments, 2) representing center and length of the segments
+                    - "labels": Tensor of dimension (max_gt_target_segments) representing action labels/classes
+                    - "masks": 
+                    - "vid_id": string represeting unique video id
+        
+        Returns:
+            losses: dict consisting of the following items
+                    - "loss_ce": (float) cross entropy loss
+                    - "class_error": (float) classification error based on accuracy of ...
+                    - "cardinality_error": (float) based on number of predicted non-empty segments
+                    - "loss_bbox": (float) bounding box loss
+                    - "loss_giou": (float) general intersection over union loss
         """
         
         outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets)
+        # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+        indices = self.matcher(outputs_without_aux, targets) 
 
         # Compute the average number of target segments accross all nodes, for normalization purposes
         num_segments = sum(len(t["labels"]) for t in targets)

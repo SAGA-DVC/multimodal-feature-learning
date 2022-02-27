@@ -22,13 +22,15 @@ def assert_tensors_equal(t1, t2):
 
 cfg = load_config()
 
-model_name = cfg.pretrained_models.vit
-model_official = timm.create_model(model_name, pretrained=True)
-model_official.eval()
+# model_name = cfg.pretrained_models.vit
+# model_official = timm.create_model(model_name, pretrained=True)
+# model_official.eval()
+model_official = None
 
 
 model_custom = Transformer(**cfg.transformer, model_official=model_official)
 model_custom.eval()
+print('done')
 
 query_embedding = torch.rand(100, 768)
 vid = torch.rand(1, 3, 10, 224, 224)
@@ -42,7 +44,7 @@ vid = torch.rand(1, 3, 10, 224, 224)
 #     print(f"{name_official} , {parameter_official.shape}")
 
 
-dataset, loader = get_kinetics(**cfg.dataset.kinetics)
+# dataset, loader = get_kinetics(**cfg.dataset.kinetics)
 
 
 start_time = time.time()

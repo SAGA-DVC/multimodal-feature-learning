@@ -7,7 +7,6 @@ def load_config():
     # General
     cfg.seed = 0
     cfg.device = 'cuda'
-    cfg.is_distributed = True
 
     cfg.batch_size = 2
     cfg.num_workers = 2
@@ -17,9 +16,9 @@ def load_config():
     cfg.weight_decay = 1e-4
     
     cfg.output_dir = 'output'
-    cfg.resume = 'PATH/TO/CHECHPOINTS'
+    cfg.resume = None
     cfg.start_epoch = 0
-    cfg.epochs = 5
+    cfg.epochs = 2
     cfg.clip_max_norm = 0.1
 
 
@@ -31,18 +30,18 @@ def load_config():
     # ActivityNet
     cfg.dataset.activity_net = ml_collections.ConfigDict()
 
-    cfg.dataset.activity_net.anet_path = '/home/arnav/Documents/projects/multimodal-feature-learning/data'
-    cfg.dataset.activity_net.video_folder = '/home/arnav/Documents/projects/multimodal-feature-learning/data/anet'
-    cfg.dataset.activity_net.invalid_videos_json = None
+    cfg.dataset.activity_net.anet_path = '../activity-net/captions'
+    cfg.dataset.activity_net.video_folder = '../activity-net/splits'
+    cfg.dataset.activity_net.invalid_videos_json = '../activity-net/captions/invalid_ids.json'
 
-    cfg.dataset.activity_net.tokenizer_json = '/home/arnav/Documents/projects/multimodal-feature-learning/data/tokenizer.json'
+    cfg.dataset.activity_net.tokenizer_json = '../activity-net/captions/tokenizer.json'
 
     cfg.dataset.activity_net.max_caption_len = 30
     cfg.dataset.activity_net.vocab_size = 5747
     
     cfg.dataset.activity_net.feature_sample_rate = 2
-    cfg.dataset.activity_net.data_rescale = False
-    cfg.dataset.activity_net.frame_rescale_len = 100
+    cfg.dataset.activity_net.data_rescale = True
+    cfg.dataset.activity_net.frame_rescale_len = 10
     cfg.dataset.activity_net.data_norm = False
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
@@ -55,24 +54,18 @@ def load_config():
     cfg.dataset.kinetics.kinetics_root = '../data/sample'
     cfg.dataset.kinetics.num_temporal_samples = 10
     cfg.dataset.kinetics.frame_size = (224, 224)
-    cfg.dataset.kinetics.batch_size = 3
+    cfg.dataset.kinetics.batch_size = 1
 
     #-------------------------------------------------------------------------------------------------
     # Distributed training
-    if cfg.is_distributed:
-        cfg.distributed = ml_collections.ConfigDict()
-        cfg.distributed.rank = 0
-        cfg.distributed.world_size = 1
-        cfg.distributed.gpu = 0
-        cfg.distributed.device = 'cuda'
-        cfg.distributed.dist_backend = 'nccl'
-        cfg.distributed.dist_url = 'env://'
-        
-
-    #-------------------------------------------------------------------------------------------------
-    # DVC model
-
-
+    cfg.distributed = ml_collections.ConfigDict()
+    cfg.distributed.is_distributed = True
+    cfg.distributed.rank = 0
+    cfg.distributed.world_size = 1
+    cfg.distributed.gpu = 0
+    cfg.distributed.device = 'cuda'
+    cfg.distributed.dist_backend = 'nccl'
+    cfg.distributed.dist_url = 'env://'
 
 
     #-------------------------------------------------------------------------------------------------
@@ -88,8 +81,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.dvc.model_name = models[0]
 
-    cfg.dvc.num_frames = 5
-    cfg.dvc.num_patches = 196
+    cfg.dvc.num_frames_in = 10
     cfg.dvc.img_size = 224
 
     cfg.dvc.spatial_patch_size = 16
@@ -101,7 +93,7 @@ def load_config():
     cfg.dvc.in_channels = 3
     cfg.dvc.d_model = 768
 
-    cfg.dvc.depth = 12
+    cfg.dvc.depth = 2
     cfg.dvc.temporal_depth = 4
 
     cfg.dvc.num_heads = 12
@@ -126,11 +118,11 @@ def load_config():
     cfg.dvc.weight_init = True
     cfg.dvc.weight_load = False
 
-    cfg.dvc.cost_class = 1, 
-    cfg.dvc.cost_segment = 1, 
-    cfg.dvc.cost_giou = 1,
-    cfg.dvc.cost_alpha = 0.25,
-    cfg.dvc.cost_gamma = 2
+    cfg.dvc.cost_class = 1 
+    cfg.dvc.cost_segment = 1 
+    cfg.dvc.cost_giou = 1
+    cfg.dvc.cost_alpha = 0.25
+    cfg.dvc.cost_gamma = 2.0
 
     cfg.dvc.cls_loss_coef = 1
     cfg.dvc.bbox_loss_coef = 1

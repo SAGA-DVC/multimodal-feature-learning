@@ -109,8 +109,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.transformer.model_name = models[0]
 
-    cfg.transformer.num_frames = 5
-    cfg.transformer.num_patches = 196
+    cfg.transformer.num_frames_in = 10
     cfg.transformer.img_size = 224
 
     cfg.transformer.spatial_patch_size = 16

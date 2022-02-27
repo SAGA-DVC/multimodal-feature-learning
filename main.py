@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 import random, time, datetime, json
 
@@ -10,7 +11,7 @@ from config.config_dvc import load_config
 from utils.misc import *
 from engine import train_one_epoch
 
-from .dataset.anet import build_dataset, collate_fn 
+from dataset.anet import build_dataset, collate_fn 
 
 
 def main(args):
@@ -28,14 +29,15 @@ def main(args):
 
     model, criterion = build_model_and_criterion(args.dvc)
     model.to(device)
+    criterion.to(device)
 
     model_without_ddp = model
-    if args.is_distributed:
+    if args.distributed.is_distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu])
         model_without_ddp = model.module
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('number of params (in main.py):', n_parameters)
+    print('number of params:', n_parameters)
 
     param_dicts = [
         {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
@@ -44,10 +46,10 @@ def main(args):
                                   weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
-    dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net.activity_net)
-    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net.activity_net)
+    dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
-    if args.distributed:
+    if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
         sampler_val = DistributedSampler(dataset_val, shuffle=False)
     else:
@@ -63,7 +65,7 @@ def main(args):
 
     output_dir = Path(args.output_dir)
 
-    if args.resume:
+    if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
 
@@ -75,7 +77,7 @@ def main(args):
     print("Start training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
+        if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
         train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
@@ -106,7 +108,7 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    print(f'Training time {total_time_str}')
 
 
 if __name__ == '__main__':

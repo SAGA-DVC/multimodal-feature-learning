@@ -19,7 +19,7 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, cost_class=1., cost_segment=1., cost_giou=1., cost_alpha=0.25, cost_gamma=2):
+    def __init__(self, cost_class=1., cost_segment=1., cost_giou=1., cost_alpha=0.25, cost_gamma=2.0):
         """
         Creates the bipartite matcher using the Hungarian Algorithm
         Parameters:
@@ -53,7 +53,7 @@ class HungarianMatcher(nn.Module):
                  "segments": Tensor of dim (num_target_segments, 2) containing the target box coordinates
 
         Returns:
-            A list of size batch_size, containing tuples of (index_i, index_j) where:
+            A list of size batch_size, containing tuples of tensors (index_i, index_j) where:
                 - index_i is the indices of the selected predictions (in order)
                 - index_j is the indices of the corresponding selected targets (in order)
             For each batch element, it holds:
@@ -73,6 +73,7 @@ class HungarianMatcher(nn.Module):
         # Compute the classification cost.
         alpha = self.cost_alpha
         gamma = self.cost_gamma
+
         neg_cost_class = (1 - alpha) * (out_prob ** gamma) * (-(1 - out_prob + 1e-8).log())
         pos_cost_class = alpha * ((1 - out_prob) ** gamma) * (-(out_prob + 1e-8).log())
         cost_class = pos_cost_class[:, tgt_ids] - neg_cost_class[:, tgt_ids] # (batch_size * num_queries, nb_target_segments)
@@ -84,12 +85,14 @@ class HungarianMatcher(nn.Module):
         cost_giou = -generalized_box_iou(segment_cl_to_xy(out_segments), segment_cl_to_xy(tgt_segments)) # (batch_size * num_queries, nb_target_segments)
 
         # Final cost matrix
-        cost_matrix = self.cost_segment * cost_segment + self.cost_class * cost_class + self.cost_giou * cost_giou
+        cost_matrix = self.cost_segment * cost_segment + self.cost_class * cost_class + self.cost_giou * cost_giou # (batch_size * num_queries, nb_target_segments)
 
         # Why CPU???
-        cost_matrix = cost_matrix.view(batch_size, num_queries, -1).cpu()
+        cost_matrix = cost_matrix.view(batch_size, num_queries, -1).cpu() # (batch_size, num_queries, nb_target_segments)
 
-        sizes = [len(v["segments"]) for v in targets]
+        sizes = [len(v["segments"]) for v in targets] # (batch_size)
+        
+        # (batch_size, num_queries, gt_target_segments) -> list (len=batch_size) of tuple of lists (shape=(2, gt_target_segments))
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(cost_matrix.split(sizes, -1))]
 
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]

@@ -5,12 +5,12 @@ DVC model
 import torch
 import torch.nn as nn
 
-from transformer import Transformer
-from modules import FFN
+from .transformer import Transformer
+from .modules import FFN
 
 
 class DVC(nn.Module):
-    def __init__(self, model_name, num_frames, num_patches, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
+    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4, num_heads=12, 
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, 
@@ -32,8 +32,7 @@ class DVC(nn.Module):
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
         self.transformer = Transformer(model_name=model_name, 
-                        num_frames=num_frames, 
-                        num_patches=num_patches, 
+                        num_frames_in=num_frames_in,  
                         img_size=img_size, 
                         spatial_patch_size=spatial_patch_size, 
                         temporal_patch_size=temporal_patch_size,
@@ -85,7 +84,7 @@ relative to the size of each individual image (disregarding possible padding).
 See PostProcess for information on how to retrieve the unnormalized bounding box.
 
                                 - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
-                                                    dictionnaries containing the two above keys for each decoder layer.
+                                                    dictionaries containing the two above keys for each decoder layer.
         """
 
         x = obj['video_tensor'] # (batch_size, in_channels, num_frames, img_size, img_size)
