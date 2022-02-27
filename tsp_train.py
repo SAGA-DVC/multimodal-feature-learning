@@ -281,7 +281,7 @@ def main():
 
     model_without_ddp = tsp_model
     if cfg.distributed.on:
-        tsp_model = torch.nn.parallel.DistributedDataParallel(tsp_model, device_ids=[cfg.gpu])
+        tsp_model = torch.nn.parallel.DistributedDataParallel(tsp_model, device_ids=[cfg.distributed.rank])
         model_without_ddp = tsp_model.module
 
     if cfg.resume:
