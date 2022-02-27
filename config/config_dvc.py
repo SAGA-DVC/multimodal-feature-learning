@@ -8,7 +8,7 @@ def load_config():
     cfg.seed = 0
     cfg.device = 'cuda'
 
-    cfg.batch_size = 2
+    cfg.batch_size = 3
     cfg.num_workers = 2
 
     cfg.lr = 1e-4
