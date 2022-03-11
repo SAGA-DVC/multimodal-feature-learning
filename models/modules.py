@@ -26,7 +26,6 @@ class TokenEmbedding(nn.Module):
         
         super(TokenEmbedding, self).__init__()
 
-        self.num_patches = (img_size // spatial_patch_size) ** 2
         self.temporal_patch_size = temporal_patch_size
 
         self.project_to_patch_embeddings = nn.Conv3d(in_channels, d_model, 
@@ -74,28 +73,22 @@ class PositionalEmbedding(nn.Module):
         self.positional_embedding = nn.Parameter(torch.zeros(*shape)) 
         self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
     
-    def forward(self, x, for_decoder=False):
+    def forward(self, x):
 
         """
         Adds positional embeddings to the input tensors. 
   
         Parameters:
            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
-           for_decoder (boolean): If True, the positional embeddings will only be added for the number of tokens in the input 
-                                (specifically for the decoder to avoid cls/dist tokens) (default False)
 
         Returns:
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
 
         """
-        
-        if for_decoder:
-            num_tokens = x.shape(1)
-            x = self.positional_embedding_dropout(x + self.positional_embedding[:, -num_tokens:])
-        else:
-            assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape[1:]} set at initialisation time does not match shape of input {x.shape[1:]} (batch_size is ommitted)."
+    
+        assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape} set at initialisation time does not match shape of input {x.shape}."
 
-            x = self.positional_embedding_dropout(x + self.positional_embedding) 
+        x = self.positional_embedding_dropout(x + self.positional_embedding) 
 
         return x
         
@@ -313,6 +306,44 @@ class MLP(nn.Module):
 
         return x
 
+class FFN(nn.Module):
+    def __init__(self, in_dim, hidden_dim, out_dim, num_layers, dropout=0.):
+
+        """
+        Feed Forward Network with 'n' layers
+  
+        Parameters:
+            `in_dim` (int): Input dimension of the MLP block
+            `hidden_dim` (int): Dimension of the intermediate layer
+            `out_dim` (int): Output dimension of the MLP block
+            `num_layers` (int): Depth of FFN
+            `drouput` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
+            
+        """
+
+        super(FFN, self).__init__()
+
+        self.num_layers = num_layers
+        h = [hidden_dim] * (num_layers - 1)
+        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([in_dim] + h, h + [out_dim]))
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+
+        """
+        Performs a forward pass on the Feed Forward Network.
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        """
+
+        for i, layer in enumerate(self.layers):
+            x = self.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+        return x
+
+
 # TODO- dropout before/after each layer_norm?
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
@@ -498,7 +529,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
 class VivitEncoder(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
-                mlp_ratio=4., qkv_bias=False, distilled=False, positional_embedding_dropout=0.,
+                mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
         
         """
@@ -514,7 +545,6 @@ class VivitEncoder(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `distilled` (boolean): If True, the model uses a distillation token (default False)
             `positional_embedding_dropout` (float): Dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
@@ -526,14 +556,9 @@ class VivitEncoder(nn.Module):
         super(VivitEncoder, self).__init__()
 
         self.model_name = model_name
-        self.distilled = distilled
 
         if self.model_name == 'spatio temporal attention':
             self.cls = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
-
-            if self.distilled:
-                self.dist = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
-
 
             self.encoder = nn.ModuleList(
                 [
@@ -553,12 +578,8 @@ class VivitEncoder(nn.Module):
 
         elif self.model_name == 'factorised encoder':
 
-            self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
-            self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
-
-            if self.distilled:
-                self.spacial_dist_token = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
-                self.temporal_dist_token = nn.Parameter(torch.zeros(1, 1, d_model)) # distillation token
+            self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # spatial [class] token
+            self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # temporal [class] token
             
             self.spatialEncoder = nn.ModuleList(
                 [
@@ -628,8 +649,9 @@ class VivitEncoder(nn.Module):
             raise ValueError(f'Unrecognized model: {model_name}. Choose between factorised encoder, \
                             factorised self attention or factorised dot product attention')
 
-
-    def forward(self, x, positional_embedding_layer, spatial_positional_embedding_layer, temporal_positional_embedding_layer,):
+    # TODO - check if pos embed is needed for cls tokens
+    # TODO last 2 models pos embed is incompatible so don't use it for now
+    def forward(self, x, positional_embedding_layer=None, spatial_positional_embedding_layer=None, temporal_positional_embedding_layer=None):
 
         """
         Performs a forward pass over the specified attention architecture for all layers of the ViViT encoder.
@@ -647,88 +669,52 @@ class VivitEncoder(nn.Module):
         
         batch_size, num_frames, num_patches, d_model = x.shape
         
+        if positional_embedding_layer == None:
+            positional_embedding_layer = nn.Identity()
+
+        if spatial_positional_embedding_layer == None:
+            spatial_positional_embedding_layer = nn.Identity()
+        
+        if temporal_positional_embedding_layer == None:
+            temporal_positional_embedding_layer = nn.Identity()
 
         # change pos embed for this model?
         if self.model_name == 'spatio temporal attention':
 
-            if self.distilled:
-                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
-                
-                # (1, 1, d_model) -> (batch_size, 1, d_model)
-                cls_token = self.cls.expand(batch_size, 1, -1)
-                dist_token = self.dist.expand(batch_size, 1, -1)
+            x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
 
-                x = torch.cat((cls_token, dist_token, x), dim=1) # (batch_size, num_frames * num_patches + 2, d_model)
+            cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
 
-                for layer in self.encoder:
-                    x = positional_embedding_layer(x) # (batch_size, num_frames * num_patches + 2, d_model)
-                    x = layer(x) # (batch_size, num_frames * num_patches + 2, d_model)
-
-            else:
-                x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
-
-                cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
-
-                x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
-                
-                for layer in self.encoder:
-                    x = positional_embedding_layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
-                    x = layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
+            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
+            
+            for layer in self.encoder:
+                x = positional_embedding_layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
+                x = layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
 
 
         elif self.model_name == 'factorised encoder':
 
-            if self.distilled:
-                x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
+            x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
+        
+            cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
 
-                # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
-                cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) 
-                dist_token_spatial = self.spacial_dist_token.expand(batch_size * num_frames, 1, -1) 
-                
-                x = torch.cat((cls_token_spatial, dist_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 2, d_model)
-
-                for layer in self.spatialEncoder:
-                    x = spatial_positional_embedding_layer(x) # (batch_size * num_frames, num_patches + 2, d_model)
-                    x = layer(x) # (batch_size * num_frames, num_patches + 2, d_model)
-
-                # (1, 1, d_model) -> (batch_size, 1, d_model)
-                cls_token_temporal = self.temporal_token.expand(batch_size, 1, -1) 
-                dist_token_temporal = self.temporal_dist_token.expand(batch_size, 1, -1)
-
-                x = x.reshape(batch_size, num_frames, num_patches + 2, d_model)
-
-                dist_token_temporal = torch.unsqueeze(x[:, :, 1].mean(dim=1), 1) # (batch_size, 1, d_model)
-
-                x = x[:, :, 0] # (batch_size, num_frames, d_model)
-
-                x = torch.cat((cls_token_temporal, dist_token_temporal, x), dim=1) # (batch_size, num_frames + 2, d_model)
-
-                for layer in self.temporalEncoder:
-                    x = temporal_positional_embedding_layer(x) # (batch_size, num_frames + 2, d_model)
-                    x = layer(x) # (batch_size, num_frames + 2, d_model)
-
-            else:
-                x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
+            x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
+        
+            for layer in self.spatialEncoder:
+                x = spatial_positional_embedding_layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
+                x = layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
             
-                cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
+            cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
 
-                x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
-            
-                for layer in self.spatialEncoder:
-                    x = spatial_positional_embedding_layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
-                    x = layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
-                
-                cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+            x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
 
-                x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
+            x = x[:, :, 0] # (batch_size, num_frames, d_model)
 
-                x = x[:, :, 0] # (batch_size, num_frames, d_model)
+            x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
 
-                x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
-
-                for layer in self.temporalEncoder:
-                    x = temporal_positional_embedding_layer(x) # (batch_size, num_frames + 1, d_model)
-                    x = layer(x) # (batch_size, num_frames + 1, d_model)
+            for layer in self.temporalEncoder:
+                x = temporal_positional_embedding_layer(x) # (batch_size, num_frames + 1, d_model)
+                x = layer(x) # (batch_size, num_frames + 1, d_model)
 
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention': 
             for layer in self.encoder:
