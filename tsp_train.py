@@ -255,20 +255,24 @@ def main():
 
     print("Creating model")
 
-    # Create backbone
+    # Create backbones
+    feature_backbones = []
+    d_feats = []
     if cfg.tsp.backbone == 'vivit':
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
 
       # Use return_preclassifier=True for VideoVisionTransformer
-        feature_backbone = VideoVisionTransformer(model_official=model_official, **cfg.vivit)
-        d_feat = feature_backbone.d_model
+        backbone = VideoVisionTransformer(model_official=model_official, **cfg.vivit)
+        feature_backbones.append(backbone)
+        d_feats.append(backbone.d_model)
     else:
         raise NotImplementedError
 
     tsp_model = TSPModel(
-        backbone=feature_backbone,
-        d_feat=d_feat,
+        backbones=feature_backbones,
+        d_feats=d_feats,
+        d_tsp_feat=d_feats[0],
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.global_video_features is not None,
@@ -288,11 +292,11 @@ def main():
         raise NotImplementedError
 
     params = [
-        {
-            "params": tsp_model.feature_extractor.parameters(),
+        *[{
+            "params": backbone.parameters(),
             "lr": cfg.tsp.backbone_lr * (cfg.distributed.world_size if cfg.distributed.on else 1),
-            "name": "backbone"
-        },
+            "name": f"backbone_{i}"
+        } for i, backbone in enumerate(tsp_model.backbones)],
         {
             "params": fc_params,
             "lr": cfg.tsp.fc_lr * (cfg.distributed.world_size if cfg.distributed.on else 1),
