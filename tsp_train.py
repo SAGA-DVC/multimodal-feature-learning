@@ -9,6 +9,7 @@ import torch
 import torchvision
 import wandb
 import timm
+import numpy as np
 
 from models.vivit import VideoVisionTransformer
 from tsp.model import TSPModel
@@ -19,8 +20,15 @@ from tsp import utils
 
 def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log):
     model.train()
-    
-    for (batch_idx, batch) in enumerate(dataloader):
+
+    metric_logger = utils.MetricLogger(delimiter=' ')
+    for g in optimizer.param_groups:
+        metric_logger.add_meter(f'{g["name"]}-lr', utils.SmoothedValue(window_size=1, fmt='{value:.2e}'))
+        metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.2f}'))
+    header = f'Train Epoch {epoch}:'
+
+    for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
+        start_time = time.time()
         clip = batch['clip'].to(device)
         gvf = batch['gvf'].to(device) if 'gvf' in batch else None
 
@@ -42,6 +50,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         optimizer.step()
 
         compute_and_log_metrics(
+            metric_logger=metric_logger,
             phase="train",
             loss=loss, 
             outputs=outputs, 
@@ -53,13 +62,18 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
             wandb_log=wandb_log
         )
 
+        for g in optimizer.param_groups:
+            metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
+        metric_logger.meters['clips/s'].update(clip.shape[0] / (time.time() - start_time))
+
         lr_scheduler.step()
 
 def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir, wandb_log):
     model.eval()
-    
+    metric_logger = utils.MetricLogger(delimiter=' ')
+    header = f'Valid Epoch {epoch}:'
     with torch.no_grad():
-        for (batch_idx, batch) in enumerate(dataloader):
+        for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
             clip = batch['clip'].to(device, non_blocking=True)
             gvf = batch['gvf'].to(device, non_blocking=True) if 'gvf' in batch else None
             targets = [batch[x].to(device, non_blocking=True) for x in label_columns]
@@ -84,10 +98,14 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
                 batch_idx=batch_idx,
                 wandb_log=wandb_log
             )
-        
-        # TODO: Save results to file, print
+    
+    # gather the stats from all processes
+    metric_logger.synchronize_between_processes()
 
-def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx, wandb_log=False):
+    results = write_metrics_results_to_file(metric_logger, epoch, label_columns, output_dir)
+    print(results)
+
+def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx, wandb_log=False):
     log = {
         "epoch": epoch,
         "batch": batch_idx,
@@ -100,10 +118,13 @@ def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_co
 
         if head_num_samples:
             head_acc = utils.accuracy(output, target, topk=(1,))[0]
-            log[f"accuracy_{label_column}"] = head_acc.item()
-            log[f"num_samples_{label_column}"] = head_num_samples
+            log[f"accuracy-{label_column}"] = head_acc.item()
+            log[f"num_samples-{label_column}"] = head_num_samples
+            metric_logger.meters[f'acc-{label_column}'].update(head_acc.item(), n=head_num_samples)
 
-        log[f"loss_{label_column}"] = head_loss.item()
+        log[f"loss-{label_column}"] = head_loss.item()
+        metric_logger.meters[f'loss-{label_column}'].update(head_loss.item())
+
 
     if wandb_log:
         wandb.log({
@@ -112,6 +133,24 @@ def compute_and_log_metrics(phase, loss, outputs, targets, head_losses, label_co
         })
     pprint(log)
     print()
+    metric_logger.update(loss=loss.item())
+
+def write_metrics_results_to_file(metric_logger, epoch, label_columns, output_dir):
+    results = f'** Valid Epoch {epoch}: '
+    for label_column in label_columns:
+        results += f' <{label_column}> Accuracy {metric_logger.meters[f"acc_{label_column}"].global_avg:.3f}'
+        results += f' Loss {metric_logger.meters[f"loss_{label_column}"].global_avg:.3f};'
+
+    results += f' Total Loss {metric_logger.meters["loss"].global_avg:.3f}'
+    avg_acc = np.average([metric_logger.meters[f'acc_{label_column}'].global_avg for label_column in label_columns])
+    results += f' Avg Accuracy {avg_acc:.3f}'
+
+    results = f'{results}\n'
+    utils.write_to_file_on_master(file=os.path.join(output_dir, 'results.txt'),
+                                  mode='a',
+                                  content_to_write=results)
+
+    return results
 
 
 def main():
@@ -122,8 +161,7 @@ def main():
     utils.init_distributed_mode(cfg.distributed)
 
     if cfg.wandb.on:
-        wandb.login(host=cfg.wandb.url)
-        wandb.init(project=cfg.wandb.project, config=cfg.to_dict(), notes=cfg.wandb.notes)
+        wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity, config=cfg.to_dict(), notes=cfg.wandb.notes)
 
     device = torch.device(cfg.device)
     os.makedirs(cfg.output_dir, exist_ok=True)

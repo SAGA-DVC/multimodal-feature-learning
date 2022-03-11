@@ -94,8 +94,8 @@ def load_config():
     
     # TODO: Better values for these so that working with different datasets or
     # feature extractors is convenient and output isn't inadvertently replaced 
-    cfg.train_subdir = 'train_30fps'  # Training subdirectory inside the data directory
-    cfg.valid_subdir = 'train_30fps'  # Validation subdirectory inside the data directory
+    cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
+    cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
     cfg.output_dir = 'output'  # Path for saving checkpoints and results output  # TODO
 
     cfg.epochs = 8
@@ -146,8 +146,8 @@ def load_config():
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.on = False
-    cfg.wandb.url = "http://localhost:8080"
-    cfg.wandb.project = "TSP"
+    cfg.wandb.project = "dvc-tsp"
+    cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Test"
 
 

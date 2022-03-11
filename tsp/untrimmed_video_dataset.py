@@ -131,10 +131,12 @@ class UntrimmedVideoDataset(Dataset):
     def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):
         # get all available videos from root_dir
         videos = list(map(lambda video: video, os.listdir(root_dir)))
+
         # remove unavailable videos from dataframe
-        df = df.loc[df['filename'].isin(videos)]
+        df = df.loc[df['filename'].isin(videos)].copy()
         
-        df['filename'] = df['filename'].map(lambda f: os.path.join(root_dir, f))
+        df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
+
         filenames = df.drop_duplicates('filename')['filename'].values
         for f in filenames:
             try:
