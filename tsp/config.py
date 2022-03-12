@@ -23,15 +23,13 @@ def load_config():
     cfg.video.clips_per_segment = 5  # Number of clips sampled per video segment
 
     #-------------------------------------------------------------------------------------------------
-
     # ViViT
     cfg.vivit = ml_collections.ConfigDict()
 
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.vivit.model_name = models[1]
+    cfg.vivit.model_name = models[0]
 
-    cfg.vivit.num_frames = 8
-    cfg.vivit.num_patches = 196
+    cfg.vivit.num_frames_in = 10
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
@@ -44,7 +42,7 @@ def load_config():
     cfg.vivit.d_model = 768
 
     cfg.vivit.depth = 2
-    cfg.vivit.temporal_depth = 1
+    cfg.vivit.temporal_depth = 4
 
     cfg.vivit.num_heads = 12
     cfg.vivit.mlp_ratio = 4
@@ -56,14 +54,16 @@ def load_config():
     cfg.vivit.dropout_1 = 0
     cfg.vivit.dropout_2 = 0
 
+    cfg.vivit.pre_norm = True
+
     cfg.vivit.classification_head = False
     cfg.vivit.num_classes = 1000
 
     cfg.vivit.return_preclassifier = False
     cfg.vivit.return_prelogits = True  # Required for TSP
 
-    cfg.vivit.weight_init = False
-    cfg.vivit.weight_load = True
+    cfg.vivit.weight_init = True
+    cfg.vivit.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
@@ -144,8 +144,8 @@ def load_config():
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.on = False
-    cfg.wandb.project = "dvc-tsp"
-    cfg.wandb.entity = "saga-dvc"
+    cfg.wandb.project = "vivit-tsp"
+    cfg.wandb.entity = "saga-vivit"
     cfg.wandb.notes = "Test"
 
 

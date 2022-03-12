@@ -11,7 +11,7 @@ import wandb
 import timm
 import numpy as np
 
-from models.vivit import VideoVisionTransformer
+from tsp.vivit_wrapper import VivitWrapper
 from tsp.model import TSPModel
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
@@ -262,8 +262,8 @@ def main():
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
 
-      # Use return_preclassifier=True for VideoVisionTransformer
-        backbone = VideoVisionTransformer(model_official=model_official, **cfg.vivit)
+        # Use return_preclassifier=True for VideoVisionTransformer
+        backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
     else:
