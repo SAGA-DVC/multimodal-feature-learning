@@ -50,8 +50,6 @@ def load_config():
     cfg.vivit.mlp_ratio = 4
     cfg.vivit.qkv_bias = True
 
-    cfg.vivit.distilled = False
-
     cfg.vivit.positional_embedding_dropout = 0
     cfg.vivit.attention_dropout = 0
     cfg.vivit.projection_dropout = 0
