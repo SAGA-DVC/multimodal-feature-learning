@@ -563,6 +563,8 @@ class VivitEncoder(nn.Module):
         self.model_name = model_name
 
         if self.model_name == 'spatio temporal attention':
+            self.cls = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+
             self.encoder = nn.ModuleList(
                 [
                     EncoderLayer(
@@ -580,7 +582,8 @@ class VivitEncoder(nn.Module):
             )
 
         elif self.model_name == 'factorised encoder':
-            self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+            self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # spatial [class] token
+            self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # temporal [class] token
             
             self.spatialEncoder = nn.ModuleList(
                 [
@@ -679,10 +682,14 @@ class VivitEncoder(nn.Module):
         if self.model_name == 'spatio temporal attention':
 
             x = x.reshape(batch_size, -1, d_model) # (batch_size, num_frames * num_patches, d_model)
+
+            cls_token = self.cls.expand(batch_size, 1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+
+            x = torch.cat((cls_token, x), dim=1) # (batch_size, num_frames * num_patches + 1, d_model)
             
             for layer in self.encoder:
-                x = positional_embedding_layer(x) # (batch_size, num_frames * num_patches, d_model)
-                x = layer(x) # (batch_size, num_frames * num_patches, d_model)
+                x = positional_embedding_layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
+                x = layer(x) # (batch_size, num_frames * num_patches + 1, d_model)
 
 
         elif self.model_name == 'factorised encoder':
@@ -690,20 +697,22 @@ class VivitEncoder(nn.Module):
             x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
         
             cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
-
             x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
         
             for layer in self.spatialEncoder:
                 x = spatial_positional_embedding_layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
                 x = layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
-
+            
             x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
 
             x = x[:, :, 0] # (batch_size, num_frames, d_model)
 
+            cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
+            x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
+
             for layer in self.temporalEncoder:
-                x = positional_embedding_layer(x) # (batch_size, num_frames, d_model)
-                x = layer(x) # (batch_size, num_frames, d_model)
+                x = positional_embedding_layer(x) # (batch_size, num_frames + 1, d_model)
+                x = layer(x) # (batch_size, num_frames + 1, d_model)
 
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention': 
             for layer in self.encoder:
@@ -921,7 +930,7 @@ class BiModalEncoderLayer(nn.Module):
 # --------------------------------------------------------------
 # Modules used by the Decoder
 
-# TODO- dropout before/after each layer_norm?
+# TODO - dropout before/after each layer_norm?
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
@@ -966,19 +975,19 @@ class DecoderLayer(nn.Module):
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
             positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding)
+            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, positional_embedding_layer, query_embedding)
+            return self.forward_post(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
 
     
     def forward_pre(self, target, memory, positional_embedding_layer, query_embedding):
@@ -987,23 +996,23 @@ class DecoderLayer(nn.Module):
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
             positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
 
-        target_after_norm = self.layer_norm_1(target)
+        target_after_norm = self.layer_norm_1(target) 
         q = k = target_after_norm + query_embedding
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         q = target_after_norm + query_embedding
         k = positional_embedding_layer(memory)
-        target = target + self.cross_attention(q=q, k=k, v=memory)
+        target = target + self.cross_attention(q=q, k=k, v=memory) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
         target = target + self.mlp(target_after_norm)
@@ -1017,21 +1026,21 @@ class DecoderLayer(nn.Module):
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
             positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
        
         q = k = target + query_embedding
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target))
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target)) # (batch_size, num_queries, d_model)
 
         q = target + query_embedding
         k = positional_embedding_layer(memory)
-        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory))
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)

@@ -74,16 +74,16 @@ class Decoder(nn.Module):
         """
         Pass the inputs (and mask) through the decoder layer in turn.
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory (tensor): the sequence from the last layer of the encoder
             position_embedding_layer: position embedding layer for encoder inputs
             query_embedding (tensor): event queries
         
         Returns:
             output (tensor): if return_intermediate is True:
-                                Tensor of dimension (1, batch_size, num_tokens, d_model)
+                                Tensor of dimension (1, batch_size, num_queries, d_model)
                              else:
-                                 Tensor of dimension (depth, batch_size, num_tokens, d_model)
+                                 Tensor of dimension (depth, batch_size, num_queries, d_model)
         """
 
         output = target

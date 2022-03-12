@@ -12,7 +12,7 @@ from .decoder import Decoder
 from .modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
-
+# TODO - Fix positional embeddings for model 3 and 4 of ViViT (DO NOT USE)
 class Transformer(nn.Module):
     def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
@@ -34,11 +34,11 @@ class Transformer(nn.Module):
         self.spatial_positional_embedding_layer = None
 
         if model_name == 'spatio temporal attention':
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches, d_model), positional_embedding_dropout) 
+            self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
             
         elif model_name == 'factorised encoder':
             self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, d_model), positional_embedding_dropout)
+            self.positional_embedding_layer = PositionalEmbedding((1, num_frames + 1, d_model), positional_embedding_dropout)
 
         else:
             self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
@@ -110,8 +110,8 @@ class Transformer(nn.Module):
         query_embedding = query_embedding.unsqueeze(0).repeat(x.shape[0], 1, 1) # (batch_size, num_queries, d_model)
         target = torch.zeros_like(query_embedding)
 
-        # (batch_size, num_frames * num_patches, d_model) OR
-        # (batch_size, num_frames, d_model) OR 
+        # (batch_size, num_frames * num_patches + 1, d_model) OR
+        # (batch_size, num_frames + 1, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
         x = self.vivit(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
 
@@ -119,7 +119,7 @@ class Transformer(nn.Module):
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
             x = x.reshape(x.shape[0], -1, x.shape[-1])
 
-        # (1, batch_size, num_tokens, d_model) OR # (depth, batch_size, num_tokens, d_model)
+        # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
         x = self.decoder(target=target, memory=x, 
                         positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding)
 

@@ -75,10 +75,13 @@ def load_positional_embeddings(model_custom, model_official):
 
     if model_custom.model_name == 'spatio temporal attention':
         
-        # (1, num_frames * num_tokens, d_model) -> model_custom positional embeddings
+          # (1, num_frames * num_tokens + 1, d_model) -> model_custom positional embeddings
         # (1, num_patches + 1, d_model) -> model_official positional embeddings
-    
-        model_custom.positional_embedding_layer.positional_embedding.data[:] = model_official.pos_embed.data[:, 1:].repeat(1, num_frames, 1)
+        # First, the positional embedding for the cls token is initialised followed by those for 'num_frames * num_patches' tokens
+
+        model_custom.positional_embedding_layer.positional_embedding.data[:, 0] = model_official.pos_embed.data[:, 0]
+        
+        model_custom.positional_embedding_layer.positional_embedding.data[:, 1:] = model_official.pos_embed.data[:, 1:].repeat(1, num_frames, 1)
 
 
     elif model_custom.model_name == 'factorised encoder':
@@ -111,8 +114,13 @@ def load_cls_tokens(model_custom, model_official):
     # (1, 1, d_model) -> model_custom spatial cls token
     # (1, 1, d_model) -> model_official cls token
 
-    if model_custom.model_name == 'factorised encoder':
+    if model_custom.model_name == 'spatio temporal attention' :
+        model_custom.vivitEncoder.cls.data[:] = model_official.cls_token.data
+
+    elif model_custom.model_name == 'factorised encoder':
         model_custom.vivitEncoder.spacial_token.data[:] = model_official.cls_token.data
+        trunc_normal_(model_custom.vivitEncoder.temporal_token, std=.02)
+
 
 
 
@@ -133,7 +141,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
         depth = len(model_custom.vivitEncoder.encoder)
 
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[2 : (12 * depth) + 2], 
+            list(model_custom.named_parameters())[3 : (12 * depth) + 3], 
             list(model_official.named_parameters())[4 : 144 + 4]):
 
             # print(f"{name_official} | {name_custom}")
@@ -147,7 +155,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
        
         #spatial
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[3 : (12 * spatial_depth) + 3], 
+            list(model_custom.named_parameters())[4 : (12 * spatial_depth) + 4], 
             list(model_official.named_parameters())[4 : 144 + 4]):
 
             # print(f"{name_official} | {name_custom}")
@@ -155,13 +163,16 @@ def load_vivit_encoder_weights(model_custom, model_official):
             parameter_custom.data[:] = parameter_official.data
 
         #temporal
-        for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
-            list(model_custom.named_parameters())[144 + 3 : 144 + (12 * temporal_depth) + 3], 
-            list(model_official.named_parameters())[4 : 144 + 4]):
+        model_custom.vivitEncoder.temporalEncoder.apply(init_encoder_block_weights)
+        
+        # for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
+        #     list(model_custom.named_parameters())[144 + 4 : 144 + 4 + (12 * temporal_depth)], 
+        #     list(model_official.named_parameters())[4 : 144 + 4]):
 
-            # print(f"{name_official} | {name_custom}")
+        #     # print(f"{name_official} | {name_custom}")
 
-            parameter_custom.data[:] = parameter_official.data
+        #     parameter_custom.data[:] = parameter_official.data
+        
     
     elif model_custom.model_name == 'factorised self attention':
 
