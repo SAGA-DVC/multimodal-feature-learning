@@ -85,8 +85,8 @@ class PositionalEmbedding(nn.Module):
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
 
         """
-    
-        assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape} set at initialisation time does not match shape of input {x.shape}."
+      
+        assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape[1:]} set at initialisation time does not match shape of input {x.shape[1:]} (batch_size is ommitted)."
 
         x = self.positional_embedding_dropout(x + self.positional_embedding) 
 
@@ -347,7 +347,7 @@ class FFN(nn.Module):
 # TODO- dropout before/after each layer_norm?
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
-                attention_dropout=0., projection_dropout=0.):
+                attention_dropout=0., projection_dropout=0., pre_norm=True):
 
         """
         EncoderLayer consisting of the basic attention architecture.
@@ -361,10 +361,12 @@ class EncoderLayer(nn.Module):
             `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
-    
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
         """
 
         super(EncoderLayer, self).__init__()
+
+        self.pre_norm = pre_norm
 
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
@@ -391,13 +393,52 @@ class EncoderLayer(nn.Module):
 
         """
 
+        if self.pre_norm:
+            return self.forward_pre(x)
+        
+        else:
+            return self.forward_post(x)
+
+
+    def forward_pre(self, x):
+
+        """
+        Performs a forward pass with pre-norm on the Factorised Encoder block.
+  
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+
+        """
+
         x = x + self.attention(self.layer_norm_1(x)) # (batch_size, num_tokens, d_model)
         x = x + self.mlp(self.layer_norm_2(x)) # (batch_size, num_tokens, d_model)
 
         return x
+    
+    
+    def forward_post(self, x):
+
+        """
+        Performs a forward pass with post-norm on the Factorised Encoder block.
+  
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+
+        """
+
+        x = self.layer_norm_1(x + self.attentio(x)) # (batch_size, num_tokens, d_model)
+        x = self.layer_norm_2(x + self.mlp(x)) # (batch_size, num_tokens, d_model)
+
+        return x
 
 
-
+# TODO - forward pre-post
 class FactorisedSelfAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
@@ -421,7 +462,7 @@ class FactorisedSelfAttentionEncoderLayer(nn.Module):
 
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
-
+        
         self.spatial_attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
@@ -466,7 +507,7 @@ class FactorisedSelfAttentionEncoderLayer(nn.Module):
         return x
 
 
-
+# TODO - forward pre-post
 class FactorisedDotProductAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
@@ -494,7 +535,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
         self.attention = DotProductAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-        
+                                   
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)
@@ -530,7 +571,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 class VivitEncoder(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
                 mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
         
         """
         ViViT Encoder for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
@@ -550,7 +591,8 @@ class VivitEncoder(nn.Module):
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
-    
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
+
         """
 
         super(VivitEncoder, self).__init__()
@@ -570,14 +612,14 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(depth)
                 ]
             )
 
         elif self.model_name == 'factorised encoder':
-
             self.spacial_token = nn.Parameter(torch.zeros(1, 1, d_model)) # spatial [class] token
             self.temporal_token = nn.Parameter(torch.zeros(1, 1, d_model)) # temporal [class] token
             
@@ -591,7 +633,8 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(depth)
                 ]
@@ -607,7 +650,8 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(temporal_depth)
                 ]
@@ -649,9 +693,8 @@ class VivitEncoder(nn.Module):
             raise ValueError(f'Unrecognized model: {model_name}. Choose between factorised encoder, \
                             factorised self attention or factorised dot product attention')
 
-    # TODO - check if pos embed is needed for cls tokens
-    # TODO last 2 models pos embed is incompatible so don't use it for now
-    def forward(self, x, positional_embedding_layer=None, spatial_positional_embedding_layer=None, temporal_positional_embedding_layer=None):
+
+    def forward(self, x, positional_embedding_layer=None, spatial_positional_embedding_layer=None):
 
         """
         Performs a forward pass over the specified attention architecture for all layers of the ViViT encoder.
@@ -674,9 +717,6 @@ class VivitEncoder(nn.Module):
 
         if spatial_positional_embedding_layer == None:
             spatial_positional_embedding_layer = nn.Identity()
-        
-        if temporal_positional_embedding_layer == None:
-            temporal_positional_embedding_layer = nn.Identity()
 
         # change pos embed for this model?
         if self.model_name == 'spatio temporal attention':
@@ -697,23 +737,21 @@ class VivitEncoder(nn.Module):
             x = x.reshape(-1, num_patches, d_model) # (batch_size * num_frames, num_patches, d_model)
         
             cls_token_spatial = self.spacial_token.expand(batch_size * num_frames, 1, -1) # (1, 1, d_model) -> (batch_size * num_frames, 1, d_model)
-
             x = torch.cat((cls_token_spatial, x), dim=1) # (batch_size * num_frames, num_patches + 1, d_model)
         
             for layer in self.spatialEncoder:
                 x = spatial_positional_embedding_layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
                 x = layer(x) # (batch_size * num_frames, num_patches + 1, d_model)
             
-            cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
-
             x = x.reshape(batch_size, num_frames, num_patches + 1, d_model)
 
             x = x[:, :, 0] # (batch_size, num_frames, d_model)
 
+            cls_token_temporal = self.temporal_token.expand(batch_size, -1, -1) # (1, 1, d_model) -> (batch_size, 1, d_model)
             x = torch.cat((cls_token_temporal, x), dim=1) # (batch_size, num_frames + 1, d_model)
 
             for layer in self.temporalEncoder:
-                x = temporal_positional_embedding_layer(x) # (batch_size, num_frames + 1, d_model)
+                x = positional_embedding_layer(x) # (batch_size, num_frames + 1, d_model)
                 x = layer(x) # (batch_size, num_frames + 1, d_model)
 
         elif self.model_name == 'factorised self attention' or self.model_name == 'factorised dot product attention': 
@@ -932,7 +970,8 @@ class BiModalEncoderLayer(nn.Module):
 # --------------------------------------------------------------
 # Modules used by the Decoder
 
-# TODO- dropout before/after each layer_norm?
+# TODO - dropout before/after each layer_norm?
+# TODO- check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
@@ -971,50 +1010,50 @@ class DecoderLayer(nn.Module):
                        dropout_1=dropout_1, dropout_2=dropout_2)
 
     
-    def forward(self, target, memory, position_embedding_layer, query_embedding):
+    def forward(self, target, memory, positional_embedding_layer, query_embedding):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            position_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, position_embedding_layer, query_embedding)
+            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, position_embedding_layer, query_embedding)
+            return self.forward_post(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, position_embedding_layer, query_embedding):
+    def forward_pre(self, target, memory, positional_embedding_layer, query_embedding):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            position_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
 
-        target_after_norm = self.layer_norm_1(target)
+        target_after_norm = self.layer_norm_1(target) 
         q = k = target_after_norm + query_embedding
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         q = target_after_norm + query_embedding
-        k = position_embedding_layer(memory, for_decoder=True)
-        target = target + self.cross_attention(q=q, k=k, v=memory)
+        k = positional_embedding_layer(memory)
+        target = target + self.cross_attention(q=q, k=k, v=memory) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
         target = target + self.mlp(target_after_norm)
@@ -1022,27 +1061,27 @@ class DecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, position_embedding_layer, query_embedding):
+    def forward_post(self, target, memory, positional_embedding_layer, query_embedding):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            position_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding_layer: position embedding layer for encoder inputs
             query_embedding: event queries
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
         """
        
         q = k = target + query_embedding
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target))
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target)) # (batch_size, num_queries, d_model)
 
         q = target + query_embedding
-        k = position_embedding_layer(memory, for_decoder=True)
-        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory))
+        k = positional_embedding_layer(memory)
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)
