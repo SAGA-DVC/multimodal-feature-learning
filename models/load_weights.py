@@ -75,7 +75,7 @@ def load_positional_embeddings(model_custom, model_official):
 
     if model_custom.model_name == 'spatio temporal attention':
         
-          # (1, num_frames * num_tokens + 1, d_model) -> model_custom positional embeddings
+        # (1, num_frames * num_tokens + 1, d_model) -> model_custom positional embeddings
         # (1, num_patches + 1, d_model) -> model_official positional embeddings
         # First, the positional embedding for the cls token is initialised followed by those for 'num_frames * num_patches' tokens
 
@@ -123,7 +123,6 @@ def load_cls_tokens(model_custom, model_official):
 
 
 
-
 def load_vivit_encoder_weights(model_custom, model_official):
 
     """
@@ -139,7 +138,7 @@ def load_vivit_encoder_weights(model_custom, model_official):
     if model_custom.model_name == 'spatio temporal attention':
 
         depth = len(model_custom.vivitEncoder.encoder)
-
+        
         for (name_custom, parameter_custom), (name_official, parameter_official) in zip(
             list(model_custom.named_parameters())[3 : (12 * depth) + 3], 
             list(model_official.named_parameters())[4 : 144 + 4]):

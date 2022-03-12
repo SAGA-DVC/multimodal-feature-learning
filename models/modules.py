@@ -80,8 +80,6 @@ class PositionalEmbedding(nn.Module):
   
         Parameters:
            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
-           for_decoder (boolean): If True, the positional embeddings will only be added for the number of tokens in the input 
-                                (specifically for the decoder to avoid cls/dist tokens) (default False)
 
         Returns:
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
@@ -308,7 +306,6 @@ class MLP(nn.Module):
 
         return x
 
-
 class FFN(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, num_layers, dropout=0.):
 
@@ -335,13 +332,11 @@ class FFN(nn.Module):
 
         """
         Performs a forward pass on the Feed Forward Network.
-
         Parameters:
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
         
         Returns:
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-
         """
 
         for i, layer in enumerate(self.layers):
@@ -540,7 +535,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
         self.attention = DotProductAttention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                    attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
+                                   
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
         mlp_hidden_dim = int(d_model * mlp_ratio)

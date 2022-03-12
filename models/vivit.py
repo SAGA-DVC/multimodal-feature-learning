@@ -122,16 +122,17 @@ class VideoVisionTransformer(nn.Module):
   
         Parameters:
             x (tensor): Tensor of dimension (batch_size, in_channels, num_frames, img_size, img_size)
-        
+            positional_embedding_layer (nn.Module): Position embeddings for the inputs
+            spatial_positional_embedding_layer (nn.Module): Spatial position embeddings for the 'factorised encoder' model  
+            temporal_positional_embedding_layer (nn.Module): Temporal position embeddings for the 'factorised encoder' model  
+
         Returns:
             x (tensor): if return_preclassifier is True, Tensor of dimension 
                             (batch_size, num_frames * num_patches + 1, d_model) for spatio temporal attention OR
                             (batch_size, num_frames + 1, d_model) for factorised encoder OR 
                             (batch_size, num_frames, num_patches, d_model) for factorised self attention and factorised dot product attention
-                        if return_prelogits is True, Tensor of dimension (batch_size, 1, d_model)
+                        if return_prelogits is True, Tensor of dimension (batch_size, d_model)
                         else Tensor of dimension (batch_size, num_classes)
-
-                        if distilled is True, two Tensors of the above dimension would be returned
         """
 
         batch_size, in_channels, num_frames_in, height, width = x.shape
@@ -175,6 +176,7 @@ class VideoVisionTransformer(nn.Module):
             
 
 
+    # TODO - add token embedding layer's weight init
     def init_weights(self):
 
         """
