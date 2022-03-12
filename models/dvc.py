@@ -78,10 +78,10 @@ class DVC(nn.Module):
                                                     shape (batch_size, num_queries, num_classes + 1)
                                 - "pred_segments": The normalized segments for all queries, represented as
                                                 (center_offset, length). Shape (batch_size, num_queries, 2)
-???????
-values are normalized in [0, 1]
-relative to the size of each individual image (disregarding possible padding).
-See PostProcess for information on how to retrieve the unnormalized bounding box.
+            ???????
+            values are normalized in [0, 1]
+            relative to the size of each individual image (disregarding possible padding).
+            See PostProcess for information on how to retrieve the unnormalized bounding box.
 
                                 - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
                                                     dictionaries containing the two above keys for each decoder layer.

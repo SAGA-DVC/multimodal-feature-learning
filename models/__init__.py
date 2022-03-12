@@ -2,6 +2,7 @@ import sys
 # sys.path.insert(0, '..')
 
 import torch
+import timm
 from .dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
@@ -11,6 +12,13 @@ from config.config_dvc import load_config
 def build_model_and_criterion(args):
 
     device = torch.device(args.device)
+
+    model_official = None
+    
+    if args.model_official is not None:
+        model_official = timm.create_model(args.model_official, pretrained=True)
+        model_official.eval()
+
 
     model = DVC(model_name=args.model_name, 
                 num_frames_in=args.num_frames_in, 
@@ -39,7 +47,7 @@ def build_model_and_criterion(args):
                 return_prelogits=args.return_prelogits, 
                 weight_init=args.weight_init, 
                 weight_load=args.weight_load, 
-                model_official=args.model_official,
+                model_official=model_official,
                 return_intermediate=args.return_intermediate
             )
 
