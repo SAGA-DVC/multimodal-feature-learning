@@ -352,7 +352,7 @@ class FFN(nn.Module):
 # TODO- dropout before/after each layer_norm?
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
-                attention_dropout=0., projection_dropout=0.):
+                attention_dropout=0., projection_dropout=0., pre_norm=True):
 
         """
         EncoderLayer consisting of the basic attention architecture.
@@ -366,10 +366,12 @@ class EncoderLayer(nn.Module):
             `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
-    
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
         """
 
         super(EncoderLayer, self).__init__()
+
+        self.pre_norm = pre_norm
 
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
@@ -396,13 +398,52 @@ class EncoderLayer(nn.Module):
 
         """
 
+        if self.pre_norm:
+            return self.forward_pre(x)
+        
+        else:
+            return self.forward_post(x)
+
+
+    def forward_pre(self, x):
+
+        """
+        Performs a forward pass with pre-norm on the Factorised Encoder block.
+  
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+
+        """
+
         x = x + self.attention(self.layer_norm_1(x)) # (batch_size, num_tokens, d_model)
         x = x + self.mlp(self.layer_norm_2(x)) # (batch_size, num_tokens, d_model)
 
         return x
+    
+    
+    def forward_post(self, x):
+
+        """
+        Performs a forward pass with post-norm on the Factorised Encoder block.
+  
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+
+        """
+
+        x = self.layer_norm_1(x + self.attentio(x)) # (batch_size, num_tokens, d_model)
+        x = self.layer_norm_2(x + self.mlp(x)) # (batch_size, num_tokens, d_model)
+
+        return x
 
 
-
+# TODO - forward pre-post
 class FactorisedSelfAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
@@ -471,7 +512,7 @@ class FactorisedSelfAttentionEncoderLayer(nn.Module):
         return x
 
 
-
+# TODO - forward pre-post
 class FactorisedDotProductAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
@@ -535,7 +576,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 class VivitEncoder(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
                 mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0.):
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
         
         """
         ViViT Encoder for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
@@ -555,7 +596,8 @@ class VivitEncoder(nn.Module):
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
             `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
-    
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
+
         """
 
         super(VivitEncoder, self).__init__()
@@ -575,7 +617,8 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(depth)
                 ]
@@ -595,7 +638,8 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(depth)
                 ]
@@ -611,7 +655,8 @@ class VivitEncoder(nn.Module):
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
                         dropout_1=dropout_1,
-                        dropout_2=dropout_2
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
                     for _ in range(temporal_depth)
                 ]
@@ -931,6 +976,7 @@ class BiModalEncoderLayer(nn.Module):
 # Modules used by the Decoder
 
 # TODO - dropout before/after each layer_norm?
+# TODO- check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
