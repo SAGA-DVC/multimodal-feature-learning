@@ -15,12 +15,17 @@ def load_config():
     cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
 
     #-------------------------------------------------------------------------------------------------
-
     # Video
     cfg.video = ml_collections.ConfigDict()
     cfg.video.clip_len = 16  # Number of frames per clip
-    cfg.video.frame_rate = 15  # Frames-per-second rate at which the videos are sampled
-    cfg.video.clips_per_segment = 5  # Number of clips sampled per video segment
+    cfg.video.frame_rate = 30  # Frames-per-second rate at which the videos are sampled
+    cfg.video.clips_per_segment = 1  # Number of clips sampled per video segment
+
+    #-------------------------------------------------------------------------------------------------
+    # Audio
+    cfg.audio = ml_collections.ConfigDict()
+    cfg.audio.num_mel_bins = 128
+    cfg.audio.target_length = 224  # For AudioSet
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -81,7 +86,7 @@ def load_config():
     cfg.ast.label_dim = 527
 
 
-    cfg.ast.depth = 12
+    cfg.ast.depth = 2
     
     cfg.ast.return_prelogits = True  # Required for TSP
 

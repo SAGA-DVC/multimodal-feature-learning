@@ -10,7 +10,7 @@ import torch.nn as nn
 
 class TSPModel(nn.Module):
 
-    def __init__(self, backbones, d_feats, d_tsp_feat,  num_tsp_classes, num_tsp_heads=1, concat_gvf=False, combiner=None):
+    def __init__(self, backbones, input_modalities, d_feats, d_tsp_feat,  num_tsp_classes, num_tsp_heads=1, concat_gvf=False, combiner=None):
         '''
         Args:
             backbone (List[torch.nn.Module]): One or more backbone architectures
@@ -22,6 +22,9 @@ class TSPModel(nn.Module):
                 features before applying the second head FC layer.
             combiner (function or torch.nn.Module): function or network that combines features extracted by backbones.
                 If not provided, the identity function will be used.
+            input_modalities (List[str]): list of keys for accessing features of modalities for each backbone
+                Example ['video', 'audio']. x['video'] will be given to the first backbone, x['audio'] will be given to 
+                the second backbone
         '''
         super().__init__()
         # print(f'<TSPModel>: backbone {backbone} num_classes {num_tsp_classes} num_heads {num_tsp_heads} kwargs {kwargs}')
@@ -31,6 +34,7 @@ class TSPModel(nn.Module):
         assert len(backbones) > 0, "<TSPModel>: At least one backbone is required"
 
         self.backbones = backbones
+        self.input_modalities = input_modalities
         self.combiner = combiner if combiner is not None else nn.Identity()
         self.num_classes = num_tsp_classes
         self.num_heads = num_tsp_heads
@@ -52,8 +56,8 @@ class TSPModel(nn.Module):
     def forward(self, x, gvf=None, return_features=False):
         # Extract features using the backbones
         features = []  # List of features extracted by individual backbones
-        for backbone in self.backbones:
-            features.append(backbone(x))
+        for (backbone, modality) in zip(self.backbones, self.input_modalities):
+            features.append(backbone(x[modality]))
 
         features = self.combiner(torch.cat(features))
 
@@ -72,6 +76,6 @@ class TSPModel(nn.Module):
     @staticmethod
     def _build_fc(in_features, out_features):
         fc = nn.Linear(in_features, out_features)
-        nn.init.normal(fc.weight, 0, 0.01)
+        nn.init.normal_(fc.weight, 0, 0.01)
         nn.init.constant_(fc.bias, 0)
         return fc

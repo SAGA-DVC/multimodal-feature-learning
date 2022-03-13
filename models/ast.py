@@ -25,7 +25,7 @@ class AudioSpectrogramTransformer(nn.Module):
         
         self.model_official = model_official
         self.d_model = 768
-        self.encoder = VisionTransformer(d_model=768, num_heads=12, depth=depth)
+        self.encoder = VisionTransformer(d_model=768, num_heads=12, depth=depth, in_channels=1, num_classes=0)
         self.original_num_patches = self.model_official.patch_embed.num_patches
         self.original_hw = int(self.original_num_patches ** 0.5)
         self.original_embedding_dim = self.model_official.pos_embed.shape[2]
@@ -93,9 +93,10 @@ class AudioSpectrogramTransformer(nn.Module):
         :param x: the input spectrogram, expected shape: (batch_size, time_frame_num, frequency_bins), e.g., (12, 1024, 128)
         :return: prediction
         """
-        # expect input x = (batch_size, time_frame_num, frequency_bins), e.g., (10, 100, 128)
+        # # expect input x = (batch_size, time_frame_num, frequency_bins), e.g., (10, 100, 128)
+        print(x.shape)
         x = x.unsqueeze(1) #(batch_size, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, time_frame_num, frequency_bins)
-        x = x.transpose(2, 3) #(batch_size, in_channels = 1, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, frequency_bins, time_frame_num)
+        # x = x.transpose(2, 3) #(batch_size, in_channels = 1, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, frequency_bins, time_frame_num)
         x = self.encoder(x) #(batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, d_model)
         if self.return_prelogits:
             return x
