@@ -2,7 +2,8 @@
 
 import torch
 import torch.nn as nn
-
+from timm.models.layers import to_2tuple,trunc_normal_
+from functools import partial
 
 # --------------------------------------------------------------
 # Modules used by ViViT
@@ -263,7 +264,7 @@ class DotProductAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, dropout_1=0., dropout_2=0.):
+    def __init__(self, in_dim, hidden_dim, out_dim, activation_layer=nn.GELU, dropout_1=0., dropout_2=0.):
 
         """
         Multi-layer perceptron which consists of 2 fully connected layers.
@@ -272,15 +273,15 @@ class MLP(nn.Module):
             `in_dim` (int): Input dimension of the MLP block
             `hidden_dim` (int): Dimension of the intermediate layer
             `out_dim` (int): Output dimension of the MLP block
-            `drouput_1` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
-            `drouput_2` (float): Dropout probability applied after the second fully connected layer in the MLP block (default 0.0)
+            `dropout_1` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability applied after the second fully connected layer in the MLP block (default 0.0)
             
         """
 
         super(MLP, self).__init__()
 
         self.fully_connected_1 = nn.Linear(in_dim, hidden_dim)
-        self.activation_layer = nn.GELU()
+        self.activation_layer = activation_layer()
         self.dropout_1 = nn.Dropout(dropout_1)
         self.fully_connected_2 = nn.Linear(hidden_dim, out_dim)
         self.dropout_2 = nn.Dropout(dropout_2)
@@ -1087,3 +1088,109 @@ class DecoderLayer(nn.Module):
         target = self.layer_norm_3(target)
 
         return target
+
+
+# Old implementations below, but still in use :-(
+class EncoderBlock(nn.Module):
+    def __init__(self, d_model, num_heads=12, mlp_ratio=4., qkv_bias=False, dropout_1=0., dropout_2=0., 
+                attention_dropout=0., projection_dropout=0., activation_layer=nn.GELU):
+        super(EncoderBlock, self).__init__()
+        #eps for compatibility with ViT pretrained weights??
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
+
+        self.attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       activation_layer=activation_layer, dropout_1=dropout_1, dropout_2=dropout_2)
+
+    def forward(self, x):
+        x = x + self.attention(self.layer_norm_1(x)) # (batch_size, num_patches, d_model)
+        x = x + self.mlp(self.layer_norm_2(x)) # (batch_size, num_patches, d_model)
+
+        return x
+
+# ast PatchEmbedding
+class PatchEmbedding(nn.Module):
+    def __init__(self, img_size=224, patch_size=16, in_channels=3, d_model=768, layer_norm=None):
+        super().__init__()
+        img_size = to_2tuple(img_size)
+        patch_size = to_2tuple(patch_size)
+        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = num_patches
+        self.project_to_patch_embeddings = nn.Conv2d(in_channels, d_model, kernel_size=patch_size, stride=patch_size)
+
+    def forward(self, x):
+        """
+        :param x: (batch_size, in_channels = 1, frequency_bins, time_frame_num)
+        :return: ((batch_size, num_patches, d_model)
+        """
+        x = self.project_to_patch_embeddings(x) # (batch_size, d_model, num_patches ** 0.5, num_patches ** 0.5)
+        x = x.flatten(2)  # (batch_size, d_model, num_patches)
+        x = x.transpose(1, 2)  # (batch_size, num_patches, d_model)
+        return x
+
+class VisionTransformer(nn.Module):
+    def __init__(self, img_size=224, patch_size=16, in_channels=3, num_classes=1000, d_model=768, depth=12,
+                 num_heads=12, mlp_ratio=4., qkv_bias=True,
+                 positional_embedding_dropout=0., attention_dropout=0., projection_dropout=0., 
+                 mlp_dropout_1=0., mlp_dropout_2=0., layer_norm=None, activation_layer=None, weight_init=''):
+        super(VisionTransformer, self).__init__()
+        self.num_classes = num_classes
+        self.d_model = d_model
+        norm_layer = layer_norm or partial(nn.LayerNorm, eps=1e-6)
+        self.activation_layer = activation_layer or nn.GELU
+
+        self.patch_embeddings_layer = PatchEmbedding(img_size=img_size, patch_size=patch_size, 
+                                                    in_channels=in_channels, d_model=self.d_model, 
+                                                    layer_norm=None)
+        self.num_patches = self.patch_embeddings_layer.num_patches
+
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+        self.dist_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.positional_embedding = nn.Parameter(torch.zeros(1, 1 + self.num_patches, d_model))
+        self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
+
+        self.encoderBlocks = nn.Sequential(
+            *[
+                EncoderBlock(
+                    d_model=self.d_model,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    dropout_1=mlp_dropout_1,
+                    dropout_2=mlp_dropout_2,
+                    attention_dropout=attention_dropout,
+                    projection_dropout=projection_dropout,
+                    activation_layer=self.activation_layer
+                )
+                for _ in range(depth)
+            ]
+        )
+
+        self.layer_norm = norm_layer(d_model)
+        self.head = nn.Linear(self.d_model, self.num_classes) if self.num_classes > 0 else nn.Identity()
+
+
+    def forward(self, x):
+        """
+        :param x: the input spectrogram, expected shape: (batch_size, in_channels = 1, frequency_bins, time_frame_num)
+        :return: (batch_size, d_model)
+        """
+        # (batch_size, in_channels = 1, frequency_bins, time_frame_num)
+        x = self.patch_embeddings_layer(x) # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, num_patches, d_model)
+        cls_token = self.cls_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
+        dist_token = self.dist_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
+        x = torch.cat((cls_token, dist_token, x), dim=1) #(batch_size, num_patches+2, d_model)
+        x = self.positional_embedding_dropout(x + self.positional_embedding) #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+        x = self.encoderBlocks(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+        x = self.layer_norm(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+
+        x = (x[:, 0] + x[:, 1]) / 2  #(batch_size, num_patches+2, d_model) -> (batch_size, d_model)
+
+        return x

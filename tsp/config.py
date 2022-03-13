@@ -29,7 +29,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.vivit.model_name = models[0]
 
-    cfg.vivit.num_frames_in = 10
+    cfg.vivit.num_frames_in = 16
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
@@ -66,9 +66,37 @@ def load_config():
     cfg.vivit.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
+    # AST
+    cfg.ast = ml_collections.ConfigDict()
+
+    cfg.ast.label_dim = 527
+    cfg.ast.fstride = 10
+    cfg.ast.tstride = 10
+    cfg.ast.input_fdim = 128
+    cfg.ast.input_tdim = 1024
+    cfg.ast.imagenet_pretrained = True
+    cfg.ast.model_size='base384'
+
+    # assume the task has 527 classes
+    cfg.ast.label_dim = 527
+
+
+    cfg.ast.depth = 12
+    
+    cfg.ast.return_prelogits = True  # Required for TSP
+
+    #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
+
+    ast_tiny224 = 'deit_tiny_distilled_patch16_224'
+    ast_small224 = 'vit_deit_small_distilled_patch16_224'
+    ast_base224 = 'vit_deit_base_distilled_patch16_224'
+    ast_base384 = 'vit_deit_base_distilled_patch16_384'
+
+    cfg.pretrained_models.ast = ast_tiny224
+    
     
     #-------------------------------------------------------------------------------------------------
 
@@ -78,7 +106,7 @@ def load_config():
     # Path to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
     cfg.tsp.global_video_features = None
-    cfg.tsp.backbone = 'vivit'
+    cfg.tsp.backbones = ['vivit', 'ast']
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss

@@ -10,6 +10,7 @@ import torchvision
 import wandb
 import timm
 import numpy as np
+from models.ast import AudioSpectrogramTransformer
 
 from tsp.vivit_wrapper import VivitWrapper
 from tsp.model import TSPModel
@@ -258,7 +259,7 @@ def main():
     # Create backbones
     feature_backbones = []
     d_feats = []
-    if cfg.tsp.backbone == 'vivit':
+    if 'vivit' in cfg.tsp.backbones:
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
 
@@ -266,8 +267,14 @@ def main():
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-    else:
-        raise NotImplementedError
+    
+    if 'ast' in cfg.tsp.backbones:
+        model_official = timm.create_model(cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
+        model_official.eval()
+
+        backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast)
+        feature_backbones.append(backbone)
+        d_feats.append(backbone.d_model)
 
     tsp_model = TSPModel(
         backbones=feature_backbones,

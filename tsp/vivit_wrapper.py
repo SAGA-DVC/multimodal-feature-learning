@@ -77,21 +77,17 @@ class VivitWrapper(nn.Module):
             self.init_weights()
         
 
-    def forward(self, x, query_embedding):
+    def forward(self, x):
 
         """
-        Performs a forward pass on the Transformer model
+        Performs a forward pass on the ViViT model
   
         Parameters:
             x (tensor): Tensor of dimension (batch_size, in_channels, num_frames, img_size, img_size)
-            query_embedding (tensor): event queries, Tensor of dimension (num_queries, d_model)
         
         Returns:
-            x (tensor): Tensor of dimension (batch_size, 1, num_tokens, d_model) OR # (batch_size, depth, num_tokens, d_model)
+            x (tensor): Tensor of dimension (batch_size, d_model)
         """
-
-        query_embedding = query_embedding.unsqueeze(0).repeat(x.shape[0], 1, 1) # (batch_size, num_queries, d_model)
-        target = torch.zeros_like(query_embedding)
 
         # (batch_size, num_frames * num_patches + 1, d_model) OR
         # (batch_size, num_frames + 1, d_model) OR 
