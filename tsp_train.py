@@ -30,7 +30,11 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
 
     for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
         start_time = time.time()
-        clip = batch['clip'].to(device)
+        clip = {
+            'video': batch['video'].to(device),
+            'audio': batch['audio'].to(device)
+        }
+        # TODO GVF for AV
         gvf = batch['gvf'].to(device) if 'gvf' in batch else None
 
         # targets has the class index directly, not one-hot-encoded
@@ -185,7 +189,7 @@ def main():
 
     resize = torchvision.transforms.Resize(256)  # As used in ViViT
 
-    train_transform = torchvision.transforms.Compose([
+    train_video_transform = torchvision.transforms.Compose([
         float_zero_to_one,
         torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
         resize,
@@ -202,14 +206,16 @@ def main():
         frame_rate=cfg.video.frame_rate,
         clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=True,
-        transforms=train_transform,
+        num_mel_bins=cfg.audio.num_mel_bins,
+        audio_target_length=cfg.audio.target_length,
+        video_transforms=train_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
         global_video_features=cfg.tsp.global_video_features,
         debug=cfg.debug
     )
 
-    valid_transform = torchvision.transforms.Compose([
+    valid_video_transform = torchvision.transforms.Compose([
         float_zero_to_one,
         torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
         resize,
@@ -225,7 +231,9 @@ def main():
         frame_rate=cfg.video.frame_rate,
         clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=False,
-        transforms=valid_transform,
+        num_mel_bins=cfg.audio.num_mel_bins,
+        audio_target_length=cfg.audio.target_length,
+        video_transforms=valid_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
         global_video_features=cfg.tsp.global_video_features,
@@ -259,6 +267,7 @@ def main():
     # Create backbones
     feature_backbones = []
     d_feats = []
+    input_modalities = []
     if 'vivit' in cfg.tsp.backbones:
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
@@ -267,6 +276,7 @@ def main():
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
+        input_modalities.append('video')
     
     if 'ast' in cfg.tsp.backbones:
         model_official = timm.create_model(cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
@@ -275,9 +285,11 @@ def main():
         backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
+        input_modalities.append('audio')
 
     tsp_model = TSPModel(
         backbones=feature_backbones,
+        input_modalities=input_modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
         num_tsp_classes=[len(l) for l in label_mappings],

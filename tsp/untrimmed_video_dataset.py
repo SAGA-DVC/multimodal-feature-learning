@@ -7,6 +7,8 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 from __future__ import division, print_function
 
 import os
+import sys
+sys.path.insert(0, '..')
 import pandas as pd
 import numpy as np
 import torch
@@ -14,6 +16,7 @@ import h5py
 
 from torch.utils.data import Dataset
 from torchvision.io import read_video
+from models.ast_utils import aframes_to_fbank
 
 
 class UntrimmedVideoDataset(Dataset):
@@ -27,7 +30,7 @@ class UntrimmedVideoDataset(Dataset):
     '''
 
     def __init__(self, csv_filename, root_dir, clip_length, frame_rate, clips_per_segment, temporal_jittering,
-            label_columns, label_mappings, seed=42, transforms=None, global_video_features=None, debug=False):
+            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transforms=None, global_video_features=None, debug=False):
         '''
         Args:
             csv_filename (string): Path to the CSV file with temporal segments information and annotations.
@@ -39,8 +42,10 @@ class UntrimmedVideoDataset(Dataset):
             clips_per_segment (int): The number of clips to sample per segment in the CSV file.
             temporal_jittering (bool): If True, clips are randomly sampled between t-start and t-end of
                 each segment. Otherwise, clips are are sampled uniformly between t-start and t-end.
+            num_mel_bins (int) TODO
+            audio_target_length TODO
             seed (int): Seed of the random number generator used for the temporal jittering.
-            transforms (callable): A function/transform that takes in a TxHxWxC video
+            video_transforms (callable): A function/transform that takes in a TxHxWxC video
                 and returns a transformed version.
             label_columns (list of string): A list of the label columns in the CSV file.
                 If more than one column is specified, the sample return a label for each.
@@ -55,11 +60,14 @@ class UntrimmedVideoDataset(Dataset):
         self.frame_rate = frame_rate
         self.clips_per_segment = clips_per_segment
 
+        self.audio_target_length = audio_target_length
+        self.num_mel_bins = num_mel_bins
+
         self.temporal_jittering = temporal_jittering
         self.rng = np.random.RandomState(seed=seed)
         self.uniform_sampling = np.linspace(0, 1, clips_per_segment)
 
-        self.transforms = transforms
+        self.video_transforms = video_transforms
 
         self.label_columns = label_columns
         self.label_mappings = label_mappings
@@ -82,9 +90,9 @@ class UntrimmedVideoDataset(Dataset):
         ratio = self.rng.uniform() if self.temporal_jittering else self.uniform_sampling[idx//len(self.df)]
         clip_t_start = t_start + ratio * (t_end - t_start - clip_length_in_sec)
         clip_t_end = clip_t_start + clip_length_in_sec
-
         # get a tensor [clip_length, H, W, C] of the video frames between clip_t_start and clip_t_end seconds
-        vframes, _, _ = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
+        vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
+
         idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
         vframes = vframes[idxs][:self.clip_length] # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
         if vframes.shape[0] != self.clip_length:
@@ -93,8 +101,13 @@ class UntrimmedVideoDataset(Dataset):
                                f'fps={fps}, t_start={t_start}, t_end={t_end}')
 
         # apply transforms
-        sample['clip'] = self.transforms(vframes)
+        sample['video'] = self.video_transforms(vframes)
+        aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+        
+        # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
+        # TODO: Normalization with dataset mean & stddev?
 
+        sample['audio'] = aframes
         # add labels
         for label_column in self.label_columns:
             sample[label_column] = row[label_column]

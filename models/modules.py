@@ -1152,7 +1152,7 @@ class VisionTransformer(nn.Module):
         self.num_patches = self.patch_embeddings_layer.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
-        self.dist_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        # self.dist_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.positional_embedding = nn.Parameter(torch.zeros(1, 1 + self.num_patches, d_model))
         self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
 
@@ -1184,9 +1184,11 @@ class VisionTransformer(nn.Module):
         """
         # (batch_size, in_channels = 1, frequency_bins, time_frame_num)
         x = self.patch_embeddings_layer(x) # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, num_patches, d_model)
+        print(x.shape)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
-        dist_token = self.dist_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
-        x = torch.cat((cls_token, dist_token, x), dim=1) #(batch_size, num_patches+2, d_model)
+        # dist_token = self.dist_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
+        # x = torch.cat((cls_token, dist_token, x), dim=1) #(batch_size, num_patches+2, d_model)
+        x = torch.cat((cls_token, x), dim=1) #(batch_size, num_patches+2, d_model)
         x = self.positional_embedding_dropout(x + self.positional_embedding) #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
         x = self.encoderBlocks(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
         x = self.layer_norm(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
