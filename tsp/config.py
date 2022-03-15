@@ -25,7 +25,7 @@ def load_config():
     # Audio
     cfg.audio = ml_collections.ConfigDict()
     cfg.audio.num_mel_bins = 128
-    cfg.audio.target_length = 224  # For AudioSet
+    cfg.audio.target_length = 1024  # For AudioSet
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -100,7 +100,7 @@ def load_config():
     ast_base224 = 'vit_deit_base_distilled_patch16_224'
     ast_base384 = 'vit_deit_base_distilled_patch16_384'
 
-    cfg.pretrained_models.ast = ast_tiny224
+    cfg.pretrained_models.ast = "deit_base_patch16_224"
     
     
     #-------------------------------------------------------------------------------------------------

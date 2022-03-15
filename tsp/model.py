@@ -21,13 +21,13 @@ class TSPModel(nn.Module):
             concat_gvf (bool): If True and num_heads == 2, then concat global video features (GVF) to clip
                 features before applying the second head FC layer.
             combiner (function or torch.nn.Module): function or network that combines features extracted by backbones.
-                If not provided, the identity function will be used.
+                If not provided, the addition function will be used. The function should take as inputs the features of
+                individual backbones.
             input_modalities (List[str]): list of keys for accessing features of modalities for each backbone
                 Example ['video', 'audio']. x['video'] will be given to the first backbone, x['audio'] will be given to 
                 the second backbone
         '''
         super().__init__()
-        # print(f'<TSPModel>: backbone {backbone} num_classes {num_tsp_classes} num_heads {num_tsp_heads} kwargs {kwargs}')
         assert len(num_tsp_classes) == num_tsp_heads, f'<TSPModel>: incompatible configuration. len(num_classes) must be equal to num_heads'
         assert num_tsp_heads == 1 or num_tsp_heads == 2, f'<TSPModel>: num_heads = {num_tsp_heads} must be either 1 or 2'
         assert isinstance(backbones, list), "<TSPModel>: backbones must be a list of models"
@@ -35,7 +35,7 @@ class TSPModel(nn.Module):
 
         self.backbones = backbones
         self.input_modalities = input_modalities
-        self.combiner = combiner if combiner is not None else nn.Identity()
+        self.combiner = combiner if combiner is not None else lambda t1, t2: t1+t2
         self.num_classes = num_tsp_classes
         self.num_heads = num_tsp_heads
         self.concat_gvf = concat_gvf
@@ -59,7 +59,7 @@ class TSPModel(nn.Module):
         for (backbone, modality) in zip(self.backbones, self.input_modalities):
             features.append(backbone(x[modality]))
 
-        features = self.combiner(torch.cat(features))
+        features = self.combiner(*features)
 
         if self.num_heads == 1:
             logits = [self.action_fc(features)]

@@ -1116,23 +1116,20 @@ class EncoderBlock(nn.Module):
 # ast PatchEmbedding
 class PatchEmbedding(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_channels=3, d_model=768, layer_norm=None):
-        super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
+        super(PatchEmbedding, self).__init__()
         self.img_size = img_size
         self.patch_size = patch_size
-        self.num_patches = num_patches
+        self.num_patches = (img_size // patch_size)  ** 2
         self.project_to_patch_embeddings = nn.Conv2d(in_channels, d_model, kernel_size=patch_size, stride=patch_size)
+        self.layer_norm = layer_norm(d_model) if layer_norm else nn.Identity()
 
     def forward(self, x):
-        """
-        :param x: (batch_size, in_channels = 1, frequency_bins, time_frame_num)
-        :return: ((batch_size, num_patches, d_model)
-        """
-        x = self.project_to_patch_embeddings(x) # (batch_size, d_model, num_patches ** 0.5, num_patches ** 0.5)
+        # x = (batch_size, in_channels, img_size, img_size)
+        x = self.project_to_patch_embeddings(x) # (batch_size, d_model, num_patches  0.5, num_patches ** 0.5)
         x = x.flatten(2)  # (batch_size, d_model, num_patches)
         x = x.transpose(1, 2)  # (batch_size, num_patches, d_model)
+        x = self.layer_norm(x)
+
         return x
 
 class VisionTransformer(nn.Module):
@@ -1183,16 +1180,13 @@ class VisionTransformer(nn.Module):
         :return: (batch_size, d_model)
         """
         # (batch_size, in_channels = 1, frequency_bins, time_frame_num)
-        x = self.patch_embeddings_layer(x) # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, num_patches, d_model)
-        print(x.shape)
+        x = self.patch_embeddings_layer(x)  # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, num_patches, d_model)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
-        # dist_token = self.dist_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
-        # x = torch.cat((cls_token, dist_token, x), dim=1) #(batch_size, num_patches+2, d_model)
-        x = torch.cat((cls_token, x), dim=1) #(batch_size, num_patches+2, d_model)
+        x = torch.cat((cls_token, x), dim=1)  #(batch_size, num_patches+1, d_model)
         x = self.positional_embedding_dropout(x + self.positional_embedding) #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
-        x = self.encoderBlocks(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
-        x = self.layer_norm(x)  #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+        x = self.encoderBlocks(x)  # (batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+        x = self.layer_norm(x)  # (batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
 
-        x = (x[:, 0] + x[:, 1]) / 2  #(batch_size, num_patches+2, d_model) -> (batch_size, d_model)
+        x = (x[:, 0] + x[:, 1]) / 2  # (batch_size, num_patches+2, d_model) -> (batch_size, d_model)
 
         return x

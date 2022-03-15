@@ -69,7 +69,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
 
         for g in optimizer.param_groups:
             metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
-        metric_logger.meters['clips/s'].update(clip.shape[0] / (time.time() - start_time))
+        metric_logger.meters['clips/s'].update(clip['video'].shape[0] / (time.time() - start_time))
 
         lr_scheduler.step()
 
@@ -79,7 +79,10 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
     header = f'Valid Epoch {epoch}:'
     with torch.no_grad():
         for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
-            clip = batch['clip'].to(device, non_blocking=True)
+            clip = {
+                'video': batch['video'].to(device, non_blocking=True),
+                'audio': batch['audio'].to(device, non_blocking=True)
+            }
             gvf = batch['gvf'].to(device, non_blocking=True) if 'gvf' in batch else None
             targets = [batch[x].to(device, non_blocking=True) for x in label_columns]
 
