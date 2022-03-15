@@ -3,7 +3,6 @@ A wrapper over ViViT for TSP
 """
 
 
-import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 

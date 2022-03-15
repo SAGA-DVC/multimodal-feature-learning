@@ -4,8 +4,6 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 '''
 
 
-from __future__ import division, print_function
-
 import os
 import sys
 sys.path.insert(0, '..')
@@ -30,7 +28,7 @@ class UntrimmedVideoDataset(Dataset):
     '''
 
     def __init__(self, csv_filename, root_dir, clip_length, frame_rate, clips_per_segment, temporal_jittering,
-            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transforms=None, global_video_features=None, debug=False):
+            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False):
         '''
         Args:
             csv_filename (string): Path to the CSV file with temporal segments information and annotations.
@@ -45,7 +43,7 @@ class UntrimmedVideoDataset(Dataset):
             num_mel_bins (int) TODO
             audio_target_length TODO
             seed (int): Seed of the random number generator used for the temporal jittering.
-            video_transforms (callable): A function/transform that takes in a TxHxWxC video
+            video_transform (callable): A function/transform that takes in a TxHxWxC video
                 and returns a transformed version.
             label_columns (list of string): A list of the label columns in the CSV file.
                 If more than one column is specified, the sample return a label for each.
@@ -67,7 +65,7 @@ class UntrimmedVideoDataset(Dataset):
         self.rng = np.random.RandomState(seed=seed)
         self.uniform_sampling = np.linspace(0, 1, clips_per_segment)
 
-        self.video_transforms = video_transforms
+        self.video_transform = video_transform
 
         self.label_columns = label_columns
         self.label_mappings = label_mappings
@@ -101,7 +99,7 @@ class UntrimmedVideoDataset(Dataset):
                                f'fps={fps}, t_start={t_start}, t_end={t_end}')
 
         # apply transforms
-        sample['video'] = self.video_transforms(vframes)
+        sample['video'] = self.video_transform(vframes)
         aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
         
         # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)

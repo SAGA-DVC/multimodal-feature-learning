@@ -14,6 +14,10 @@ def load_config():
     cfg.dataset.train_csv_filename = "tsp/dataset/activitynet_v1-3_train_tsp_groundtruth.csv"  # Path to the training CSV file
     cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
 
+    cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_train_metadata.csv"
+    # cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_valid_metadata.csv"
+    # cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_test_metadata.csv"
+    
     #-------------------------------------------------------------------------------------------------
     # Video
     cfg.video = ml_collections.ConfigDict()
@@ -127,7 +131,7 @@ def load_config():
     # feature extractors is convenient and output isn't inadvertently replaced 
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'output'  # Path for saving checkpoints and results output  # TODO
+    cfg.output_dir = 'features'  # Path for saving checkpoints and results output  # TODO
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
@@ -157,7 +161,13 @@ def load_config():
         cfg.print_freq = 5
 
     #-------------------------------------------------------------------------------------------------
+    # Feature extraction
+    cfg.num_shards = 1
+    cfg.shard_id = 0
+    cfg.video.stride = 16
+    cfg.local_checkpoint = None
 
+    #-------------------------------------------------------------------------------------------------
     # Distributed Processing  # TODO
     distributed = False
     cfg.distributed = ml_collections.ConfigDict()
