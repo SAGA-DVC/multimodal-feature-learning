@@ -6,7 +6,7 @@ from .modules import VisionTransformer
 from timm.models.layers import trunc_normal_
 
 class AudioSpectrogramTransformer(nn.Module):
-    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrained=True, model_size='base384', model_official=None, depth=12, return_prelogits=False):
+    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrained=True, model_size='base384', model_official=None, depth=12, d_model=768, num_heads=12, return_prelogits=False):
         
         """
         The Audio Spectrogram Transformer (AST) model.
@@ -24,8 +24,8 @@ class AudioSpectrogramTransformer(nn.Module):
  
         
         self.model_official = model_official
-        self.d_model = 768
-        self.encoder = VisionTransformer(d_model=768, num_heads=12, depth=depth, in_channels=1, num_classes=0)
+        self.d_model = d_model
+        self.encoder = VisionTransformer(img_size=input_fdim, d_model=self.d_model, num_heads=num_heads, depth=depth, in_channels=1, num_classes=0)
         self.original_num_patches = self.model_official.patch_embed.num_patches
         self.original_hw = int(self.original_num_patches ** 0.5)
         self.original_embedding_dim = self.model_official.pos_embed.shape[2]
@@ -47,7 +47,7 @@ class AudioSpectrogramTransformer(nn.Module):
         # the positional embedding
         if imagenet_pretrained == True:
             # get the positional embedding from deit model, skip the first two tokens (cls token and distillation token), reshape it to original 2D shape (24*24).
-            new_pos_embed = self.model_official.pos_embed[:, 2:, :].detach().reshape(1, self.original_num_patches, self.original_embedding_dim).transpose(1, 2).reshape(1, self.original_embedding_dim, self.original_hw, self.original_hw)
+            new_pos_embed = self.model_official.pos_embed[:, 1:, :].detach().reshape(1, self.original_num_patches, self.original_embedding_dim).transpose(1, 2).reshape(1, self.original_embedding_dim, self.original_hw, self.original_hw)
 
 
             # cut (from middle) or interpolate the second dimension of the positional embedding
@@ -67,10 +67,10 @@ class AudioSpectrogramTransformer(nn.Module):
 
 
             # concatenate the above positional embedding with the cls token and distillation token of the deit model.
-            self.encoder.positional_embedding = nn.Parameter(torch.cat([self.model_official.pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
+            self.encoder.positional_embedding = nn.Parameter(torch.cat([self.model_official.pos_embed[:, :1, :].detach(), new_pos_embed], dim=1))
         else:
             # if not use imagenet pretrained model, just randomly initialize a learnable positional embedding
-            new_pos_embed = nn.Parameter(torch.zeros(1, self.model_official.patch_embed.num_patches + 2, self.original_embedding_dim))
+            new_pos_embed = nn.Parameter(torch.zeros(1, self.model_official.patch_embed.num_patches + 1, self.original_embedding_dim))
             self.encoder.positional_embedding = new_pos_embed
             trunc_normal_(self.model_official.pos_embed, std=.02)
         
@@ -94,9 +94,7 @@ class AudioSpectrogramTransformer(nn.Module):
         :return: prediction
         """
         # # expect input x = (batch_size, time_frame_num, frequency_bins), e.g., (10, 100, 128)
-        print(x.shape)
         x = x.unsqueeze(1) #(batch_size, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, time_frame_num, frequency_bins)
-        # x = x.transpose(2, 3) #(batch_size, in_channels = 1, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, frequency_bins, time_frame_num)
         x = self.encoder(x) #(batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, d_model)
         if self.return_prelogits:
             return x
