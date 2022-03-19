@@ -3,5 +3,7 @@ ml-collections
 av
 timm
 pytorchvideo
+spacy
+torchtext
 
 ###### Requirements with Version Specifiers ######

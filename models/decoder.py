@@ -1,4 +1,4 @@
-""" Bimodal encoder for fusion of audio and video features """
+""" Bimodal decoder """
 
 import torch
 import torch.nn as nn
@@ -69,7 +69,7 @@ class Decoder(nn.Module):
         self.init_weights()
 
     
-    def forward(self, target, memory, positional_embedding_layer, query_embedding):
+    def forward(self, target, memory, positional_embedding_layer, query_embedding, mask=None):
 
         """
         Pass the inputs (and mask) through the decoder layer in turn.
@@ -91,7 +91,7 @@ class Decoder(nn.Module):
         intermediate = []
         
         for layer in self.decoder:
-            output = layer(output, memory, positional_embedding_layer, query_embedding)
+            output = layer(output, memory, positional_embedding_layer, query_embedding, mask)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(output))

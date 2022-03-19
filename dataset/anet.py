@@ -4,8 +4,9 @@ import sys
 import os
 import json
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 from itertools import chain
+import pickle
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -14,13 +15,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_video
 from torchvision import transforms
+from torchtext.data.utils import get_tokenizer
+from torchtext.vocab import Vocab
 
 from config.config_dvc import load_config
 
 
 class DVCdataset(Dataset):
 
-    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer_json, is_training, args):
+    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args):
 
         """
         Parent class of the dataset to be used for training the DVC model (activity-net)
@@ -36,9 +39,8 @@ class DVCdataset(Dataset):
             `video_folder` (string) : Path to folder containing all the videos in the dataset
             `transforms_fn` (callable): A function/transform that takes in a (num_frames, height, width, num_channels) video 
                                     and returns a transformed version.
-            `tokenizer_json` (string) : path to json file consisting of an object with the following format
-                                {"ix_to_word" : {num _1: token_1, num_2 : token_2},
-                                 "word_to_ix" : {token_1 : num_1, token_2 : num_2}}
+            `tokenizer` : Spacy english tokenizer for captions
+            `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) : 
             `args` (ml_collections.ConfigDict): Configuration object for the dataset
         """
@@ -47,8 +49,14 @@ class DVCdataset(Dataset):
 
         self.annotation = json.load(open(annotation_file, 'r'))
         self.transforms_fn = transforms_fn
-        self.tokenizer = Tokenizer(tokenizer_json, args.vocab_size)
+
+        self.tokenizer = tokenizer
+        self.vocab = vocab
+        self.PAD_IDX = vocab['<pad>']
+        self.BOS_IDX = vocab['<bos>']
+        self.EOS_IDX = vocab['<eos>']
         self.max_caption_len = args.max_caption_len
+
         self.keys = list(self.annotation.keys())
 
         if args.invalid_videos_json is not None:
@@ -74,6 +82,7 @@ class DVCdataset(Dataset):
         """
 
         return len(self.keys)
+
 
     def process_time_step(self, duration, timestamps_list, num_frames):
 
@@ -103,7 +112,7 @@ class DVCdataset(Dataset):
 
 class ActivityNet(DVCdataset):
 
-    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer_json, is_training, args):
+    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args):
 
         """
         Class for the ActivityNet dataset to be used for Dense Video Caption 
@@ -119,14 +128,13 @@ class ActivityNet(DVCdataset):
             `video_folder` (string) : Path to folder containing all the videos in the dataset
             `transforms_fn` (callable): A function/transform that takes in a (num_frames, height, width, num_channels) video 
                                     and returns a transformed version. 
-            `tokenizer_json` (string) : path to json file consisting of an object with the following format
-                                {"ix_to_word" : {num _1: token_1, num_2 : token_2},
-                                 "word_to_ix" : {token_1 : num_1, token_2 : num_2}}
+            `tokenizer` : Spacy english tokenizer for captions
+            `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) :  
             `args` (ml_collections.ConfigDict): Configuration object for the dataset
         """
 
-        super(ActivityNet, self).__init__(annotation_file, video_folder, transforms_fn, tokenizer_json, is_training, args)
+        super(ActivityNet, self).__init__(annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args)
 
 
     def load_feature(self, key):  
@@ -162,7 +170,7 @@ class ActivityNet(DVCdataset):
             `feature` (tensor): Tensor of dimension (num_frames, height, width, num_channels) representing the video (RGB)
             `gt_framestamps` (list): 2d list of ints, [gt_target_segments, 2], representing the start and end frames of the events in the video 
             `action_labels` (list): [gt_target_segments] representing class labels for each event in the video 
-            `caption_label` (list): [gt_target_segments, max_caption_len] representing the token labels for the caption of each event in the video
+            `captions_label` (list): [gt_target_segments, max_caption_len] representing the token labels for the caption of each event in the video
             `gt_timestamps` (list): 2d list of floats, [gt_target_segments, 2], representing the start and end times of the events in the video  
             `duration` (float) : representing the duration/length of the entire video in seconds
             `captions` (list): [gt_target_segments] consisting of the  caption of each event in the video
@@ -188,76 +196,16 @@ class ActivityNet(DVCdataset):
         gt_timestamps = [gt_timestamps[_] for _ in range(len(gt_timestamps)) if _ in random_gt_proposal_ids] # [gt_target_segments, 2] -- 2d list of floats
         action_labels = [action_labels[_] for _ in range(len(action_labels)) if _ in random_gt_proposal_ids] # [gt_target_segments] -- default value [0, 0, 0...]
 
-        caption_label = [self.tokenizer.tokenize(caption, self.max_caption_len) for caption in captions] # [gt_target_segments, max_caption_len]
+        captions_label = []    # [gt_target_segments, max_caption_len]
+        for caption in captions:
+            caption_label = [self.vocab[token] for token in self.tokenizer(caption)]
+            caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len - 2] + [self.EOS_IDX]
+            caption_label = caption_label + [self.PAD_IDX] * (self.max_caption_len - len(caption_label))
+            captions_label.append(caption_label)
+        
         gt_framestamps = self.process_time_step(duration, gt_timestamps, feature.shape[0]) # [gt_target_segments, 2] -- 2d list of ints
 
-        return feature, gt_framestamps, action_labels, caption_label, gt_timestamps, duration, captions, key
-
-
-class Tokenizer(object):
-    def __init__(self, tokenizer_json, vocob_size):
-
-        """
-        Initializes the tokenizer and vocab_size.
-
-        Parameters:
-            `tokenizer_json` (string) : path to json file consisting of an object with the following format
-                                {"ix_to_word" : {num _1: token_1, num_2 : token_2},
-                                 "word_to_ix" : {token_1 : num_1, token_2 : num_2}}
-            `vocob_size` (int) : size of the vocabulary
-        """
-        
-        self.vocab_size = vocob_size
-        self.vocab = json.load(open(tokenizer_json, 'r'))
-        assert self.vocab_size == len(self.vocab['word_to_ix'].keys()), f"You supplied vocab_size={self.vocab_size} but {tokenizer_json} has vocab_size={len(self.vocab['word_to_ix'].keys())}"
-
-        self.vocab['word_to_ix'] = defaultdict(lambda: self.vocab_size,
-                                               self.vocab['word_to_ix'])
-        self.vocab['ix_to_word'] = defaultdict(lambda: self.vocab_size,
-                                               self.vocab['ix_to_word'])
-
-    def tokenize(self, caption, max_len):
-
-        """
-        Tokenizes a caption/sentence and restricts its length to a specific value
-
-        Parameters:
-            `caption` (string) : Caption of a certain event of a video
-            `max_len` (int) : Upper bound of the amount of tokens that the caption should have after tokenization
-        
-        Returns:
-            `res` (list) : list of ints, consisting of tokens from self.vocab['word_to_idx'], 
-                        starting and ending with 0 (representing the start and end of a caption)
-        """
-        
-        tokens = [',', ':', '!', '_', ';', '-', '.', '?', '/', '"', '\\n', '\\', '.']
-        for token in tokens:
-            caption = caption.replace(token, ' ')
-        caption_split = caption.lower().split()
-        res = np.array([0] + [self.vocab['word_to_ix'][word] for word in caption_split][:max_len - 2] + [0])
-        return res
-
-    def rtokenize(self, caption_ids):
-
-        """
-        Converts the tokens of a caption back to words
-
-        Parameters:
-            `caption_ids` (string) : Tokens of a certain caption of a video
-        
-        Returns:
-            (string) : caption/sentence, consisting of words from self.vocab['ix_to_word'], 
-                        possibly ending with 0's (if the length of the caption is less than the maximum length)
-        """
-
-        for i in range(len(caption_ids)):
-            if caption_ids[i] == 0:
-                caption_ids = caption_ids[:i]
-                break
-        if len(caption_ids):
-            return ' '.join([self.vocab['ix_to_word'][str(idx)] for idx in caption_ids]) + '.'
-        else:
-            return ''
+        return feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
 
 
 def get_feature(key, video_folder, data_norm=False):
@@ -326,6 +274,7 @@ def sort_events(proposal_data):
     return proposal_data
 
 
+# TODO - extra loss for framestamps?
 def collate_fn(batch):
     """
     Parameters:
@@ -341,7 +290,7 @@ def collate_fn(batch):
         `key` (list, string) : [batch_size], An unique string representing a video in the dataset.
     
     Returns:
-        `` : 
+        `obj` : 
     """
 
     batch_size = len(batch)
@@ -399,8 +348,8 @@ def collate_fn(batch):
 
     target = [{'segments': torch.tensor([[(ts[1] + ts[0]) / (2 * raw_duration[i]), 
                             (ts[1] - ts[0]) / raw_duration[i]] 
-                            for ts in gt_raw_timestamps[i]]).float(), # (max_gt_target_segments, 2)
-               'labels': torch.tensor(action_labels[i]).long(), # (max_gt_target_segments)
+                            for ts in gt_raw_timestamps[i]]).float(), # (gt_target_segments, 2)
+               'labels': torch.tensor(action_labels[i]).long(), # (gt_target_segments)
                'masks': None,
                'vid_id': vid} for i, vid in enumerate(list(key))]
 
@@ -435,6 +384,22 @@ def collate_fn(batch):
     return obj
 
 
+def build_vocab(self, annotation, tokenizer):
+        """
+        Builds the vocabulary (word to idx and idx to word mapping) based on all the captions in the training dataset.
+        """
+        
+        counter = Counter()
+
+        captions = []
+        for value in annotation.values:
+            captions += value['sentences']
+
+        for caption in captions:
+            counter.update(tokenizer(caption))
+
+        return Vocab(counter, specials=['<pad>', '<bos>', '<eos>'])
+
 
 def build_dataset(video_set, args):
 
@@ -465,6 +430,16 @@ def build_dataset(video_set, args):
 
     annotation_file = PATHS_ANNOTATION[video_set]
     video_folder = PATHS_VIDEO[video_set]
+    
+    tokenizer = get_tokenizer('spacy', language='en')
+
+    # TODO - save words in a diff file for faster vocab building
+    vocab_file = Path(args.vocab_file_path)
+    if vocab_file.exists():
+        vocab = pickle.load(vocab_file)
+    else:
+        vocab = build_vocab(json.load(open("../activity-net/captions/train.json", 'r')), tokenizer)
+        pickle.dump(vocab, vocab_file)
 
     # (num_frames, height, width, num_channels) -> (num_frames, num_channels, height, width)
     float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255) 
@@ -497,12 +472,13 @@ def build_dataset(video_set, args):
     transforms_fn = train_transform if video_set == 'train' else val_transform
     
 
-    dataset = ActivityNet(annotation_file = annotation_file, 
-                          video_folder = video_folder,
-                          transforms_fn = transforms_fn,
-                          tokenizer_json = args.tokenizer_json,
-                          is_training = (video_set == 'train'),
-                          args = args)
+    dataset = ActivityNet(annotation_file=annotation_file, 
+                          video_folder=video_folder,
+                          transforms_f=transforms_fn,
+                          tokenizer=tokenizer,
+                          vocab=vocab,
+                          is_training=(video_set == 'train'),
+                          args=args)
     return dataset
 
 

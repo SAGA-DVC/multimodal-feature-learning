@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 # --------------------------------------------------------------
@@ -123,8 +124,8 @@ class Attention(nn.Module):
         self.projection_layer = nn.Linear(d_model, d_model)
         self.projection_dropout = nn.Dropout(projection_dropout)
 
-    # masks not yet added
-    def forward(self, x):
+    # src_mask not yet added
+    def forward(self, x, mask=None):
 
         """
         Performs a forward pass on the multi-headed attention block followed by a linear (projection) layer.
@@ -147,8 +148,12 @@ class Attention(nn.Module):
         
         # (batch_size, num_heads, num_tokens, head_dim) * (batch_size, num_heads, head_dim, num_tokens) 
         # -> (batch_size, num_heads, num_tokens, num_tokens)
-        self_attention = torch.matmul(query, key.transpose(-2, -1)) * self.scale
-        self_attention = self_attention.softmax(dim=-1)
+        self_attention = torch.matmul(query, key.transpose(-2, -1))
+
+        if mask is not None:
+            self_attention = self_attention.masked_fill(mask == 0, float("-1e20"))
+            
+        self_attention = (self_attention * self.scale).softmax(dim=-1)
         self_attention = self.attention_dropout(self_attention)
 
         weighted_attention = torch.matmul(self_attention, value) # (batch_size, num_heads, num_tokens, head_dim)
@@ -159,7 +164,7 @@ class Attention(nn.Module):
 
         return x
 
-
+# TODO - add mask
 class DotProductAttention(nn.Module):
     def __init__(self, d_model, num_heads=12, qkv_bias=False, attention_dropout=0., projection_dropout=0.):
 
@@ -570,8 +575,7 @@ class FactorisedDotProductAttentionEncoderLayer(nn.Module):
 
 class VivitEncoder(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, d_model, depth, temporal_depth, num_heads, 
-                mlp_ratio=4., qkv_bias=False, positional_embedding_dropout=0.,
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
+                mlp_ratio=4., qkv_bias=False, attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
         
         """
         ViViT Encoder for spatio temporal attention, factorised attention, factorised self attention and factorised dot product attention.
@@ -586,7 +590,6 @@ class VivitEncoder(nn.Module):
             `num_heads` (int): Number of attention heads.
             `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
             `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
-            `positional_embedding_dropout` (float): Dropout probability for the positional embeddings (default 0.0)
             `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
             `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
             `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
@@ -798,8 +801,8 @@ class CrossAttention(nn.Module):
         self.projection_layer = nn.Linear(d_model, d_model)
         self.projection_dropout = nn.Dropout(projection_dropout)
 
-
-    def forward(self, q, k, v):
+    # src_mask not yet added
+    def forward(self, q, k, v, mask=None):
 
         """
         Performs a forward pass on the cross attention block followed by a linear (projection) layer.
@@ -834,8 +837,12 @@ class CrossAttention(nn.Module):
         
         # (batch_size, num_heads, num_tokens_q, head_dim) * (batch_size, num_heads, head_dim, num_tokens_k) 
         # -> (batch_size, num_heads, num_tokens_q, num_tokens_k)
-        cross_attention = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-        cross_attention = cross_attention.softmax(dim=-1)
+        cross_attention = torch.matmul(q, k.transpose(-2, -1))
+
+        if mask is not None:
+            cross_attention = cross_attention.masked_fill(mask == 0, float("-1e20"))
+
+        cross_attention = (cross_attention * self.scale).softmax(dim=-1)
         cross_attention = self.attention_dropout(cross_attention)
 
         weighted_cross_attention = torch.matmul(cross_attention, v) # (batch_size, num_heads, num_tokens_q, head_dim)
@@ -1010,7 +1017,7 @@ class DecoderLayer(nn.Module):
                        dropout_1=dropout_1, dropout_2=dropout_2)
 
     
-    def forward(self, target, memory, positional_embedding_layer, query_embedding):
+    def forward(self, target, memory, positional_embedding_layer, query_embedding, mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -1026,12 +1033,12 @@ class DecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding, mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, positional_embedding_layer, query_embedding) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, memory, positional_embedding_layer, query_embedding, mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, positional_embedding_layer, query_embedding):
+    def forward_pre(self, target, memory, positional_embedding_layer, query_embedding, mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -1048,7 +1055,7 @@ class DecoderLayer(nn.Module):
 
         target_after_norm = self.layer_norm_1(target) 
         q = k = target_after_norm + query_embedding
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm) # (batch_size, num_queries, d_model)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=mask) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         q = target_after_norm + query_embedding
@@ -1061,7 +1068,7 @@ class DecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, positional_embedding_layer, query_embedding):
+    def forward_post(self, target, memory, positional_embedding_layer, query_embedding, mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -1077,7 +1084,7 @@ class DecoderLayer(nn.Module):
         """
        
         q = k = target + query_embedding
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target)) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=mask)) # (batch_size, num_queries, d_model)
 
         q = target + query_embedding
         k = positional_embedding_layer(memory)
@@ -1087,3 +1094,40 @@ class DecoderLayer(nn.Module):
         target = self.layer_norm_3(target)
 
         return target
+
+
+# --------------------------------------------------------------
+# Modules used by the CaptionDecoder
+# Taken from https://github.com/v-iashin/BMT/blob/master/model/blocks.py
+
+class VocabularyEmbedder(nn.Module):
+
+    def __init__(self, vocab_size, d_model):
+        super(VocabularyEmbedder, self).__init__()
+        self.vocab_size = vocab_size
+        self.d_model = d_model
+        # replaced if pretrained weights are used
+        self.embedder = nn.Embedding(vocab_size, d_model)
+
+    def forward(self, x):  # x - tokens (B, seq_len)
+        x = self.embedder(x)
+        x = x * np.sqrt(self.d_model)
+        return x  # (B, seq_len, d_model)
+
+    def init_word_embeddings(self, embedding_matrix, emb_weights_req_grad=True):
+        if embedding_matrix is None:
+            print('Training word embeddings from scratch')
+        else:
+            _, pretrained_embed_dim = embedding_matrix.shape
+            if self.d_model == pretrained_embed_dim:
+                self.embedder = self.embedder.from_pretrained(embedding_matrix)
+                self.embedder.weight.requires_grad = emb_weights_req_grad
+                print(f'Glove embedding dimension is of the same size as d_model i.e. {self.d_model}')
+            else:
+                self.embedder = nn.Sequential(
+                    nn.Embedding(self.vocab_size, pretrained_embed_dim).from_pretrained(embedding_matrix),
+                    nn.Linear(pretrained_embed_dim, self.d_model),
+                    nn.ReLU()
+                )
+                self.embedder[0].weight.requires_grad = emb_weights_req_grad
+                print(f'Glove embedding dimension is {pretrained_embed_dim} and d_model is {self.d_model}')

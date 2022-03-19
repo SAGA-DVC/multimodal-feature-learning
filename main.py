@@ -17,8 +17,6 @@ from dataset.anet import build_dataset, collate_fn
 def main(args):
     init_distributed_mode(args.distributed)
 
-    # print(args)
-
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -26,25 +24,6 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-    model, criterion = build_model_and_criterion(args.dvc)
-    model.to(device)
-    criterion.to(device)
-
-    model_without_ddp = model
-    if args.distributed.is_distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
-
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('number of params:', n_parameters)
-
-    param_dicts = [
-        {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
-    ]
-    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-                                  weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
     dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
@@ -65,6 +44,26 @@ def main(args):
 
     output_dir = Path(args.output_dir)
 
+
+    model, criterion = build_model_and_criterion(args.dvc, dataset_train)
+    model.to(device)
+    criterion.to(device)
+
+    model_without_ddp = model
+    if args.distributed.is_distributed:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
+        model_without_ddp = model.module
+
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('number of params:', n_parameters)
+
+    param_dicts = [
+        {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
+    ]
+    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+
+
     if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
@@ -74,13 +73,14 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
+
     print("Start training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args)
         
         lr_scheduler.step()
 

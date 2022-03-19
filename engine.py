@@ -13,7 +13,7 @@ from torch.nn.utils import clip_grad_norm_
 from utils.misc import MetricLogger, SmoothedValue, reduce_dict
 
 
-def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, max_norm=0):
+def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -25,7 +25,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, max
         `optimizer` (torch.optim.Optimizer) : Optimizer fused to train the model
         `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
         `epoch` (int) : Epoch number
-        `max_norm` (float) : max norm of the gradients. Used for gradient clipping.
+        `args` (ml_collections.ConfigDict) : config parameters
     
     Returns: dictionary with keys as all the losses calculated by the criterion and values as their corresponding global average across all devices.
     """
@@ -46,9 +46,9 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, max
                                 for vid_info in obj['video_target']]
 
         obj = defaultdict(lambda: None, obj)
-        outputs = model(obj)
+        outputs, indices = model(obj)
         
-        loss_dict = criterion(outputs, obj['video_target'])
+        loss_dict = criterion(outputs, obj, indices)
         weight_dict = criterion.weight_dict
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
 
@@ -69,8 +69,8 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, max
 
         optimizer.zero_grad()
         losses.backward()
-        if max_norm > 0:
-            clip_grad_norm_(model.parameters(), max_norm)
+        if args.max_norm > 0:
+            clip_grad_norm_(model.parameters(), args.max_norm)
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)

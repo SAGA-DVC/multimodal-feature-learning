@@ -14,7 +14,7 @@ def load_config():
     cfg.lr = 1e-4
     cfg.lr_drop = 200
     cfg.weight_decay = 1e-4
-    
+        
     cfg.output_dir = 'output'
     cfg.resume = None
     cfg.start_epoch = 0
@@ -34,9 +34,9 @@ def load_config():
     cfg.dataset.activity_net.video_folder = '../activity-net/splits'
     cfg.dataset.activity_net.invalid_videos_json = '../activity-net/captions/invalid_ids.json'
 
-    cfg.dataset.activity_net.tokenizer_json = '../activity-net/captions/tokenizer.json'
+    cfg.dataset.activity_net.vocab_file_path = '../activity-net/captions/vocab.pkl'
 
-    cfg.dataset.activity_net.max_caption_len = 30
+    cfg.dataset.activity_net.max_caption_len = 20
     cfg.dataset.activity_net.vocab_size = 5747
     
     cfg.dataset.activity_net.feature_sample_rate = 2
@@ -72,7 +72,9 @@ def load_config():
     # DVC model
     cfg.dvc = ml_collections.ConfigDict()
 
-    cfg.dvc.device = 'cuda'
+    cfg.dvc.glove_file_path = ''
+    cfg.dvc.pretrained_word_embed_dim = 100
+    cfg.dvc.emb_weights_req_grad = False
 
     cfg.dvc.num_queries = 100
     cfg.dvc.aux_loss = False
@@ -124,10 +126,14 @@ def load_config():
     cfg.dvc.cost_alpha = 0.25
     cfg.dvc.cost_gamma = 2.0
 
+    cfg.dvc.smoothing = 0.7
+
     cfg.dvc.cls_loss_coef = 1
     cfg.dvc.bbox_loss_coef = 1
     cfg.dvc.giou_loss_coef = 1
+    cfg.dvc.captions_loss_coef = 1
     cfg.dvc.eos_coef = 1
+
     
     
     #-------------------------------------------------------------------------------------------------

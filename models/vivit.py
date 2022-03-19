@@ -20,9 +20,9 @@ from .load_weights import init_encoder_block_weights, load_token_embeddings, loa
 class VideoVisionTransformer(nn.Module):
     def __init__(self, model_name, num_frames, num_patches, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
-                mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
-                projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, num_classes=None,
-                return_preclassifier=False, return_prelogits=False, weight_init=False, weight_load=False, model_official=None):
+                mlp_ratio=4., qkv_bias=True, attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., 
+                pre_norm=True, classification_head=False, num_classes=None, return_preclassifier=False, return_prelogits=False, 
+                weight_init=False, weight_load=False, model_official=None):
     
         
         """
@@ -97,7 +97,6 @@ class VideoVisionTransformer(nn.Module):
                             temporal_depth=temporal_depth,
                             mlp_ratio=mlp_ratio,
                             qkv_bias=qkv_bias,
-                            positional_embedding_dropout=positional_embedding_dropout,
                             attention_dropout=attention_dropout,
                             projection_dropout=projection_dropout,
                             dropout_1=dropout_1,
