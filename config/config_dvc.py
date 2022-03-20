@@ -36,7 +36,7 @@ def load_config():
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
 
-    cfg.dataset.activity_net.max_caption_len = 20
+    cfg.dataset.activity_net.max_caption_len_all = 20
     cfg.dataset.activity_net.vocab_size = 5747
     
     cfg.dataset.activity_net.feature_sample_rate = 2

@@ -56,7 +56,7 @@ class DVCdataset(Dataset):
         self.BOS_IDX = vocab['<bos>']
         self.EOS_IDX = vocab['<eos>']
         self.UNK_IDX = vocab['<unk>']
-        self.max_caption_len = args.max_caption_len
+        self.max_caption_len_all = args.max_caption_len_all
 
         self.keys = list(self.annotation.keys())
 
@@ -171,7 +171,7 @@ class ActivityNet(DVCdataset):
             `feature` (tensor): Tensor of dimension (num_frames, height, width, num_channels) representing the video (RGB)
             `gt_framestamps` (list): 2d list of ints, [gt_target_segments, 2], representing the start and end frames of the events in the video 
             `action_labels` (list): [gt_target_segments] representing class labels for each event in the video 
-            `captions_label` (list): [gt_target_segments, max_caption_len] representing the token labels for the caption of each event in the video
+            `captions_label` (list): [gt_target_segments, max_caption_len] {variable dim 1} representing the token labels for the caption of each event in the video
             `gt_timestamps` (list): 2d list of floats, [gt_target_segments, 2], representing the start and end times of the events in the video  
             `duration` (float) : representing the duration/length of the entire video in seconds
             `captions` (list): [gt_target_segments] consisting of the  caption of each event in the video
@@ -197,13 +197,13 @@ class ActivityNet(DVCdataset):
         gt_timestamps = [gt_timestamps[_] for _ in range(len(gt_timestamps)) if _ in random_gt_proposal_ids] # [gt_target_segments, 2] -- 2d list of floats
         action_labels = [action_labels[_] for _ in range(len(action_labels)) if _ in random_gt_proposal_ids] # [gt_target_segments] -- default value [0, 0, 0...]
 
-        captions_label = []    # [gt_target_segments, max_caption_len]
+        captions_label = []    # [gt_target_segments, max_caption_len_all] {variable dim 1}
+
         for caption in captions:
             caption_label = [self.vocab[token] if token in self.vocab.get_itos() else self.UNK_IDX for token in self.tokenizer(caption)]
-            caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len - 2] + [self.EOS_IDX]
-            caption_label = caption_label + [self.PAD_IDX] * (self.max_caption_len - len(caption_label))
+            caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len_all - 2] + [self.EOS_IDX]
             captions_label.append(caption_label)
-        
+
         gt_framestamps = self.process_time_step(duration, gt_timestamps, feature.shape[0]) # [gt_target_segments, 2] -- 2d list of ints
 
         return feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
@@ -284,7 +284,7 @@ def collate_fn(batch):
         `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
         `gt_timestamps_list` (list, int): [batch_size, gt_target_segments, 2], representing the start and end frames of the events in the video 
         `action_labels` (list, int): [batch_size, gt_target_segments] representing class labels for each event in the video 
-        `caption_list` (list, int): [batch_size, gt_target_segments, max_caption_len] representing the token labels for the caption of each event in the video
+        `caption_list` (list, int): [batch_size, gt_target_segments, max_caption_len] {variable dim 1 and 2} representing the token labels for the caption of each event in the video
         `gt_raw_timestamps` (list, float): [batch_size, gt_target_segments, 2], representing the start and end times of the events in the video  
         `raw_duration` (list, float) : [batch_size], representing the duration/length of the entire video in seconds
         `raw_caption` (list, string): [batch_size, gt_target_segments] consisting of the  caption of each event in the video
@@ -300,7 +300,7 @@ def collate_fn(batch):
     feature_list, gt_timestamps_list, action_labels, caption_list, gt_raw_timestamps, raw_duration, raw_caption, key = zip(*batch)
 
     max_video_length = max([x.shape[0] for x in feature_list]) 
-    max_caption_length = max(chain(*[[len(caption) for caption in captions] for captions in caption_list]))
+    max_caption_len = max(chain(*[[len(caption) for caption in captions] for captions in caption_list]))
     total_caption_num = sum([len(captions) for captions in caption_list])
 
     gt_timestamps = list(chain(*gt_timestamps_list)) # (batch_size * gt_target_segments, 2) {dim 0 is an avg value}
@@ -309,9 +309,9 @@ def collate_fn(batch):
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
 
-    caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_length).zero_()
+    caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(self.PAD_IDX)
     caption_length_all = torch.LongTensor(total_caption_num).zero_()
-    caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_length).zero_()
+    caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_len).zero_()
     caption_gather_idx = torch.LongTensor(total_caption_num).zero_()
 
     max_gt_target_segments = max(len(x) for x in caption_list)
@@ -341,7 +341,10 @@ def collate_fn(batch):
             _caption_len = len(caption)
             caption_length_all[total_caption_idx + iidx] = _caption_len
             caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.Tensor(caption)
-            caption_mask_all[total_caption_idx + iidx, :_caption_len] = True
+            caption_mask_all[total_caption_idx + iidx, :_caption_len] = 1
+        
+        # mask = (caption_length_all == self.PAD_IDX)
+        # print(mask.shape)
 
         total_caption_idx += gt_segment_length
 
@@ -375,9 +378,9 @@ def collate_fn(batch):
 
         "cap":
             {
-                "tensor": caption_tensor_all,  # tensor, (total_caption_num, max_caption_length)
+                "tensor": caption_tensor_all,  # tensor, (total_caption_num, max_caption_len)
                 "length": caption_length_all,  # tensor, (total_caption_num)
-                "mask": caption_mask_all,  # tensor, (total_caption_num, max_caption_length)
+                "mask": caption_mask_all,  # tensor, (total_caption_num, max_caption_len)
                 "raw": list(raw_caption),  # list of strings, (batch_size, gt_target_segments) {variable dim 1}
             }
     }

@@ -86,10 +86,14 @@ class PositionalEmbedding(nn.Module):
             x (tensor): Tensor of dimension (batch_size, num_tokens, d_model) OR (batch_size, num_frames, num_patches, d_model)
 
         """
-      
-        assert self.pos_shape[1:] == x.shape[1:], f"shape of positional embedding {self.pos_shape[1:]} set at initialisation time does not match shape of input {x.shape[1:]} (batch_size is ommitted)."
 
-        x = self.positional_embedding_dropout(x + self.positional_embedding) 
+        batch_size, num_tokens, d_model = x.shape
+        
+        assert self.pos_shape[0] == batch_size, f"Dimension 0 (batch_size) of positional embedding {self.pos_shape[0]} set at initialisation time does not match the dimension 0 (batch_size) of input {batch_size}."
+        assert self.pos_shape[1] <= num_tokens, f"Dimension 1 (num_tokens) of positional embedding {self.pos_shape[1]} set at initialisation time should be >= the dimension 1 (num_tokens) of input {num_tokens}."
+        assert self.pos_shape[2] == d_model, f"Dimension 2 (d_model) of positional embedding {self.pos_shape[2]} set at initialisation time does not match the dimension 2 (d_model) of input {d_model}."
+        
+        x = self.positional_embedding_dropout(x + self.positional_embedding[:, :num_tokens]) 
 
         return x
         
@@ -1144,50 +1148,54 @@ class CaptionDecoderLayer(nn.Module):
                        dropout_1=dropout_1, dropout_2=dropout_2)
 
     
-    def forward(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+    def forward(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
-            memory: the sequence from the last layer of the encoder
-            word_positional_embedding_layer: position embedding layer for captions
-            positional_embedding_layer: position embedding layer for encoder inputs
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, word_positional_embedding_layer, positional_embedding_layer, mask) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, word_positional_embedding_layer, positional_embedding_layer, mask) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+    def forward_pre(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
-            memory: the sequence from the last layer of the encoder
-            word_positional_embedding_layer: position embedding layer for captions
-            positional_embedding_layer: position embedding layer for encoder inputs
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
 
         target_after_norm = self.layer_norm_1(target) 
         q = k = word_positional_embedding_layer(target_after_norm)
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=mask) # (batch_size, num_queries, d_model)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         q = word_positional_embedding_layer(target_after_norm)
         k = positional_embedding_layer(memory)
-        target = target + self.cross_attention(q=q, k=k, v=memory) # (batch_size, num_queries, d_model)
+        target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
         target = target + self.mlp(target_after_norm)
@@ -1195,27 +1203,29 @@ class CaptionDecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+    def forward_post(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
   
         Parameters:
-            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
-            memory: the sequence from the last layer of the encoder
-            word_positional_embedding_layer: position embedding layer for captions
-            positional_embedding_layer: position embedding layer for encoder inputs
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
         
         Returns:
-            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
        
         q = k = word_positional_embedding_layer(target)
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=mask)) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=matgt_masksk)) # (batch_size, num_queries, d_model)
 
         q = word_positional_embedding_layer(target)
         k = positional_embedding_layer(memory)
-        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory)) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)

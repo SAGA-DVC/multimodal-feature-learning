@@ -209,13 +209,19 @@ class DVC(nn.Module):
             max_gt_target_segments = obj['gt_segments'].shape[1]
 
             # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-            memory, src_mask = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
+            memory, memory_mask = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
 
         memory = memory.to(feats.device)
         memory.requires_grad = True
+
+        memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+        memory_mask = memory_mask.to(feats.device)
+
+        tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+        tgt_mask = tgt_mask.to(captions.device)
         
         # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-        outputs_captions = self.caption_decoder(captions, memory, nn.Identity())
+        outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
 
         out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -231,10 +237,56 @@ class DVC(nn.Module):
         return [{'pred_logits': a, 'pred_segments': b, 'pred_captions': c}
                 for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_captions[:-1])]
 
+    
+    def make_tgt_mask(self, target, tgt_padding_mask):
+        """
+        Generates a mask that is a combination of a lookahead mask and a padding mask
+        
+        Parameters:
+            target (Tensor): Tensor of dimension (batch_size, seq_len)
+            tgt_padding_mask (Tensor): Padding mask of dimension (batch_size, seq_len)
+        
+        Returns:
+            tgt_mask (Tensor): Tensor of dimention (batch_size, 1, seq_len, seq_len)
+        """
+
+        batch_size, seq_len = target.shape
+        look_ahead_mask = torch.tril(torch.ones((seq_len, seq_len)))
+        tgt_mask = torch.minimum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask)
+        return tgt_mask    # (batch_size, 1, seq_len, seq_len)
+
+
+    def make_memory_mask(self):
+        """
+        Generates the memory padding mask
+        
+        Parameters:
+            memory (Tensor): Tensor of dimension (batch_size, seq_len)
+        
+        Returns:
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens)
+        """
+        pass
+
+
 
     # TODO - make more efficient
     def get_segment_features(self, features, pred_segments, indices, max_gt_target_segments):
 
+        """
+        Gets features within a specific boundary (based on selected bipartite matching indices) from pre-computed video features
+        Parameters:
+            features : Tensor of dimension (batch_size, num_tokens, d_model). These are the pre-computed features
+            pred_segments : Tensor of dimension (batch_size, num_queries, 2). These are the pre-computed event/segment boundaries.
+            indices : matching between the outputs of the last layer and the targets
+                    list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+            max_gt_target_segments (int): Maximum number of ground truth events/segments in a single video in a batch
+
+        Returns:
+            pred_features : Tensor of dimension (nb_target_segments, num_tokens, d_model)
+            pred_features_src_padding_mask : Tensor of dimension (nb_target_segments, num_tokens)
+        """
+        
         batch_size, num_tokens, d_model = features.shape
 
         pred_segment_boundaries = torch.zeros(batch_size, max_gt_target_segments, 2)
@@ -242,23 +294,39 @@ class DVC(nn.Module):
         for i, (pred_idx, _) in enumerate(indices):
             pred_segment_boundaries[i, :pred_idx.shape[0]] = pred_segments[i, pred_idx.long()]
         
-        # (batch_size, max_gt_target_segments, num_tokens, d_model) AND (batch_size, max_gt_target_segments) AND (batch_size, max_gt_target_segments, num_tokens)
-        pred_features, pred_features_mask, pred_features_src_mask = self.crop_segments(features, pred_segment_boundaries, indices, max_gt_target_segments)
+        # (batch_size, max_gt_target_segments, num_tokens, d_model) AND (batch_size, max_gt_target_segments, num_tokens) AND (batch_size, max_gt_target_segments)
+        pred_features, pred_features_src_padding_mask, pred_segments_padding_mask = self.crop_segments(features, pred_segment_boundaries, indices, max_gt_target_segments)
         
         pred_features = pred_features.reshape(-1, num_tokens, d_model)
-        pred_features_mask = pred_features_mask.reshape(-1)
-        pred_features_src_mask = pred_features_src_mask.reshape(-1, num_tokens)
+        pred_features_src_padding_mask = pred_features_src_padding_mask.reshape(-1, num_tokens)
+        pred_segments_padding_mask = pred_segments_padding_mask.reshape(-1)
         
         # removes extra captions (padding) added to satisfy dimension constraints of tensors
-        pred_features = pred_features[pred_features_mask == True]    # (nb_target_segments, num_tokens, d_model)
-        pred_features_src_mask = pred_features_src_mask[pred_features_mask == True]    # (nb_target_segments, num_tokens, d_model)
+        pred_features = pred_features[pred_segments_padding_mask == True]    # (nb_target_segments, num_tokens, d_model)
+        pred_features_src_padding_mask = pred_features_src_padding_mask[pred_segments_padding_mask == True]    # (nb_target_segments, num_tokens)
         
-        return pred_features, pred_features_src_mask    
+        return pred_features, pred_features_src_padding_mask
 
 
     # TODO - padding like in BMT??
     def crop_segments(self, features, pred_segment_boundaries, indices, max_gt_target_segments):
-        
+
+        """
+        Crops the video features within a specific boundary (based on selected bipartite matching indices)
+        Parameters:
+            features : Tensor of dimension (batch_size, num_tokens, d_model). These are the pre-computed features
+            pred_segment_boundaries : Tensor of dimension (batch_size, max_gt_target_segments, 2). These are the pre-computed event/segment boundaries.
+            indices : matching between the outputs of the last layer and the targets
+                    list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+            max_gt_target_segments (int): Maximum number of ground truth events/segments in a single video in a batch
+
+        Returns:
+            pred_features : Tensor of dimension (batch_size, max_gt_target_segments, num_tokens, d_model)
+            pred_features_src_padding_mask : Tensor of dimension (batch_size, max_gt_target_segments, num_tokens)
+            pred_segments_padding_mask : Tensor of dimension (batch_size, max_gt_target_segments)
+            
+        """
+
         batch_size, num_tokens, d_model = features.shape
         
         start_quantile = pred_segment_boundaries[:, :, 0]    # (batch_size, max_gt_target_segments)
@@ -271,30 +339,27 @@ class DVC(nn.Module):
                 if start >= num_tokens:
                     start = num_tokens - 1
                     start_idx[i] = start
-
+                    end_idx[i] = num_tokens
                 elif end >= num_tokens:
-                    end = num_tokens + 1
-                    end_idx[i] = end
+                    end_idx[i] = num_tokens
                 else:
-                    end = start + 1
-                    end_idx[i] = end
+                    end_idx[i] = start + 1
         
         start_idx = start_idx.reshape(batch_size, max_gt_target_segments) 
         end_idx = end_idx.reshape(batch_size, max_gt_target_segments)
             
         pred_features = torch.zeros(batch_size, max_gt_target_segments, num_tokens, d_model)
-        pred_features_mask = torch.zeros(batch_size, max_gt_target_segments, dtype=torch.bool)
-        pred_features_src_mask = torch.zeros(batch_size, max_gt_target_segments, num_tokens, dtype=torch.bool)
+        pred_features_src_padding_mask = torch.zeros(batch_size, max_gt_target_segments, num_tokens)
+        pred_segments_padding_mask = torch.zeros(batch_size, max_gt_target_segments, dtype=torch.bool)
 
         for i in range(batch_size):
             gt_target_segments = len(indices[i][0])
             for j in range(gt_target_segments):
                 pred_features[i, j, start_idx[i, j]:end_idx[i, j]] = features[i, start_idx[i, j]:end_idx[i, j], :]
+                pred_features_src_padding_mask[i, j, start_idx[i, j]:end_idx[i, j]] = 1
                 pred_features_mask[i, j] = True
-                pred_features_src_mask[i, j, start_idx[i, j]:end_idx[i, j]] = True
 
-        return pred_features, pred_features_mask, pred_features_src_mask
-
+        return pred_features, pred_features_src_padding_mask, pred_segments_padding_mask 
 
     
     def init_weights(self):

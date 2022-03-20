@@ -64,27 +64,28 @@ class CaptionDecoder(nn.Module):
     # TODO - change ordering of pos embed and query embed parameters 
     # TODO - check if pos embed should be given at every decoder layer to word
     # TODO - use log softmax?
-    def forward(self, captions, memory, positional_embedding_layer):
+    def forward(self, captions, memory, positional_embedding_layer, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Transformer model
   
         Parameters:
-            captions (tensor): Tensor of dimension (batch_size, seq_len)
-            memory (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            captions (Tensor): Tensor of dimension (batch_size, seq_len)
+            memory (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
             positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Combination of the lookahead mask and padding mask for the target/captions
+            memory_masl (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block of the decoder.
         
         Returns:
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
         """
 
         target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
-        tgt_mask = self.make_tgt_mask(captions).to(target.device)     # (batch_size, 1, seq_len, seq_len) 
 
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, memory, self.word_positional_embedding_layer, positional_embedding_layer, tgt_mask)    # (batch_size, seq_len, embed_dim)
+            target = layer(target, memory, self.word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(target))
@@ -125,8 +126,5 @@ class CaptionDecoder(nn.Module):
 
         load_positional_embeddings(self, model_official)
     
+
     
-    def make_tgt_mask(self, target):
-        batch_size, seq_len = target.shape
-        tgt_mask = torch.tril(torch.ones((seq_len, seq_len))).expand(batch_size, 1, seq_len, seq_len)
-        return tgt_mask

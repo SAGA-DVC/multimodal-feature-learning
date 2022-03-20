@@ -40,7 +40,7 @@ def build_model_and_criterion(args, dataset):
                 in_channels=args.in_channels, 
                 d_model=args.d_model, 
                 vocab_size=len(dataset.vocab), 
-                seq_len=dataset.max_caption_len, 
+                seq_len=dataset.max_caption_len_all, 
                 embedding_matrix=embedding_matrix, 
                 emb_weights_req_grad=False,
                 depth=args.depth, 
