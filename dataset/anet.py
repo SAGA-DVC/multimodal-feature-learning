@@ -16,7 +16,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.io import read_video
 from torchvision import transforms
 from torchtext.data.utils import get_tokenizer
-from torchtext.vocab import Vocab
+from torchtext.vocab import vocab
 
 from config.config_dvc import load_config
 
@@ -55,6 +55,7 @@ class DVCdataset(Dataset):
         self.PAD_IDX = vocab['<pad>']
         self.BOS_IDX = vocab['<bos>']
         self.EOS_IDX = vocab['<eos>']
+        self.UNK_IDX = vocab['<unk>']
         self.max_caption_len = args.max_caption_len
 
         self.keys = list(self.annotation.keys())
@@ -198,7 +199,7 @@ class ActivityNet(DVCdataset):
 
         captions_label = []    # [gt_target_segments, max_caption_len]
         for caption in captions:
-            caption_label = [self.vocab[token] for token in self.tokenizer(caption)]
+            caption_label = [self.vocab[token] if token in self.vocab.get_itos() else self.UNK_IDX for token in self.tokenizer(caption)]
             caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len - 2] + [self.EOS_IDX]
             caption_label = caption_label + [self.PAD_IDX] * (self.max_caption_len - len(caption_label))
             captions_label.append(caption_label)
@@ -339,7 +340,7 @@ def collate_fn(batch):
         for iidx, caption in enumerate(caption_list[idx]):
             _caption_len = len(caption)
             caption_length_all[total_caption_idx + iidx] = _caption_len
-            caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.from_numpy(caption)
+            caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.Tensor(caption)
             caption_mask_all[total_caption_idx + iidx, :_caption_len] = True
 
         total_caption_idx += gt_segment_length
@@ -384,7 +385,7 @@ def collate_fn(batch):
     return obj
 
 
-def build_vocab(self, annotation, tokenizer):
+def build_vocab(annotation, tokenizer):
         """
         Builds the vocabulary (word to idx and idx to word mapping) based on all the captions in the training dataset.
         """
@@ -392,13 +393,13 @@ def build_vocab(self, annotation, tokenizer):
         counter = Counter()
 
         captions = []
-        for value in annotation.values:
+        for value in list(annotation.values()):
             captions += value['sentences']
 
         for caption in captions:
             counter.update(tokenizer(caption))
 
-        return Vocab(counter, specials=['<pad>', '<bos>', '<eos>'])
+        return vocab(counter, min_freq=2, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 
 
 def build_dataset(video_set, args):
@@ -431,15 +432,16 @@ def build_dataset(video_set, args):
     annotation_file = PATHS_ANNOTATION[video_set]
     video_folder = PATHS_VIDEO[video_set]
     
-    tokenizer = get_tokenizer('spacy', language='en')
+    tokenizer = get_tokenizer('spacy', language='en_core_web_sm')
 
     # TODO - save words in a diff file for faster vocab building
     vocab_file = Path(args.vocab_file_path)
+
     if vocab_file.exists():
-        vocab = pickle.load(vocab_file)
+        vocab = pickle.load(open(vocab_file, 'rb'))
     else:
         vocab = build_vocab(json.load(open("../activity-net/captions/train.json", 'r')), tokenizer)
-        pickle.dump(vocab, vocab_file)
+        pickle.dump(vocab, open(vocab_file, 'wb'))
 
     # (num_frames, height, width, num_channels) -> (num_frames, num_channels, height, width)
     float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255) 
@@ -474,7 +476,7 @@ def build_dataset(video_set, args):
 
     dataset = ActivityNet(annotation_file=annotation_file, 
                           video_folder=video_folder,
-                          transforms_f=transforms_fn,
+                          transforms_fn=transforms_fn,
                           tokenizer=tokenizer,
                           vocab=vocab,
                           is_training=(video_set == 'train'),

@@ -252,7 +252,7 @@ class SetCriterion(nn.Module):
         The losses include classification loss, cardinality loss and segment loss
         
         Parameters:
-            `loss` (string): Determines the loss to be calculated. Can be one of 'labels', 'cardinality' or 'segments'.
+            `loss` (string): Determines the loss to be calculated. Can be one of 'labels', 'cardinality', 'segments' or 'captions.
             `outputs` (dict): Output of the model. See forward() for the format.
             `targets` (list): Ground truth targets of the dataset. See forward() for the format.
             `indices` (list): Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
@@ -326,6 +326,7 @@ class SetCriterion(nn.Module):
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
 
+
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
             for i, aux_outputs in enumerate(outputs['aux_outputs']):
@@ -342,7 +343,7 @@ class SetCriterion(nn.Module):
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
-        return losses, indices
+        return losses
 
 
 
@@ -373,7 +374,7 @@ class LabelSmoothing(nn.Module):
             # dim, index, val
             dist.index_fill_(0, mask.squeeze(), 0)
             
-        return F.kl_div(pred, dist, reduction='sum')
+        return F.kl_div(pred.log(), dist, reduction='sum')
 
 
 

@@ -3,7 +3,7 @@ ml-collections
 av
 timm
 pytorchvideo
-spacy
-torchtext
+
+# python -m spacy download en
 
 ###### Requirements with Version Specifiers ######

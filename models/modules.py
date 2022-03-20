@@ -54,7 +54,7 @@ class TokenEmbedding(nn.Module):
         
         return x
 
-
+# TODO - pos emebd to accomomdate variable length input
 class PositionalEmbedding(nn.Module):
         
     def __init__(self, shape, positional_embedding_dropout=0.):
@@ -1099,6 +1099,129 @@ class DecoderLayer(nn.Module):
 # --------------------------------------------------------------
 # Modules used by the CaptionDecoder
 # Taken from https://github.com/v-iashin/BMT/blob/master/model/blocks.py
+
+# --------------------------------------------------------------
+# Modules used by the Decoder
+
+# TODO - dropout before/after each layer_norm?
+# TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
+# TODO - check pos embed for encoder -- how??
+class CaptionDecoderLayer(nn.Module):
+    def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
+
+        """
+        Decoder consisting of the basic attention architecture.
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads. 
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
+        """
+
+        super(CaptionDecoderLayer, self).__init__()
+
+        self.pre_norm=pre_norm
+        
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=dropout_1, dropout_2=dropout_2)
+
+    
+    def forward(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+
+        """
+        Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            word_positional_embedding_layer: position embedding layer for captions
+            positional_embedding_layer: position embedding layer for encoder inputs
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+
+        if self.pre_norm:
+            return self.forward_pre(target, memory, word_positional_embedding_layer, positional_embedding_layer, mask) # (batch_size, num_queries, d_model)
+        else:
+            return self.forward_post(target, memory, word_positional_embedding_layer, positional_embedding_layer, mask) # (batch_size, num_queries, d_model)
+
+    
+    def forward_pre(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+        
+        """
+        Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            word_positional_embedding_layer: position embedding layer for captions
+            positional_embedding_layer: position embedding layer for encoder inputs
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+
+        target_after_norm = self.layer_norm_1(target) 
+        q = k = word_positional_embedding_layer(target_after_norm)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=mask) # (batch_size, num_queries, d_model)
+
+        target_after_norm = self.layer_norm_2(target)
+        q = word_positional_embedding_layer(target_after_norm)
+        k = positional_embedding_layer(memory)
+        target = target + self.cross_attention(q=q, k=k, v=memory) # (batch_size, num_queries, d_model)
+        
+        target_after_norm = self.layer_norm_3(target)
+        target = target + self.mlp(target_after_norm)
+
+        return target
+
+
+    def forward_post(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, mask):
+
+        """
+        Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            word_positional_embedding_layer: position embedding layer for captions
+            positional_embedding_layer: position embedding layer for encoder inputs
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+       
+        q = k = word_positional_embedding_layer(target)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=mask)) # (batch_size, num_queries, d_model)
+
+        q = word_positional_embedding_layer(target)
+        k = positional_embedding_layer(memory)
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory)) # (batch_size, num_queries, d_model)
+
+        target = target + self.mlp(target)
+        target = self.layer_norm_3(target)
+
+        return target
+
 
 class VocabularyEmbedder(nn.Module):
 

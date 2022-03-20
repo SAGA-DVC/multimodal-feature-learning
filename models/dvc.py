@@ -13,6 +13,7 @@ from .modules import PositionalEmbedding, FFN
 from .load_weights import load_positional_embeddings
 
 # TODO - src mask
+# TODO - check devices for tensors
 class DVC(nn.Module):
     def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, 
@@ -36,6 +37,8 @@ class DVC(nn.Module):
         self.query_embedding = nn.Embedding(num_queries, d_model)
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+
+        self.matcher = matcher
 
         # for encoder
         num_frames = num_frames_in // temporal_patch_size
@@ -205,11 +208,14 @@ class DVC(nn.Module):
         with torch.no_grad():
             max_gt_target_segments = obj['gt_segments'].shape[1]
 
-            # (nb_target_segments, num_tokens, d_model)
-            memory = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
+            # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
+            memory, src_mask = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
+
+        memory = memory.to(feats.device)
+        memory.requires_grad = True
         
         # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-        outputs_captions = self.caption_decoder(captions, memory)
+        outputs_captions = self.caption_decoder(captions, memory, nn.Identity())
 
         out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -227,58 +233,67 @@ class DVC(nn.Module):
 
 
     # TODO - make more efficient
-    @torch.no_grad
     def get_segment_features(self, features, pred_segments, indices, max_gt_target_segments):
 
         batch_size, num_tokens, d_model = features.shape
 
         pred_segment_boundaries = torch.zeros(batch_size, max_gt_target_segments, 2)
 
-        for i, pred_idx, _ in enumerate(indices):
+        for i, (pred_idx, _) in enumerate(indices):
             pred_segment_boundaries[i, :pred_idx.shape[0]] = pred_segments[i, pred_idx.long()]
         
-        # (batch_size, max_gt_target_segments, num_tokens, d_model) AND (batch_size, max_gt_target_segments)
-        pred_features, pred_features_mask = self.crop_segments(features, pred_segment_boundaries, indices, max_gt_target_segments)
+        # (batch_size, max_gt_target_segments, num_tokens, d_model) AND (batch_size, max_gt_target_segments) AND (batch_size, max_gt_target_segments, num_tokens)
+        pred_features, pred_features_mask, pred_features_src_mask = self.crop_segments(features, pred_segment_boundaries, indices, max_gt_target_segments)
         
         pred_features = pred_features.reshape(-1, num_tokens, d_model)
         pred_features_mask = pred_features_mask.reshape(-1)
+        pred_features_src_mask = pred_features_src_mask.reshape(-1, num_tokens)
         
-        # removes extra captions(padding) added to satisfy dimension constraints of tensors
+        # removes extra captions (padding) added to satisfy dimension constraints of tensors
         pred_features = pred_features[pred_features_mask == True]    # (nb_target_segments, num_tokens, d_model)
-        return pred_features    
+        pred_features_src_mask = pred_features_src_mask[pred_features_mask == True]    # (nb_target_segments, num_tokens, d_model)
+        
+        return pred_features, pred_features_src_mask    
 
 
     # TODO - padding like in BMT??
-    @torch.no_grad
     def crop_segments(self, features, pred_segment_boundaries, indices, max_gt_target_segments):
         
         batch_size, num_tokens, d_model = features.shape
         
         start_quantile = pred_segment_boundaries[:, :, 0]    # (batch_size, max_gt_target_segments)
         end_quantile = pred_segment_boundaries[:, :, 1]    # (batch_size, max_gt_target_segments)
-        start_idx = (num_tokens * start_quantile).long()    # (batch_size, max_gt_target_segments)
-        end_idx = (num_tokens * end_quantile).long    # (batch_size, max_gt_target_segments)
+        start_idx = (num_tokens * start_quantile).long().reshape(-1)    # (batch_size * max_gt_target_segments)
+        end_idx = (num_tokens * end_quantile).long().reshape(-1)    # (batch_size * max_gt_target_segments)
 
-        if start_idx >= end_idx:
-            if start_idx >= num_tokens:
-                start_idx = num_tokens - 1
+        for i, (start, end) in enumerate(zip(start_idx, end_idx)):
+            if start >= end:
+                if start >= num_tokens:
+                    start = num_tokens - 1
+                    start_idx[i] = start
 
-            elif end_idx >= num_tokens:
-                end_idx = num_tokens + 1
-            
-            else:
-                end_idx = start_idx + 1
+                elif end >= num_tokens:
+                    end = num_tokens + 1
+                    end_idx[i] = end
+                else:
+                    end = start + 1
+                    end_idx[i] = end
+        
+        start_idx = start_idx.reshape(batch_size, max_gt_target_segments) 
+        end_idx = end_idx.reshape(batch_size, max_gt_target_segments)
             
         pred_features = torch.zeros(batch_size, max_gt_target_segments, num_tokens, d_model)
         pred_features_mask = torch.zeros(batch_size, max_gt_target_segments, dtype=torch.bool)
+        pred_features_src_mask = torch.zeros(batch_size, max_gt_target_segments, num_tokens, dtype=torch.bool)
 
         for i in range(batch_size):
             gt_target_segments = len(indices[i][0])
             for j in range(gt_target_segments):
-                pred_features[i, j] = features[i, start_idx[i, j]:end_idx[i, j], :]
+                pred_features[i, j, start_idx[i, j]:end_idx[i, j]] = features[i, start_idx[i, j]:end_idx[i, j], :]
                 pred_features_mask[i, j] = True
+                pred_features_src_mask[i, j, start_idx[i, j]:end_idx[i, j]] = True
 
-        return pred_features, pred_features_mask
+        return pred_features, pred_features_mask, pred_features_src_mask
 
 
     

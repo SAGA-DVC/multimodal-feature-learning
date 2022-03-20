@@ -1,5 +1,5 @@
-import sys
-# sys.path.insert(0, '..')
+from pathlib import Path
+import pickle
 
 import torch
 import numpy as np
@@ -9,10 +9,10 @@ from .matcher import build_matcher
 from .criterion import SetCriterion
 from config.config_dvc import load_config
 
-
+# TODO - file.close()?
 def build_model_and_criterion(args, dataset):
 
-    device = torch.device(args.device)
+    # device = torch.device(args.device)
 
     model_official = None
     
@@ -21,8 +21,15 @@ def build_model_and_criterion(args, dataset):
         model_official.eval()
 
     matcher = build_matcher(args)
+    
+    embedding_matrix_file = Path(args.embedding_matrix_file_path)
 
-    embedding_matrix = build_word_embedding_matrix(args.glove_file_path, dataset.vocab, args.pretrained_word_embed_dim)
+    if embedding_matrix_file.exists():
+        embedding_matrix = pickle.load(open(embedding_matrix_file, 'rb'))
+    else:
+        embedding_matrix = build_word_embedding_matrix(args.glove_file_path, dataset.vocab, args.pretrained_word_embed_dim)
+        pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
+
 
     model = DVC(model_name=args.model_name, 
                 num_frames_in=args.num_frames_in, 
@@ -63,7 +70,7 @@ def build_model_and_criterion(args, dataset):
     weight_dict = {'loss_ce': args.cls_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
-                'loss_captions': args.captions_loss_coef}
+                'loss_caption': args.captions_loss_coef}
 
     # TODO this is a hack
     if args.aux_loss:
@@ -72,6 +79,7 @@ def build_model_and_criterion(args, dataset):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
+    # losses = ['labels', 'segments', 'cardinality']
     losses = ['labels', 'segments', 'cardinality', 'captions']
 
     criterion = SetCriterion(num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
@@ -109,7 +117,7 @@ def build_word_embedding_matrix(glove_file_path, vocab, pretrained_word_embed_di
     file.close()
 
     embedding_matrix = np.random.normal(0, 0.1, (len(vocab), pretrained_word_embed_dim))
-    for i, word in enumerate(vocab) :
+    for i, word in enumerate(vocab.get_itos()) :
         if word in embedding_index.keys():
             embedding_matrix[i] = embedding_index[word]
-    return embedding_matrix
+    return torch.Tensor(embedding_matrix)

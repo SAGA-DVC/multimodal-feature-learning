@@ -1,5 +1,7 @@
 data
 output
+vocab.pkl
+embedding_matrix.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

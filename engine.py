@@ -33,7 +33,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     model.train()
     criterion.train()
 
-    metric_logger = MetricLogger(delimiter="  ")
+    metric_logger = MetricLogger(delimiter="\t")
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
@@ -50,6 +50,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         
         loss_dict = criterion(outputs, obj, indices)
         weight_dict = criterion.weight_dict
+
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
 
         # reduce losses over all GPUs for logging purposes
@@ -69,8 +70,8 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 
         optimizer.zero_grad()
         losses.backward()
-        if args.max_norm > 0:
-            clip_grad_norm_(model.parameters(), args.max_norm)
+        if args.clip_max_norm > 0:
+            clip_grad_norm_(model.parameters(), args.clip_max_norm)
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)

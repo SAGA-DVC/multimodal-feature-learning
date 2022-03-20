@@ -7,8 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .decoder import Decoder
-from .modules import PositionalEmbedding, VocabularyEmbedder
+from .modules import PositionalEmbedding, VocabularyEmbedder, CaptionDecoderLayer
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 # TODO - add sin/cos pos embed
@@ -27,24 +26,31 @@ class CaptionDecoder(nn.Module):
         super(CaptionDecoder, self).__init__()
         
         self.vocab_size = vocab_size
-        self.target_embedding = VocabularyEmbedder(vocab_size, self.d_model)
-        self.word_positional_embedding_layer = PositionalEmbedding((1, seq_len, d_model), positional_embedding_dropout) 
+        self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
+        self.word_positional_embedding_layer = PositionalEmbedding((1, seq_len-1, d_model), positional_embedding_dropout) 
+        
+        self.d_model = d_model
+        self.depth = depth
+        self.return_intermediate = return_intermediate
 
-        self.decoder = Decoder(d_model=d_model, 
-                        depth=depth, 
-                        num_heads=num_heads, 
-                        mlp_ratio=mlp_ratio, 
-                        qkv_bias=qkv_bias,  
-                        attention_dropout=attention_dropout, 
-                        projection_dropout=projection_dropout, 
-                        dropout_1=dropout_1, 
-                        dropout_2=dropout_2, 
-                        pre_norm=pre_norm,
-                        weight_init=weight_init, 
-                        weight_load=weight_load, 
-                        model_official=model_official,
-                        return_intermediate=False
+        self.decoder = nn.ModuleList(
+                [
+                    CaptionDecoderLayer(
+                        d_model=d_model,
+                        num_heads=num_heads,
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        attention_dropout=attention_dropout,
+                        projection_dropout=projection_dropout,
+                        dropout_1=dropout_1,
+                        dropout_2=dropout_2,
+                        pre_norm=pre_norm
                     )
+                    for _ in range(depth)
+                ]
+            )
+        
+        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         
         self.head = nn.Linear(d_model, vocab_size)
         
@@ -66,24 +72,32 @@ class CaptionDecoder(nn.Module):
         Parameters:
             captions (tensor): Tensor of dimension (batch_size, seq_len)
             memory (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-            positional_embedding_layer (nn.Moodule): Tensor of dimension (batch_size, num_tokens, d_model)
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
         
         Returns:
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
         """
 
-        tgt_mask = self.make_tgt_mask(captions)     # (batch_size, 1, seq_len, seq_len) 
-
         target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
+        tgt_mask = self.make_tgt_mask(captions).to(target.device)     # (batch_size, 1, seq_len, seq_len) 
+
+        intermediate = []
         
-        # (1, batch_size, seq_len, embed_dim) OR (depth, batch_size, seq_len, embed_dim)
-        x = self.decoder(target=target, memory=memory, positional_embedding_layer=positional_embedding_layer, 
-                        query_embedding=self.word_positional_embedding_layer, mask=tgt_mask)
+        for layer in self.decoder:
+            target = layer(target, memory, self.word_positional_embedding_layer, positional_embedding_layer, tgt_mask)    # (batch_size, seq_len, embed_dim)
+
+            if self.return_intermediate:
+                intermediate.append(self.layer_norm(target))
+
+        if self.return_intermediate:
+            target = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
+        else:
+            target = target.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
         
         # (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
-        x = self.head(x).softmax(dim=-1)
+        target = self.head(target).softmax(dim=-1)
 
-        return x
+        return target
     
 
     def init_weights(self, embedding_matrix, emb_weights_req_grad):
@@ -94,7 +108,8 @@ class CaptionDecoder(nn.Module):
         """
 
         self.target_embedding.init_word_embeddings(embedding_matrix, emb_weights_req_grad)
-        trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
+        trunc_normal_(self.word_positional_embedding_layer.positional_embedding, std=.02)
+        self.decoder.apply(init_encoder_block_weights)
             
 
     def load_weights(self, model_official):
