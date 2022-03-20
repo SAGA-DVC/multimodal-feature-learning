@@ -87,10 +87,9 @@ class PositionalEmbedding(nn.Module):
 
         """
 
-        batch_size, num_tokens, d_model = x.shape
+        _, num_tokens, d_model = x.shape
         
-        assert self.pos_shape[0] == batch_size, f"Dimension 0 (batch_size) of positional embedding {self.pos_shape[0]} set at initialisation time does not match the dimension 0 (batch_size) of input {batch_size}."
-        assert self.pos_shape[1] <= num_tokens, f"Dimension 1 (num_tokens) of positional embedding {self.pos_shape[1]} set at initialisation time should be >= the dimension 1 (num_tokens) of input {num_tokens}."
+        assert self.pos_shape[1] >= num_tokens, f"Dimension 1 (num_tokens) of positional embedding {self.pos_shape[1]} set at initialisation time should be >= the dimension 1 (num_tokens) of input {num_tokens}."
         assert self.pos_shape[2] == d_model, f"Dimension 2 (d_model) of positional embedding {self.pos_shape[2]} set at initialisation time does not match the dimension 2 (d_model) of input {d_model}."
         
         x = self.positional_embedding_dropout(x + self.positional_embedding[:, :num_tokens]) 

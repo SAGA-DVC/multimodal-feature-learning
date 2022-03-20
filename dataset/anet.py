@@ -276,10 +276,11 @@ def sort_events(proposal_data):
 
 
 # TODO - extra loss for framestamps?
-def collate_fn(batch):
+def collate_fn(batch, pad_idx):
     """
     Parameters:
         `batch` : list of shape (batch_size, 8) {8 attributes}
+        `pad_idx` : index of the '<pad>' token in the vocabulary
     Attributes
         `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
         `gt_timestamps_list` (list, int): [batch_size, gt_target_segments, 2], representing the start and end frames of the events in the video 
@@ -309,7 +310,7 @@ def collate_fn(batch):
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
 
-    caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(self.PAD_IDX)
+    caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(pad_idx)
     caption_length_all = torch.LongTensor(total_caption_num).zero_()
     caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_len).zero_()
     caption_gather_idx = torch.LongTensor(total_caption_num).zero_()

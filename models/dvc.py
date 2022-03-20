@@ -217,7 +217,7 @@ class DVC(nn.Module):
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         memory_mask = memory_mask.to(feats.device)
 
-        tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+        tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
         tgt_mask = tgt_mask.to(captions.device)
         
         # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
@@ -251,7 +251,7 @@ class DVC(nn.Module):
         """
 
         batch_size, seq_len = target.shape
-        look_ahead_mask = torch.tril(torch.ones((seq_len, seq_len)))
+        look_ahead_mask = torch.tril(torch.ones((seq_len, seq_len))).to(tgt_padding_mask.device)
         tgt_mask = torch.minimum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask)
         return tgt_mask    # (batch_size, 1, seq_len, seq_len)
 
@@ -357,7 +357,7 @@ class DVC(nn.Module):
             for j in range(gt_target_segments):
                 pred_features[i, j, start_idx[i, j]:end_idx[i, j]] = features[i, start_idx[i, j]:end_idx[i, j], :]
                 pred_features_src_padding_mask[i, j, start_idx[i, j]:end_idx[i, j]] = 1
-                pred_features_mask[i, j] = True
+                pred_segments_padding_mask[i, j] = True
 
         return pred_features, pred_features_src_padding_mask, pred_segments_padding_mask 
 

@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import random, time, datetime, json
+from functools import partial
 
 import numpy as np
 import torch
@@ -38,9 +39,9 @@ def main(args):
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=collate_fn, num_workers=args.num_workers)
+                                   collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
     data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                 drop_last=False, collate_fn=collate_fn, num_workers=args.num_workers)
+                                 drop_last=False, collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
 
