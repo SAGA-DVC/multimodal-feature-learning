@@ -1,5 +1,5 @@
 '''
-Code taken from https://github.com/HumamAlwassel/TSP
+Code adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
@@ -72,15 +72,19 @@ class EvalVideoDataset(Dataset):
         # compute clip_t_start and clip_t_end
         clip_length_in_sec = self.clip_length / self.frame_rate
         clip_t_end = clip_t_start + clip_length_in_sec
-
         # get a tensor [clip_length, H, W, C] of the video frames between clip_t_start and clip_t_end seconds
         vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
         idxs = EvalVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
         vframes = vframes[idxs][:self.clip_length] # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
         if vframes.shape[0] != self.clip_length:
-            raise RuntimeError(f'<EvalVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
-                               f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
-                               f'fps={fps}')
+            # TODO
+            # Temp fix, not sure whether this is the right way
+            vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
+            # print(vframes.shape)
+            # if vframes.shape[0] != self.clip_length:
+            #     raise RuntimeError(f'<EvalVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
+            #                    f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
+            #                    f'fps={fps}')
 
         aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
         # TODO: Normalization with dataset mean & stddev?
@@ -133,14 +137,12 @@ class EvalVideoDataset(Dataset):
     def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):
         # get all available videos from root_dir
         videos = list(map(lambda video: video, os.listdir(root_dir)))
-        print(videos)
 
         # remove unavailable videos from dataframe
         df = df.loc[df['filename'].isin(videos)].copy()
-        print(len(df))
 
         df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
-        print("len", len(df))
+        print("Number of videos: ", len(df))
 
         filenames = df.drop_duplicates('filename')['filename'].values
         for f in filenames:

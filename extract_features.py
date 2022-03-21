@@ -1,5 +1,9 @@
+'''
+Code adapted from https://github.com/HumamAlwassel/TSP
+Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
+'''
+
 import os
-from pyrsistent import b
 
 import timm
 import torch
@@ -21,7 +25,6 @@ def evaluate(model, dataloader, device):
     header = 'Feature extraction:'
     with torch.no_grad():
         for batch_idx, batch in enumerate(metric_logger.log_every(dataloader, 10, header, device=device)):
-            print("loop")
             clip = {
                 "video": batch['clip']['video'].to(device, non_blocking=True),
                 "audio": batch['clip']['audio'].to(device, non_blocking=True)
@@ -37,7 +40,7 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     device = torch.device(cfg.device)
-    os.makedirs(cfg.output_dir, exist_ok=False)
+    os.makedirs(cfg.output_dir, exist_ok=True)
 
     print('LOADING DATA')
 
@@ -75,8 +78,6 @@ def main():
         audio_target_length=cfg.audio.target_length,
         video_transform=video_transform
     )
-
-    print(len(dataset))
 
     print('CREATING DATA LOADER')
     dataloader = torch.utils.data.DataLoader(

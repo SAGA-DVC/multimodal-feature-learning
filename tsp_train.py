@@ -1,3 +1,9 @@
+'''
+Code adapted from https://github.com/HumamAlwassel/TSP
+Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
+'''
+
+
 import datetime
 from itertools import chain
 import os

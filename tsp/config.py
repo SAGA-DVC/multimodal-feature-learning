@@ -114,7 +114,7 @@ def load_config():
 
     # Path to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    cfg.tsp.global_video_features = None
+    cfg.tsp.global_video_features = "None"
     cfg.tsp.backbones = ['vivit', 'ast']
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
@@ -131,7 +131,7 @@ def load_config():
     # feature extractors is convenient and output isn't inadvertently replaced 
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'features'  # Path for saving checkpoints and results output  # TODO
+    cfg.output_dir = 'output'  # Path for saving checkpoints and results output  # TODO
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset

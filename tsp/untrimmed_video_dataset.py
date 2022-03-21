@@ -1,5 +1,5 @@
 '''
-Code taken from https://github.com/HumamAlwassel/TSP
+Code adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
@@ -112,6 +112,7 @@ class UntrimmedVideoDataset(Dataset):
 
         # add global video feature if it exists
         if self.global_video_features:
+            print("GET GVF")
             f = h5py.File(self.global_video_features, 'r')
             sample['gvf'] = torch.tensor(f[os.path.basename(filename).split('.')[0]][()])
             f.close()

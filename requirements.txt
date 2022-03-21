@@ -2,6 +2,7 @@
 ml-collections
 av
 timm
-pytorchvideo
+wandb
+h5py
 
 ###### Requirements with Version Specifiers ######
