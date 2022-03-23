@@ -76,7 +76,8 @@ class UntrimmedVideoDataset(Dataset):
         self.debug = debug
 
     def __len__(self):
-        return len(self.df) * self.clips_per_segment if not self.debug else 100
+        num_clips = len(self.df) * self.clips_per_segment
+        return num_clips if not self.debug else min(num_clips, 100)
 
     def __getitem__(self, idx):
         sample = {}

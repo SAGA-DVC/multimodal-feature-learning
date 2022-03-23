@@ -102,6 +102,7 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
                 loss += alpha * head_loss
             
             compute_and_log_metrics(
+                metric_logger=metric_logger,
                 phase="val",
                 loss=loss,
                 outputs=outputs,

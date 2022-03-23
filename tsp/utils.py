@@ -2,6 +2,7 @@ import os
 import datetime
 import time
 from collections import defaultdict, deque
+import math
 
 import torch
 import torch.distributed as dist
@@ -65,6 +66,12 @@ def is_main_process():
 def torch_save_on_master(*args, **kwargs):
     if is_main_process():
         torch.save(*args, **kwargs)
+
+
+def write_to_file_on_master(file, mode, content_to_write):
+    if is_main_process():
+        with open(file, mode) as f:
+            f.write(content_to_write)
 
 
 def init_distributed_mode(distributed_cfg):
@@ -137,7 +144,14 @@ class SmoothedValue(object):
 
     @property
     def global_avg(self):
-        return self.total / self.count
+        try:
+            return self.total / self.count
+        except ZeroDivisionError:
+            # Happens when all outputs get masked and a SmoothedValue does not
+            # get updated at all. So count stays 0
+            # This will probably lead to NaN everywhere
+            # TODO: Check this
+            return math.nan
 
     @property
     def max(self):

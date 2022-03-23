@@ -147,7 +147,8 @@ def load_config():
     cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     cfg.lr_warmup_factor = 1e-5
 
-    cfg.resume = None  # Resume from checkpoint (path specified)
+    # cfg.resume = "output/epoch_1.pth"  # Resume from checkpoint (path specified)
+    cfg.resume = None
     cfg.start_epoch = 0
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
@@ -157,7 +158,7 @@ def load_config():
     cfg.debug = True
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
-        cfg.epochs = 1
+        cfg.epochs = 2
         cfg.batch_size=4
         cfg.print_freq = 5
 
