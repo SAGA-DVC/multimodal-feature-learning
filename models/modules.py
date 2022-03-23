@@ -1136,7 +1136,7 @@ class VisionTransformer(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_channels=3, num_classes=1000, d_model=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=True,
                  positional_embedding_dropout=0., attention_dropout=0., projection_dropout=0., 
-                 mlp_dropout_1=0., mlp_dropout_2=0., layer_norm=None, activation_layer=None, weight_init=''):
+                 mlp_dropout_1=0., mlp_dropout_2=0., layer_norm=None, activation_layer=None, weight_init='', return_prelogits=False):
         super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
         self.d_model = d_model
@@ -1171,6 +1171,7 @@ class VisionTransformer(nn.Module):
         )
 
         self.layer_norm = norm_layer(d_model)
+        self.return_prelogits = return_prelogits
         self.head = nn.Linear(self.d_model, self.num_classes) if self.num_classes > 0 else nn.Identity()
 
 
@@ -1183,10 +1184,11 @@ class VisionTransformer(nn.Module):
         x = self.patch_embeddings_layer(x)  # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, num_patches, d_model)
         cls_token = self.cls_token.expand(x.shape[0], -1, -1) #(batch_size, 1, d_model)
         x = torch.cat((cls_token, x), dim=1)  #(batch_size, num_patches+1, d_model)
-        x = self.positional_embedding_dropout(x + self.positional_embedding) #(batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
-        x = self.encoderBlocks(x)  # (batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
-        x = self.layer_norm(x)  # (batch_size, num_patches+2, d_model) -> (batch_size, num_patches+2, d_model)
+        x = self.positional_embedding_dropout(x + self.positional_embedding) #(batch_size, num_patches+1, d_model) -> (batch_size, num_patches+1, d_model)
+        x = self.encoderBlocks(x)  # (batch_size, num_patches+1, d_model) -> (batch_size, num_patches+1, d_model)
+        x = self.layer_norm(x)  # (batch_size, num_patches+1, d_model) -> (batch_size, num_patches+1, d_model)
 
-        x = (x[:, 0] + x[:, 1]) / 2  # (batch_size, num_patches+2, d_model) -> (batch_size, d_model)
+        if self.return_prelogits:
+            return x[:, 0]
 
         return x

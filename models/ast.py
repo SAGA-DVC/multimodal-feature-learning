@@ -25,7 +25,7 @@ class AudioSpectrogramTransformer(nn.Module):
         
         self.model_official = model_official
         self.d_model = d_model
-        self.encoder = VisionTransformer(img_size=input_fdim, d_model=self.d_model, num_heads=num_heads, depth=depth, in_channels=1, num_classes=0)
+        self.encoder = VisionTransformer(img_size=input_fdim, d_model=self.d_model, num_heads=num_heads, depth=depth, in_channels=1, num_classes=0, return_prelogits=True)
         self.original_num_patches = self.model_official.patch_embed.num_patches
         self.original_hw = int(self.original_num_patches ** 0.5)
         self.original_embedding_dim = self.model_official.pos_embed.shape[2]

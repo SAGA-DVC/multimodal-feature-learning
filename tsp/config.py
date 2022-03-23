@@ -114,7 +114,8 @@ def load_config():
 
     # Path to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    cfg.tsp.global_video_features = "None"
+    cfg.tsp.global_video_features = None
+    # cfg.tsp.global_video_features = "gvf.h5"
     cfg.tsp.backbones = ['vivit', 'ast']
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001

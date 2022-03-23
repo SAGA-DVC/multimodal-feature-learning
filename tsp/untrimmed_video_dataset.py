@@ -112,7 +112,6 @@ class UntrimmedVideoDataset(Dataset):
 
         # add global video feature if it exists
         if self.global_video_features:
-            print("GET GVF")
             f = h5py.File(self.global_video_features, 'r')
             sample['gvf'] = torch.tensor(f[os.path.basename(filename).split('.')[0]][()])
             f.close()
