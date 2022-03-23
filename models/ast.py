@@ -6,7 +6,7 @@ from .modules import VisionTransformer
 from timm.models.layers import trunc_normal_
 
 class AudioSpectrogramTransformer(nn.Module):
-    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrained=True, model_size='base384', model_official=None, depth=12, d_model=768, num_heads=12, return_prelogits=False):
+    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrained=True, model_size='base384', model_official=None, depth=12, d_model=768, num_heads=12, return_prelogits=False, return_preclassifier=False):
         
         """
         The Audio Spectrogram Transformer (AST) model.
@@ -25,7 +25,7 @@ class AudioSpectrogramTransformer(nn.Module):
         
         self.model_official = model_official
         self.d_model = d_model
-        self.encoder = VisionTransformer(img_size=input_fdim, d_model=self.d_model, num_heads=num_heads, depth=depth, in_channels=1, num_classes=0, return_prelogits=True)
+        self.encoder = VisionTransformer(img_size=input_fdim, d_model=self.d_model, num_heads=num_heads, depth=depth, in_channels=1, num_classes=0)
         self.original_num_patches = self.model_official.patch_embed.num_patches
         self.original_hw = int(self.original_num_patches ** 0.5)
         self.original_embedding_dim = self.model_official.pos_embed.shape[2]
@@ -75,7 +75,7 @@ class AudioSpectrogramTransformer(nn.Module):
             trunc_normal_(self.model_official.pos_embed, std=.02)
         
         self.return_prelogits = return_prelogits
-
+        self.return_preclassifier = return_preclassifier
 
 
     # helper function to get intermediate shape
@@ -93,11 +93,14 @@ class AudioSpectrogramTransformer(nn.Module):
         :param x: the input spectrogram, expected shape: (batch_size, time_frame_num, frequency_bins), e.g., (12, 1024, 128)
         :return: prediction
         """
-        # # expect input x = (batch_size, time_frame_num, frequency_bins), e.g., (10, 100, 128)
-        x = x.unsqueeze(1) #(batch_size, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, time_frame_num, frequency_bins)
-        x = self.encoder(x) #(batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, d_model)
+        # expect input x = (batch_size, time_frame_num, frequency_bins), e.g., (10, 100, 128)
+        x = x.unsqueeze(1)  # (batch_size, time_frame_num, frequency_bins) -> (batch_size, in_channels = 1, time_frame_num, frequency_bins)
+        x = self.encoder(x) # (batch_size, in_channels = 1, frequency_bins, time_frame_num) -> (batch_size, d_model)
+        if self.return_preclassifier:
+            return x
+        x = x[:, 0] # (batch_size, num_patches+1, d_model) --> (batch_size, d_model)
         if self.return_prelogits:
             return x
-        
-        x = self.mlp_head(x) # (batch_size, d_model) -> (batch_size, class)
+
+        x = self.mlp_head(x)    # (batch_size, d_model) -> (batch_size, class)
         return x
