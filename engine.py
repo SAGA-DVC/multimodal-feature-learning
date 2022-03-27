@@ -7,13 +7,14 @@ import os
 import sys
 from typing import Iterable
 from collections import defaultdict
+from pprint import pprint
 
 import torch
 from torch.nn.utils import clip_grad_norm_
 from utils.misc import MetricLogger, SmoothedValue, reduce_dict
 
 
-def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args):
+def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args, wandb_log, wandb):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -39,7 +40,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     header = f'Epoch: [{epoch}]'
     print_freq = 10
 
-    for obj in metric_logger.log_every(data_loader, print_freq, header):
+    for obj in metric_logger.log_every(data_loader, print_freq, wandb_log, wandb, header):
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
         obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
@@ -79,5 +80,5 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    pprint("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

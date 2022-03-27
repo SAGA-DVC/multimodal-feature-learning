@@ -135,12 +135,21 @@ def load_config():
     cfg.dvc.captions_loss_coef = 1
     cfg.dvc.eos_coef = 1
 
-    
-    
+
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
     cfg.pretrained_models.deit = 'deit_base_patch16_224'
     
+
+    #-------------------------------------------------------------------------------------------------
+    # Wandb (Weights and Biases)
+    cfg.wandb = ml_collections.ConfigDict()
+    cfg.wandb.on = False
+    cfg.wandb.project = "simple-end-to-end"
+    cfg.wandb.entity = "saga-vivit"
+    cfg.wandb.notes = "Test"
+
+
     return cfg

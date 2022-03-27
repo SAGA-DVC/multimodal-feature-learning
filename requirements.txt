@@ -2,6 +2,7 @@
 ml-collections
 av
 timm
+wandb
 pytorchvideo
 
 # python -m spacy download en

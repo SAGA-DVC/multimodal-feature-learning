@@ -6,6 +6,7 @@ from functools import partial
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
+import wandb
 
 from models import build_model_and_criterion
 from config.config_dvc import load_config
@@ -17,6 +18,9 @@ from dataset.anet import build_dataset, collate_fn
 
 def main(args):
     init_distributed_mode(args.distributed)
+
+    if args.wandb.on:
+        wandb.init(project=args.wandb.project, entity=args.wandb.entity, config=args.to_dict(), notes=args.wandb.notes)
 
     device = torch.device(args.device)
 
@@ -81,7 +85,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args, args.wandb.on, wandb)
         
         lr_scheduler.step()
 
@@ -102,6 +106,12 @@ def main(args):
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch,
                      'n_parameters': n_parameters}
+        
+        if args.wandb.on:
+            wandb.log({
+                f"{key}": value
+                for key, value in log_stats.items()
+            })
 
         if args.output_dir and is_main_process():
             with (output_dir / "log.txt").open("a") as f:
