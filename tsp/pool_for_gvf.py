@@ -7,15 +7,20 @@ from tqdm import tqdm
 def main(args):
     print(args)
     compression_flags = dict(compression='gzip', compression_opts=9)
+
+    # Open features h5 file
     with h5py.File(args.features_h5, 'r') as f:
+        # Open output gvf h5 file
         with h5py.File(args.output_h5, 'w') as output:
+            # For each video
             for (video_id, video_clips) in tqdm(f.items()):
                 if args.pooling_fn == 'max':
                     gvf, _ = torch.tensor(video_clips).max(dim=0)
                 elif args.pooling_fn == 'avg':
                     gvf, _ = torch.tensor(video_clips).mean(dim=0)
-                print(gvf.shape)
+
                 output.create_dataset(video_id, data=gvf, **compression_flags)
+
     print(f"Saved output file at {args.output_h5}")
 
 

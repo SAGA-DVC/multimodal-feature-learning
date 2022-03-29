@@ -64,14 +64,16 @@ def is_main_process():
     return get_rank() == 0
 
 def torch_save_on_master(*args, **kwargs):
+    '''torch.save if master process calls it'''
     if is_main_process():
         torch.save(*args, **kwargs)
 
 
-def write_to_file_on_master(file, mode, content_to_write):
+def write_to_file_on_master(file, mode, content):
+    '''Write `content` to `file` if called by master process, on master node'''
     if is_main_process():
         with open(file, mode) as f:
-            f.write(content_to_write)
+            f.write(content)
 
 
 def init_distributed_mode(distributed_cfg):
@@ -90,15 +92,15 @@ def init_distributed_mode(distributed_cfg):
 
     torch.cuda.set_device(distributed_cfg.gpu)
     distributed_cfg.backend = 'nccl'
+
     print(f'| distributed init (rank {distributed_cfg.rank}): {distributed_cfg.dist_url}', flush=True)
+
     torch.distributed.init_process_group(
         backend=distributed_cfg.backend,
         init_method=distributed_cfg.dist_url,
         world_size=distributed_cfg.world_size,
         rank=distributed_cfg.rank
     )
-
-    print_master_only(distributed_cfg.rank == 0)
 
 class SmoothedValue(object):
     '''

@@ -37,7 +37,7 @@ class UntrimmedVideoDataset(Dataset):
             root_dir (string): Directory with all the video files.
             clip_length (int): The number of frames per clip.
             frame_rate (int): The effective frame rate (fps) to sample clips.
-            clips_per_segment (int): The number of clips to sample per segment in the CSV file.
+            clips_per_segment (int): The number of clips to sample per segment (a row) in the CSV file.
             temporal_jittering (bool): If True, clips are randomly sampled between t-start and t-end of
                 each segment. Otherwise, clips are are sampled uniformly between t-start and t-end.
             num_mel_bins (int) TODO
@@ -54,6 +54,7 @@ class UntrimmedVideoDataset(Dataset):
         '''
         df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length, frame_rate)
         self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
+
         self.clip_length = clip_length
         self.frame_rate = frame_rate
         self.clips_per_segment = clips_per_segment
@@ -62,7 +63,11 @@ class UntrimmedVideoDataset(Dataset):
         self.num_mel_bins = num_mel_bins
 
         self.temporal_jittering = temporal_jittering
+        
+        '''Used for temporal jittering, samples a number from [0, 1) uniformly'''
         self.rng = np.random.RandomState(seed=seed)
+
+        '''Used for uniform sampling of indices of clips in a segment'''
         self.uniform_sampling = np.linspace(0, 1, clips_per_segment)
 
         self.video_transform = video_transform
@@ -73,6 +78,7 @@ class UntrimmedVideoDataset(Dataset):
             self.df[label_column] = self.df[label_column].map(lambda x: -1 if pd.isnull(x) else label_mapping[x])
 
         self.global_video_features = global_video_features
+
         self.debug = debug
 
     def __len__(self):
@@ -81,37 +87,46 @@ class UntrimmedVideoDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = {}
+
         row = self.df.iloc[idx % len(self.df)]
         filename, fps, t_start, t_end = row['filename'], row['fps'], row['t-start'], row['t-end']
 
         # compute clip_t_start and clip_t_end
         clip_length_in_sec = self.clip_length / self.frame_rate
+
         ratio = self.rng.uniform() if self.temporal_jittering else self.uniform_sampling[idx//len(self.df)]
         clip_t_start = t_start + ratio * (t_end - t_start - clip_length_in_sec)
         clip_t_end = clip_t_start + clip_length_in_sec
-        # get a tensor [clip_length, H, W, C] of the video frames between clip_t_start and clip_t_end seconds
+
+        # get a video tensor [clip_length, H, W, C] and audio tensor [channels, points]
+        # of the video frames between clip_t_start and clip_t_end seconds
         vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
 
+        # If video has different FPS than self.frame_rate, then change idxs to reflect this
+        # If video fps == self.frame_rate, then idxs is simply [::1]
         idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
-        vframes = vframes[idxs][:self.clip_length] # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+
+        vframes = vframes[idxs][:self.clip_length]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+
         if vframes.shape[0] != self.clip_length:
             raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
                                f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
                                f'fps={fps}, t_start={t_start}, t_end={t_end}')
 
-        # apply transforms
+        # apply video transforms
         sample['video'] = self.video_transform(vframes)
+
+        # apply audio transforms
         aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
-        
         # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
         # TODO: Normalization with dataset mean & stddev?
-
         sample['audio'] = aframes
+
         # add labels
         for label_column in self.label_columns:
             sample[label_column] = row[label_column]
 
-        # add global video feature if it exists
+        # add global video feature
         if self.global_video_features:
             f = h5py.File(self.global_video_features, 'r')
             sample['gvf'] = torch.tensor(f[os.path.basename(filename).split('.')[0]][()])
@@ -130,12 +145,16 @@ class UntrimmedVideoDataset(Dataset):
         mask = segment_length >= clip_length
         num_segments = len(df)
         num_segments_to_keep = sum(mask)
+
         if num_segments - num_segments_to_keep > 0:
+            # if at least one segment is applicable
             df = df[mask].reset_index(drop=True)
             print(f'<UntrimmedVideoDataset>: removed {num_segments - num_segments_to_keep}='
                 f'{100*(1 - num_segments_to_keep/num_segments):.2f}% from the {num_segments} '
                 f'segments from the input CSV file because they are shorter than '
                 f'clip_length={clip_length} frames using frame_rate={frame_rate} fps.')
+        else:
+            raise NotImplementedError
 
         return df
 
@@ -147,9 +166,11 @@ class UntrimmedVideoDataset(Dataset):
         # remove unavailable videos from dataframe
         df = df.loc[df['filename'].isin(videos)].copy()
         
+        # Change filenames in df to absolute filenames
         df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
 
         filenames = df.drop_duplicates('filename')['filename'].values
+
         for f in filenames:
             try:
                 if not os.path.exists(f):

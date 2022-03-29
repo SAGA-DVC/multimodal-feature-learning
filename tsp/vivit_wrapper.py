@@ -30,6 +30,7 @@ class VivitWrapper(nn.Module):
         self.positional_embedding_layer = None
         self.spatial_positional_embedding_layer = None
 
+        # Attention
         if model_name == 'spatio temporal attention':
             self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
             
@@ -40,7 +41,9 @@ class VivitWrapper(nn.Module):
         else:
             self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
 
+        '''Feature dimensions'''
         self.d_model = d_model
+
         self.vivit = VideoVisionTransformer(model_name=model_name, 
                         num_frames=num_frames, 
                         num_patches=num_patches, 
@@ -93,7 +96,7 @@ class VivitWrapper(nn.Module):
         # (batch_size, num_frames, num_patches, d_model) 
         x = self.vivit(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
 
-        # check grad later
+        # TODO check grad later
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
             x = x.reshape(x.shape[0], -1, x.shape[-1])
 

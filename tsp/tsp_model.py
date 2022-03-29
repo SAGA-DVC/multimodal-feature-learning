@@ -1,5 +1,5 @@
 '''
-Code modified from https://github.com/HumamAlwassel/TSP
+Code adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
@@ -28,6 +28,7 @@ class TSPModel(nn.Module):
                 the second backbone
         '''
         super().__init__()
+
         assert len(num_tsp_classes) == num_tsp_heads, f'<TSPModel>: incompatible configuration. len(num_classes) must be equal to num_heads'
         assert num_tsp_heads == 1 or num_tsp_heads == 2, f'<TSPModel>: num_heads = {num_tsp_heads} must be either 1 or 2'
         assert isinstance(backbones, list), "<TSPModel>: backbones must be a list of models"
@@ -35,12 +36,16 @@ class TSPModel(nn.Module):
 
         self.backbones = backbones
         self.input_modalities = input_modalities
+        self.d_tsp_feat = d_tsp_feat
+
+        # Combiner function for the backbones' representations
+        # Default combiner is addition
         self.combiner = combiner if combiner is not None else lambda t1, t2: t1+t2
+
         self.num_classes = num_tsp_classes
         self.num_heads = num_tsp_heads
-        self.concat_gvf = concat_gvf
 
-        self.d_tsp_feat = d_tsp_feat
+        self.concat_gvf = concat_gvf
 
         if self.num_heads == 1:
             # Linear layer for multiclass classification (action recognition)
@@ -54,11 +59,11 @@ class TSPModel(nn.Module):
 
 
     def forward(self, x, gvf=None, return_features=False):
-        # Extract features using the backbones
         features = []  # List of features extracted by individual backbones
         for (backbone, modality) in zip(self.backbones, self.input_modalities):
             features.append(backbone(x[modality]))
 
+        # Combine features from all backbones
         features = self.combiner(*features)
 
         if self.num_heads == 1:
@@ -70,6 +75,7 @@ class TSPModel(nn.Module):
                 logits.append(self.region_fc(torch.cat([features, gvf], dim=-1)))
             else:
                 logits.append(self.region_fc(features))
+
         return (logits, features) if return_features else logits
 
 

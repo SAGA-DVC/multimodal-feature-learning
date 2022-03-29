@@ -13,7 +13,7 @@ import pandas as pd
 
 from tsp.config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.model import TSPModel
+from tsp.tsp_model import TSPModel
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -21,29 +21,34 @@ from models.ast import AudioSpectrogramTransformer
 
 def evaluate(model, dataloader, device):
     model.eval()
+
     metric_logger = utils.MetricLogger(delimiter=' ')
     header = 'Feature extraction:'
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(metric_logger.log_every(dataloader, 10, header, device=device)):
             clip = {
                 "video": batch['clip']['video'].to(device, non_blocking=True),
                 "audio": batch['clip']['audio'].to(device, non_blocking=True)
             }
+
+            # Forward pass through the model
             _, features = model(clip, return_features=True)
+            # Save features as pkl (if features of all clips of a video have been collected)
             dataloader.dataset.save_features(features, batch)
 
 
-def main():
-    cfg = load_config()
+def main(cfg):
     print('TORCH VERSION: ', torch.__version__)
     print('TORCHVISION VERSION: ', torchvision.__version__)
+
     torch.backends.cudnn.benchmark = True
 
     device = torch.device(cfg.device)
+
     os.makedirs(cfg.output_dir, exist_ok=True)
 
-    print('LOADING DATA')
-
+    # Video Transforms
     video_transform = torchvision.transforms.Compose([
         torchvision.transforms.Lambda(lambda video: video.to(torch.float32) / 255),
         torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
@@ -56,17 +61,27 @@ def main():
     ])
 
     metadata_df = pd.read_csv(cfg.metadata_csv_filename)
+
+    # Shards for parallel processing
     shards = np.linspace(0,len(metadata_df),cfg.num_shards+1).astype(int)
+
+    # Start and end idxs for current process
     start_idx, end_idx = shards[cfg.shard_id], shards[cfg.shard_id+1]
     print(f'shard-id: {cfg.shard_id + 1} out of {cfg.num_shards}, '
         f'total number of videos: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
 
+    # Keep current process' shard only
     metadata_df = metadata_df.iloc[start_idx:end_idx].reset_index()
+
+    # Mark those videos whose pkl features are present already
     metadata_df['is-computed-already'] = metadata_df['filename'].map(lambda f:
         os.path.exists(os.path.join(cfg.output_dir, os.path.basename(f).split('.')[0] + '.pkl')))
+
+    # Drop those videos whose pkl features are present already
     metadata_df = metadata_df[metadata_df['is-computed-already']==False].reset_index(drop=True)
     print(f'Number of videos to process after excluding the ones already computed on disk: {len(metadata_df)}')
 
+    # Dataset
     dataset = EvalVideoDataset(
         metadata_df=metadata_df,
         root_dir=f'{cfg.data_dir}/train',
@@ -84,14 +99,12 @@ def main():
         dataset, batch_size=cfg.batch_size, shuffle=False,
         num_workers=cfg.num_workers, pin_memory=True)
 
-    print(f'LOADING MODEL')
-    print("Creating model")
-
     # Create backbones
     feature_backbones = []
     d_feats = []
     input_modalities = []
     if 'vivit' in cfg.tsp.backbones:
+        print("Creating ViViT backbone")
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
 
@@ -102,6 +115,7 @@ def main():
         input_modalities.append('video')
     
     if 'ast' in cfg.tsp.backbones:
+        print("Creating AST backbone")
         model_official = timm.create_model(cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
         model_official.eval()
 
@@ -110,8 +124,8 @@ def main():
         d_feats.append(backbone.d_model)
         input_modalities.append('audio')
 
-    # model with a dummy classifier layer
 
+    # model with a dummy classifier layer
     model = TSPModel(
         backbones=feature_backbones,
         input_modalities=input_modalities,
@@ -121,8 +135,10 @@ def main():
         num_tsp_heads=1, 
         concat_gvf=False
     )
+
+    # Resume from local checkpoint
     if cfg.local_checkpoint:
-        print(f'from the local checkpoint: {cfg.local_checkpoint}')
+        print(f'Resuming from the local checkpoint: {cfg.local_checkpoint}')
         pretrained_state_dict = torch.load(cfg.local_checkpoint, map_location='cpu')['model']
         # remove the classifier layers from the pretrained model and load the backbone weights
         pretrained_state_dict = {k: v for k,v in pretrained_state_dict.items() if 'fc' not in k}
@@ -138,4 +154,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    cfg = load_config()
+    main(cfg)

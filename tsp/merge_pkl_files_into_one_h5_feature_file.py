@@ -20,10 +20,12 @@ def main(args):
     print(f'Number of pkl files: {len(filenames)}')
 
     output = h5py.File(args.output_h5, 'w')
+
     for f in tqdm(filenames):
         video_name = os.path.basename(f).split('.pkl')[0]
         with open(f, 'rb') as fobj:
             data = pkl.load(fobj)
+
         output.create_dataset(video_name, data=data, chunks=True, **compression_flags)
 
     output.close()
