@@ -103,15 +103,12 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     'epoch': epoch,
+        log_stats = {'epoch': epoch,
+                    **{f'train_{k}': v for k, v in train_stats.items()},
                      'n_parameters': n_parameters}
         
         if args.wandb.on:
-            wandb.log({
-                f"{key}": value
-                for key, value in log_stats.items()
-            })
+            wandb.log(log_stats)
 
         if args.output_dir and is_main_process():
             with (output_dir / "log.txt").open("a") as f:
@@ -120,6 +117,11 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f'Training time {total_time_str}')
+
+    if args.wandb.on:
+            wandb.log({f"Total training time for {args.epochs - args.start_epoch} epochs": total_time_str})
+
+    
 
 
 if __name__ == '__main__':

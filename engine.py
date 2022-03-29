@@ -7,7 +7,6 @@ import os
 import sys
 from typing import Iterable
 from collections import defaultdict
-from pprint import pprint
 
 import torch
 from torch.nn.utils import clip_grad_norm_
@@ -80,5 +79,9 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    pprint("Averaged stats:", metric_logger)
+    print(f"\nAveraged stats for epoch [{epoch}]: ", metric_logger, "\n")
+
+    if wandb_log:
+        wandb.log({f"Averaged stats for epoch [{epoch}]": str(metric_logger)})
+
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

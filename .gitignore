@@ -1,5 +1,6 @@
 data
 output
+wandb
 vocab.pkl
 embedding_matrix.pkl
 

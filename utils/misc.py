@@ -13,7 +13,6 @@ import datetime
 import pickle
 from packaging import version
 from typing import Optional, List
-from pprint import pprint
 
 import torch
 import torch.distributed as dist
@@ -138,8 +137,8 @@ class MetricLogger(object):
                 '[{0' + space_fmt + '}/{1}]',
                 'eta: {eta}',
                 '{meters}',
-                'time: {time}',
-                'data: {data}',
+                'iter time: {time}',
+                'data time: {data}',
                 'max mem: {memory:.0f}'
             ])
         else:
@@ -148,8 +147,8 @@ class MetricLogger(object):
                 '[{0' + space_fmt + '}/{1}]',
                 'eta: {eta}',
                 '{meters}',
-                'time: {time}',
-                'data: {data}'
+                'iter time: {time}',
+                'data time: {data}'
             ])
         MB = 1024.0 * 1024.0
         for obj in iterable:
@@ -161,28 +160,32 @@ class MetricLogger(object):
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
                     log = log_msg.format(
-                        i, len(iterable), eta=eta_string,
+                        i + 1, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time),
                         memory=torch.cuda.max_memory_allocated() / MB)
                 else:
                     log = log_msg.format(
-                        i, len(iterable), eta=eta_string,
+                        i + 1, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time))
                         
-                pprint(log)
+                print(log)
+                
                 if wandb_log:
-                    wandb.log({f"{key}": value
-                        for key, value in json.loads(log).items()
-                    })
+                    wandb.log({f"Epoch stats": log})
 
             i += 1
             end = time.time()
+
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        pprint('{} Total time: {} ({:.4f} s / epoch)'.format(
-            header, total_time_str, total_time / len(iterable)))
+
+        time_per_epoch = f'{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / batch)'
+        print(time_per_epoch)
+        
+        if wandb_log:
+            wandb.log({"Time per epoch": time_per_epoch})
 
 
 def all_gather(data):

@@ -148,8 +148,8 @@ def load_config():
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
-    cfg.wandb.entity = "saga-vivit"
-    cfg.wandb.notes = "Test"
+    cfg.wandb.entity = "saga-dvc"
+    cfg.wandb.notes = "Testing the flow of the DVC model"
 
 
     return cfg
