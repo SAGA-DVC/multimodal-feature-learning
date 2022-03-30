@@ -7,13 +7,15 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 import os
 import sys
 sys.path.insert(0, '..')
+from pprint import pprint
+
 import pandas as pd
 import numpy as np
 import torch
 import h5py
-
 from torch.utils.data import Dataset
 from torchvision.io import read_video
+
 from models.ast_utils import aframes_to_fbank
 
 
@@ -27,24 +29,27 @@ class UntrimmedVideoDataset(Dataset):
             - "gvf": The global video feature (GVF) vector if `global_video_features` parameter is not None
     '''
 
-    def __init__(self, csv_filename, root_dir, clip_length, frame_rate, clips_per_segment, temporal_jittering,
-            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False):
+    def __init__(self, csv_filename, root_dir, clip_length_frames, video_frame_rate, audio_frame_rate, clips_per_segment, temporal_jittering,
+            label_columns, label_mappings, num_mel_bins, audio_target_length, video_h5=None, audio_h5=None, seed=42, video_transform=None, global_video_features=None, debug=False):
         '''
         Args:
             csv_filename (string): Path to the CSV file with temporal segments information and annotations.
                 The CSV file must include the columns [filename, fps, t-start, t-end, video-duration] and
                 the label columns given by the parameter `label_columns`.
-            root_dir (string): Directory with all the video files.
+            root_dir (string): Directory with all the raw video files. Specify either this or `video_h5` and `audio_h5`.
             clip_length (int): The number of frames per clip.
-            frame_rate (int): The effective frame rate (fps) to sample clips.
+            video_frame_rate (int): The effective video frame rate (fps) to sample clips.
+            audio_frame_rate (int): The effective audio frame rate (fps) to sample clips.
             clips_per_segment (int): The number of clips to sample per segment (a row) in the CSV file.
             temporal_jittering (bool): If True, clips are randomly sampled between t-start and t-end of
                 each segment. Otherwise, clips are are sampled uniformly between t-start and t-end.
             num_mel_bins (int) TODO
             audio_target_length TODO
+            video_h5 (string): Path to the HDF5 file of preprocessed video tensors
+            audio_h5 (string): Path to the HDF5 file of preprocessed audio tensors
             seed (int): Seed of the random number generator used for the temporal jittering.
             video_transform (callable): A function/transform that takes in a TxHxWxC video
-                and returns a transformed version.
+                and returns a transformed video.
             label_columns (list of string): A list of the label columns in the CSV file.
                 If more than one column is specified, the sample return a label for each.
             label_mappings (list of dict): A list of dictionaries to map the corresponding label
@@ -52,11 +57,28 @@ class UntrimmedVideoDataset(Dataset):
             global_video_features (string): Path to h5 file containing global video features (optional)
             debug (bool): If true, create a debug dataset with 100 samples.
         '''
-        df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length, frame_rate)
-        self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
+        df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length_frames, video_frame_rate)
 
-        self.clip_length = clip_length
-        self.frame_rate = frame_rate
+        self.root_dir = root_dir
+
+        self.video_h5 = video_h5
+        self.audio_h5 = audio_h5
+
+        if root_dir:
+            # self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
+            df = UntrimmedVideoDataset.remove_unavailable_raw_videos_from_df(df, root_dir)
+            self.df = UntrimmedVideoDataset.make_filenames_absolute(df, root_dir)
+            UntrimmedVideoDataset.check_files_exist(self.df)
+        elif video_h5 and audio_h5:
+            self.video_h5 = h5py.File(video_h5, "r")
+            self.audio_h5 = h5py.File(audio_h5, "r")
+            self.df = UntrimmedVideoDataset.remove_unavailable_tensors_from_df(df, self.video_h5, self.audio_h5)
+        else:
+            raise NotImplementedError
+
+        self.clip_length_frames = clip_length_frames
+        self.video_frame_rate = video_frame_rate
+        self.audio_frame_rate = audio_frame_rate
         self.clips_per_segment = clips_per_segment
 
         self.audio_target_length = audio_target_length
@@ -78,8 +100,18 @@ class UntrimmedVideoDataset(Dataset):
             self.df[label_column] = self.df[label_column].map(lambda x: -1 if pd.isnull(x) else label_mapping[x])
 
         self.global_video_features = global_video_features
+        if global_video_features:
+            self.gvf_h5 = h5py.File(self.global_video_features, 'r')
 
         self.debug = debug
+
+    def __del__(self):
+        if self.global_video_features:
+            self.gvf_h5.close()
+        if self.video_h5:
+            self.video_h5.close()
+        if self.audio_h5:
+            self.audio_h5.close()
 
     def __len__(self):
         num_clips = len(self.df) * self.clips_per_segment
@@ -89,29 +121,52 @@ class UntrimmedVideoDataset(Dataset):
         sample = {}
 
         row = self.df.iloc[idx % len(self.df)]
-        filename, fps, t_start, t_end = row['filename'], row['fps'], row['t-start'], row['t-end']
+        video_id, filename, fps, segment_start_sec, segment_end_sec = row['video-name'], row['filename'], row['fps'], row['t-start'], row['t-end']
 
-        # compute clip_t_start and clip_t_end
-        clip_length_in_sec = self.clip_length / self.frame_rate
-
+        # For calculating the start of clip
         ratio = self.rng.uniform() if self.temporal_jittering else self.uniform_sampling[idx//len(self.df)]
-        clip_t_start = t_start + ratio * (t_end - t_start - clip_length_in_sec)
-        clip_t_end = clip_t_start + clip_length_in_sec
 
-        # get a video tensor [clip_length, H, W, C] and audio tensor [channels, points]
-        # of the video frames between clip_t_start and clip_t_end seconds
-        vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
+        if self.root_dir:
+            # compute clip_t_start and clip_t_end
+            clip_length_sec = self.clip_length_frames / self.video_frame_rate
+
+            clip_start_sec = segment_start_sec + ratio * (segment_end_sec - segment_start_sec - clip_length_sec)
+            clip_end_sec = clip_start_sec + clip_length_sec
+
+            # get a video tensor [clip_length, H, W, C] and audio tensor [channels, points]
+            # of the video frames between clip_t_start and clip_t_end seconds
+            vframes, aframes, info = read_video(filename=filename, start_pts=clip_start_sec, end_pts=clip_end_sec, pts_unit='sec')
+
+        elif self.video_h5 and self.audio_h5:
+            v_segment_start_frame = fps * segment_start_sec
+            v_segment_end_frame = fps * segment_end_sec
+
+            v_clip_start_frame = int(v_segment_start_frame + ratio * (v_segment_end_frame - v_segment_start_frame - self.clip_length_frames))
+            v_clip_end_frame = v_clip_start_frame + self.clip_length_frames
+
+            vframes = self.video_h5[video_id][:, v_clip_start_frame:v_clip_end_frame, :, :]
+            
+            # df does not have audio frame rate
+            a_segment_start_frame = self.audio_frame_rate * segment_start_sec
+            a_segment_end_frame = self.audio_frame_rate * segment_end_sec
+
+            a_clip_start_frame = int(a_segment_end_frame + ratio * (a_segment_end_frame - a_segment_start_frame - self.audio_target_length))
+            a_clip_end_frame = a_clip_start_frame + self.audio_target_length  # TODO: clip_len != audio_target_length, what to use instead?
+            
+            aframes = self.audio_h5[video_id][0][a_clip_start_frame:a_clip_end_frame]
 
         # If video has different FPS than self.frame_rate, then change idxs to reflect this
         # If video fps == self.frame_rate, then idxs is simply [::1]
-        idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
+        idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length_frames, fps, self.video_frame_rate)
 
-        vframes = vframes[idxs][:self.clip_length]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+        # TODO resampling index for audio frames
 
-        if vframes.shape[0] != self.clip_length:
-            raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
-                               f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
-                               f'fps={fps}, t_start={t_start}, t_end={t_end}')
+        vframes = vframes[idxs][:self.clip_length_frames]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+
+        if vframes.shape[0] != self.clip_length_frames:
+            raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length_frames}.'
+                               f'filename={filename}, clip_t_start={clip_start_sec}, clip_t_end={clip_end_sec}, '
+                               f'fps={fps}, t_start={segment_start_sec}, t_end={segment_end_sec}')
 
         # apply video transforms
         sample['video'] = self.video_transform(vframes)
@@ -128,9 +183,9 @@ class UntrimmedVideoDataset(Dataset):
 
         # add global video feature
         if self.global_video_features:
-            f = h5py.File(self.global_video_features, 'r')
-            sample['gvf'] = torch.tensor(f[os.path.basename(filename).split('.')[0]][()])
-            f.close()
+            # f = h5py.File(self.global_video_features, 'r')
+            sample['gvf'] = torch.tensor(self.gvf_h5[os.path.basename(filename).split('.')[0]][()])
+            # f.close()
 
         return sample
 
@@ -157,6 +212,52 @@ class UntrimmedVideoDataset(Dataset):
             raise NotImplementedError
 
         return df
+
+    @staticmethod
+    def remove_unavailable_raw_videos_from_df(df: pd.DataFrame, root_dir):
+        # get all available videos from root_dir
+        video_filenames = os.listdir(root_dir)
+
+        # remove unavailable videos from dataframe
+        df = df.loc[df['filename'].isin(video_filenames)].copy()
+        
+        print(f"Number of segments after removing unavailable raw videos: {df.shape[0]}")
+
+        return df
+
+    @staticmethod
+    def remove_unavailable_tensors_from_df(df, video_h5, audio_h5):
+        videos = set(video_h5.keys())
+        audios = set(audio_h5.keys())
+        if len(audios) != len(videos) or audios != videos:
+            print("Audio datasets in audio_h5 don't match with video datasets in video_h5")
+        ids = videos.intersection(audios)
+        
+        # remove unavailable videos from dataframe
+        df = df.loc[df['video-name'].isin(ids)].copy()
+
+        return df
+
+
+    @staticmethod
+    def make_filenames_absolute(df, root_dir):
+        # Change filenames in df to absolute filenames
+        df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
+
+        return df
+
+    @staticmethod
+    def check_files_exist(df):
+        filenames = df.drop_duplicates('filename')['filename'].values
+        pprint(len(filenames))
+        for f in filenames:
+            try:
+                if not os.path.exists(f):
+                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
+                                    f'Double-check root_dir and csv_filename inputs.')
+            except ValueError:
+                # print(f"Video {f} not present")
+                pass
 
     @staticmethod
     def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):

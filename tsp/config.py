@@ -28,6 +28,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Audio
     cfg.audio = ml_collections.ConfigDict()
+    cfg.audio.frame_rate = 44100    # Audio sample rate in Hz
     cfg.audio.num_mel_bins = 128
     cfg.audio.target_length = 1024  # For AudioSet
 
@@ -114,8 +115,11 @@ def load_config():
 
     # Path to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    cfg.tsp.global_video_features = None
-    # cfg.tsp.global_video_features = "gvf.h5"
+    cfg.tsp.train_global_video_features = None
+    # cfg.tsp.train_global_video_features = "train_gvf.h5"
+    cfg.tsp.val_global_video_features = None
+    # cfg.tsp.val_global_video_features = "val_gvf.h5"
+
     cfg.tsp.backbones = ['vivit', 'ast']
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001

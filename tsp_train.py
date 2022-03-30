@@ -234,19 +234,20 @@ def main(cfg):
         float_zero_to_one,
         torchvision.transforms.Lambda(lambda video: video.permute(0, 3, 1, 2)),
         resize,
-        torchvision.transforms.RandomHorizontalFlip(),
         normalize,
         torchvision.transforms.Lambda(lambda video: video.permute(1, 0, 2, 3)),
         torchvision.transforms.RandomCrop(
-            (cfg.vivit.img_size, cfg.vivit.img_size))
+            (cfg.vivit.img_size, cfg.vivit.img_size)),
+        torchvision.transforms.RandomHorizontalFlip(),
     ])
 
     # Training dataset
     train_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.train_csv_filename,
         root_dir=train_dir,
-        clip_length=cfg.video.clip_len,
-        frame_rate=cfg.video.frame_rate,
+        clip_length_frames=cfg.video.clip_len,
+        video_frame_rate=cfg.video.frame_rate,
+        audio_frame_rate=cfg.audio.frame_rate or 44100,
         clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=True,
         num_mel_bins=cfg.audio.num_mel_bins,
@@ -254,7 +255,7 @@ def main(cfg):
         video_transform=train_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
-        global_video_features=cfg.tsp.global_video_features,
+        global_video_features=cfg.tsp.train_global_video_features,
         debug=cfg.debug
     )
 
@@ -272,8 +273,9 @@ def main(cfg):
     valid_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.valid_csv_filename,
         root_dir=valid_dir,
-        clip_length=cfg.video.clip_len,
-        frame_rate=cfg.video.frame_rate,
+        clip_length_frames=cfg.video.clip_len,
+        video_frame_rate=cfg.video.frame_rate,
+        audio_frame_rate=cfg.audio.frame_rate,
         clips_per_segment=cfg.video.clips_per_segment,
         temporal_jittering=False,
         num_mel_bins=cfg.audio.num_mel_bins,
@@ -281,7 +283,7 @@ def main(cfg):
         video_transform=valid_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
-        global_video_features=cfg.tsp.global_video_features,
+        global_video_features=cfg.tsp.val_global_video_features,
         debug=cfg.debug
     )
 
@@ -318,7 +320,7 @@ def main(cfg):
     feature_backbones = []
     d_feats = []
     input_modalities = []
-    if 'vivit' in cfg.tsp.backbones:
+    if False and 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
         model_official = timm.create_model(
             cfg.pretrained_models.vit, pretrained=True)
@@ -351,7 +353,7 @@ def main(cfg):
         d_tsp_feat=d_feats[0],
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
-        concat_gvf=cfg.tsp.global_video_features is not None,
+        concat_gvf=cfg.tsp.train_global_video_features is not None,
     )
 
 

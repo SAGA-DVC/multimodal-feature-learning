@@ -5,6 +5,8 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 
 
 
+from functools import reduce
+
 import torch
 import torch.nn as nn
 
@@ -40,7 +42,10 @@ class TSPModel(nn.Module):
 
         # Combiner function for the backbones' representations
         # Default combiner is addition
-        self.combiner = combiner if combiner is not None else lambda t1, t2: t1+t2
+        def add(*features):
+            return reduce(lambda t1, t2: t1 + t2, features)
+
+        self.combiner = combiner if combiner is not None else add
 
         self.num_classes = num_tsp_classes
         self.num_heads = num_tsp_heads
