@@ -5,7 +5,4 @@ timm
 wandb
 pytorchvideo
 
-# python -m spacy download en
-# wandb login
-
 ###### Requirements with Version Specifiers ######
