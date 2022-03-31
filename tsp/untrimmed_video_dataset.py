@@ -29,7 +29,7 @@ class UntrimmedVideoDataset(Dataset):
             - "gvf": The global video feature (GVF) vector if `global_video_features` parameter is not None
     '''
 
-    def __init__(self, csv_filename, root_dir, clip_length_frames, video_frame_rate, audio_frame_rate, clips_per_segment, temporal_jittering,
+    def __init__(self, csv_filename, root_dir, video_clip_length_frames, video_frame_rate, audio_frame_rate, clips_per_segment, temporal_jittering,
             label_columns, label_mappings, num_mel_bins, audio_target_length, video_h5=None, audio_h5=None, seed=42, video_transform=None, global_video_features=None, debug=False):
         '''
         Args:
@@ -57,7 +57,7 @@ class UntrimmedVideoDataset(Dataset):
             global_video_features (string): Path to h5 file containing global video features (optional)
             debug (bool): If true, create a debug dataset with 100 samples.
         '''
-        df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length_frames, video_frame_rate)
+        df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), video_clip_length_frames, video_frame_rate)
 
         self.root_dir = root_dir
 
@@ -76,9 +76,15 @@ class UntrimmedVideoDataset(Dataset):
         else:
             raise NotImplementedError
 
-        self.clip_length_frames = clip_length_frames
+        self.video_clip_length_frames = video_clip_length_frames
+        
         self.video_frame_rate = video_frame_rate
         self.audio_frame_rate = audio_frame_rate
+
+        self.clip_length_sec = self.video_clip_length_frames / self.video_frame_rate
+
+        self.audio_clip_length_frames = self.clip_length_sec * self.audio_frame_rate
+
         self.clips_per_segment = clips_per_segment
 
         self.audio_target_length = audio_target_length
@@ -127,11 +133,9 @@ class UntrimmedVideoDataset(Dataset):
         ratio = self.rng.uniform() if self.temporal_jittering else self.uniform_sampling[idx//len(self.df)]
 
         if self.root_dir:
-            # compute clip_t_start and clip_t_end
-            clip_length_sec = self.clip_length_frames / self.video_frame_rate
 
-            clip_start_sec = segment_start_sec + ratio * (segment_end_sec - segment_start_sec - clip_length_sec)
-            clip_end_sec = clip_start_sec + clip_length_sec
+            clip_start_sec = segment_start_sec + ratio * (segment_end_sec - segment_start_sec - self.clip_length_sec)
+            clip_end_sec = clip_start_sec + self.clip_length_sec
 
             # get a video tensor [clip_length, H, W, C] and audio tensor [channels, points]
             # of the video frames between clip_t_start and clip_t_end seconds
@@ -141,8 +145,8 @@ class UntrimmedVideoDataset(Dataset):
             v_segment_start_frame = fps * segment_start_sec
             v_segment_end_frame = fps * segment_end_sec
 
-            v_clip_start_frame = int(v_segment_start_frame + ratio * (v_segment_end_frame - v_segment_start_frame - self.clip_length_frames))
-            v_clip_end_frame = v_clip_start_frame + self.clip_length_frames
+            v_clip_start_frame = int(v_segment_start_frame + ratio * (v_segment_end_frame - v_segment_start_frame - self.video_clip_length_frames))
+            v_clip_end_frame = v_clip_start_frame + self.video_clip_length_frames
 
             vframes = self.video_h5[video_id][:, v_clip_start_frame:v_clip_end_frame, :, :]
             
@@ -151,20 +155,23 @@ class UntrimmedVideoDataset(Dataset):
             a_segment_end_frame = self.audio_frame_rate * segment_end_sec
 
             a_clip_start_frame = int(a_segment_end_frame + ratio * (a_segment_end_frame - a_segment_start_frame - self.audio_target_length))
-            a_clip_end_frame = a_clip_start_frame + self.audio_target_length  # TODO: clip_len != audio_target_length, what to use instead?
+            a_clip_end_frame = a_clip_start_frame + self.audio_clip_length_frames
             
             aframes = self.audio_h5[video_id][0][a_clip_start_frame:a_clip_end_frame]
 
         # If video has different FPS than self.frame_rate, then change idxs to reflect this
         # If video fps == self.frame_rate, then idxs is simply [::1]
-        idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length_frames, fps, self.video_frame_rate)
+        idxs = UntrimmedVideoDataset._resample_video_idx(self.video_clip_length_frames, fps, self.video_frame_rate)
 
         # TODO resampling index for audio frames
+        # As of now, all videos are assumed to have same audio_frame_rate (audio sample rate)
+        # This is true for almost all videos except ~10-20
+        # But the audio sample rate is not stored in df
 
-        vframes = vframes[idxs][:self.clip_length_frames]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+        vframes = vframes[idxs][:self.video_clip_length_frames]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
 
-        if vframes.shape[0] != self.clip_length_frames:
-            raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length_frames}.'
+        if vframes.shape[0] != self.video_clip_length_frames:
+            raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.video_clip_length_frames}.'
                                f'filename={filename}, clip_t_start={clip_start_sec}, clip_t_end={clip_end_sec}, '
                                f'fps={fps}, t_start={segment_start_sec}, t_end={segment_end_sec}')
 

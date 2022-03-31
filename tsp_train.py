@@ -245,7 +245,7 @@ def main(cfg):
     train_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.train_csv_filename,
         root_dir=train_dir,
-        clip_length_frames=cfg.video.clip_len,
+        video_clip_length_frames=cfg.video.clip_len,
         video_frame_rate=cfg.video.frame_rate,
         audio_frame_rate=cfg.audio.frame_rate or 44100,
         clips_per_segment=cfg.video.clips_per_segment,
@@ -273,7 +273,7 @@ def main(cfg):
     valid_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.valid_csv_filename,
         root_dir=valid_dir,
-        clip_length_frames=cfg.video.clip_len,
+        video_clip_length_frames=cfg.video.clip_len,
         video_frame_rate=cfg.video.frame_rate,
         audio_frame_rate=cfg.audio.frame_rate,
         clips_per_segment=cfg.video.clips_per_segment,
