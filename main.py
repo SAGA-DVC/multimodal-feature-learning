@@ -11,7 +11,7 @@ import wandb
 from models import build_model_and_criterion
 from config.config_dvc import load_config
 from utils.misc import *
-from engine import train_one_epoch
+from engine import train_one_epoch, evaluate
 
 from dataset.anet import build_dataset, collate_fn 
 
@@ -78,7 +78,6 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
-
     print("Start training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
@@ -102,6 +101,9 @@ def main(args):
                     'epoch': epoch,
                     'args': args,
                 }, checkpoint_path)
+
+        # Validation
+        evaluate(model, criterion, data_loader_val, device, args.output_dir)
 
         log_stats = {'epoch': epoch,
                     **{f'train_{k}': v for k, v in train_stats.items()},

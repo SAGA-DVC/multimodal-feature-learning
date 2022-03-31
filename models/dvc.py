@@ -136,7 +136,7 @@ class DVC(nn.Module):
     # TODO - use log softmax?
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - add position embedding in caption decoder
-    def forward(self, obj):
+    def forward(self, obj, is_training=True):
 
         """
         Performs a forward pass on the DVC model which consists of the encoders, proposal decoder and caption decoder
@@ -169,7 +169,6 @@ class DVC(nn.Module):
         """
 
         x = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
-        captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
         
         # Encoder
         # (batch_size, num_frames * num_patches + 1, d_model) OR
@@ -216,20 +215,69 @@ class DVC(nn.Module):
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         memory_mask = memory_mask.to(feats.device)
-
-        tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-        tgt_mask = tgt_mask.to(captions.device)
         
-        # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-        outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
+        if is_training:
+            captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
+            tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+            tgt_mask = tgt_mask.to(captions.device)
+        
+            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
 
-        out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+            out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
-        # TODO - indices for aux loss
-        if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
+            # TODO - indices for aux loss
+            if self.aux_loss:
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
 
-        return out, indices
+            return out, indices
+
+        else:   # Inference
+            # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length-1)
+            captions = torch.ones([memory.shape[0], 19], dtype=torch.int32)    # `PAD_TOKEN`
+            captions[:, 0] = 2  # `START_TOKEN`
+            captions = captions.to(memory_mask.device)  # TODO Temporary
+
+            # Loop control Variables
+            total_caption_num = memory.shape[0]
+            total_caption_done = 0
+            caption_done_indices = []
+
+            # Since END_TOKEN can be predicted even if the caption not reaches max_caption_length
+            # range(1, max_caption_length-1)
+            for word_index in range(1, 19):
+                captions_padding_mask = self.make_padding_mask(captions)
+                captions_padding_mask = captions_padding_mask.to(memory_mask.device)    # TODO Temporary
+                
+                tgt_mask = self.make_tgt_mask(captions, captions_padding_mask)  # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+                tgt_mask = tgt_mask.to(captions.device)  # TODO Temporary
+
+                # (1, total_caption_num, max_caption_length - 1, vocab_size)
+                outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
+                outputs_captions = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length-1)
+
+                # Update predicted word in captions
+                # captions[:, word_index] = outputs_captions[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
+                for caption_index in range(total_caption_num):
+                    if caption_index not in caption_done_indices:
+                        captions[caption_index, word_index] = outputs_captions[caption_index, word_index]
+
+                        if outputs_captions[caption_index, word_index] == 3:    # if END_TOKEN predicted
+                            caption_done_indices.append(caption_index)
+                            total_caption_done += 1
+
+                if total_caption_done == total_caption_num:     # if all captions done
+                    break
+
+            # For adding END_TOKEN at the end irrespective of whether it already exists in caption
+            # end_token = torch.full([captions.shape[0], 1], 3, dtype=torch.int32)    # `END_TOKEN` (3) column, (total_caption_num, 1)
+            # captions = torch.cat((captions, end_token), 1)  # (total_caption_num, max_caption_length)
+
+            # Add END_TOKEN or PAD_TOKEN as the last token
+            last_token = torch.tensor([1 if 3 in c else 3 for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
+            captions = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
+
+            return out['pred_segments'], captions
     
 
     @torch.jit.unused
@@ -268,6 +316,20 @@ class DVC(nn.Module):
         """
         pass
 
+
+    def make_padding_mask(self, target):
+        """
+        Generates a padding mask (False where target contains PAD_TOKEN, True elsewhere)
+        
+        Parameters:
+            target (Tensor): Tensor of dimension (batch_size, seq_len)
+        
+        Returns:
+            tgt_padding_mask (Tensor): Tensor of dimention (batch_size, seq_len)
+        """
+
+        tgt_padding_mask = (target != 1)  # 1 is PAD_TOKEN
+        return tgt_padding_mask
 
 
     # TODO - make more efficient

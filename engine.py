@@ -85,3 +85,34 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         wandb.log({f"Averaged stats for epoch [{epoch}]": str(metric_logger)})
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+
+@torch.no_grad()
+def evaluate(model, criterion, data_loader, device, output_dir):
+    
+    """
+    Inference on given data and save the results.
+
+    Parameters:
+        `model` (torch.nn.Module) : Trained Model
+        `criterion` (torch.nn.Module) : Losses used to train the model
+        `data_loader` (Iterable) : DataLoader for the test dataset (ActivityNet)
+        `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
+        `output_dir` (string) : path to save results
+    
+    Returns: ???
+    """
+
+    model.eval()
+    criterion.eval()
+
+    for i, obj in enumerate(data_loader):
+
+        obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
+        obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
+                                for vid_info in obj['video_target']]
+
+        obj = defaultdict(lambda: None, obj)
+
+        pred_segments, pred_captions = model(obj, is_training=False)
+        print(pred_segments.shape, pred_captions.shape)
