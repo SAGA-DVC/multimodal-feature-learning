@@ -66,13 +66,13 @@ class UntrimmedVideoDataset(Dataset):
 
         if root_dir:
             # self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
-            df = UntrimmedVideoDataset.remove_unavailable_raw_videos_from_df(df, root_dir)
+            df = UntrimmedVideoDataset._remove_unavailable_raw_videos_from_df(df, root_dir)
             self.df = UntrimmedVideoDataset.make_filenames_absolute(df, root_dir)
-            UntrimmedVideoDataset.check_files_exist(self.df)
+            UntrimmedVideoDataset._check_files_exist(self.df)
         elif video_h5 and audio_h5:
             self.video_h5 = h5py.File(video_h5, "r")
             self.audio_h5 = h5py.File(audio_h5, "r")
-            self.df = UntrimmedVideoDataset.remove_unavailable_tensors_from_df(df, self.video_h5, self.audio_h5)
+            self.df = UntrimmedVideoDataset._remove_unavailable_tensors_from_df(df, self.video_h5, self.audio_h5)
         else:
             raise NotImplementedError
 
@@ -133,6 +133,7 @@ class UntrimmedVideoDataset(Dataset):
         ratio = self.rng.uniform() if self.temporal_jittering else self.uniform_sampling[idx//len(self.df)]
 
         if self.root_dir:
+            # Use raw video
 
             clip_start_sec = segment_start_sec + ratio * (segment_end_sec - segment_start_sec - self.clip_length_sec)
             clip_end_sec = clip_start_sec + self.clip_length_sec
@@ -142,13 +143,15 @@ class UntrimmedVideoDataset(Dataset):
             vframes, aframes, info = read_video(filename=filename, start_pts=clip_start_sec, end_pts=clip_end_sec, pts_unit='sec')
 
         elif self.video_h5 and self.audio_h5:
+            # Use precomputed video and audio tensors
+            
             v_segment_start_frame = fps * segment_start_sec
             v_segment_end_frame = fps * segment_end_sec
 
             v_clip_start_frame = int(v_segment_start_frame + ratio * (v_segment_end_frame - v_segment_start_frame - self.video_clip_length_frames))
             v_clip_end_frame = v_clip_start_frame + self.video_clip_length_frames
 
-            vframes = self.video_h5[video_id][:, v_clip_start_frame:v_clip_end_frame, :, :]
+            vframes = torch.tensor(self.video_h5[video_id][:, v_clip_start_frame:v_clip_end_frame, :, :])
             
             # df does not have audio frame rate
             a_segment_start_frame = self.audio_frame_rate * segment_start_sec
@@ -157,7 +160,7 @@ class UntrimmedVideoDataset(Dataset):
             a_clip_start_frame = int(a_segment_end_frame + ratio * (a_segment_end_frame - a_segment_start_frame - self.audio_target_length))
             a_clip_end_frame = a_clip_start_frame + self.audio_clip_length_frames
             
-            aframes = self.audio_h5[video_id][0][a_clip_start_frame:a_clip_end_frame]
+            aframes = torch.tensor(self.audio_h5[video_id][0][a_clip_start_frame:a_clip_end_frame])
 
         # If video has different FPS than self.frame_rate, then change idxs to reflect this
         # If video fps == self.frame_rate, then idxs is simply [::1]
@@ -190,9 +193,7 @@ class UntrimmedVideoDataset(Dataset):
 
         # add global video feature
         if self.global_video_features:
-            # f = h5py.File(self.global_video_features, 'r')
             sample['gvf'] = torch.tensor(self.gvf_h5[os.path.basename(filename).split('.')[0]][()])
-            # f.close()
 
         return sample
 
@@ -221,7 +222,7 @@ class UntrimmedVideoDataset(Dataset):
         return df
 
     @staticmethod
-    def remove_unavailable_raw_videos_from_df(df: pd.DataFrame, root_dir):
+    def _remove_unavailable_raw_videos_from_df(df: pd.DataFrame, root_dir):
         # get all available videos from root_dir
         video_filenames = os.listdir(root_dir)
 
@@ -233,7 +234,7 @@ class UntrimmedVideoDataset(Dataset):
         return df
 
     @staticmethod
-    def remove_unavailable_tensors_from_df(df, video_h5, audio_h5):
+    def _remove_unavailable_tensors_from_df(df, video_h5, audio_h5):
         videos = set(video_h5.keys())
         audios = set(audio_h5.keys())
         if len(audios) != len(videos) or audios != videos:
@@ -254,7 +255,7 @@ class UntrimmedVideoDataset(Dataset):
         return df
 
     @staticmethod
-    def check_files_exist(df):
+    def _check_files_exist(df):
         filenames = df.drop_duplicates('filename')['filename'].values
         pprint(len(filenames))
         for f in filenames:
@@ -265,29 +266,6 @@ class UntrimmedVideoDataset(Dataset):
             except ValueError:
                 # print(f"Video {f} not present")
                 pass
-
-    @staticmethod
-    def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):
-        # get all available videos from root_dir
-        videos = list(map(lambda video: video, os.listdir(root_dir)))
-
-        # remove unavailable videos from dataframe
-        df = df.loc[df['filename'].isin(videos)].copy()
-        
-        # Change filenames in df to absolute filenames
-        df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
-
-        filenames = df.drop_duplicates('filename')['filename'].values
-
-        for f in filenames:
-            try:
-                if not os.path.exists(f):
-                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
-                                    f'Double-check root_dir and csv_filename inputs.')
-            except ValueError:
-                # print(f"Video {f} not present")
-                pass
-        return df
 
     @staticmethod
     def _resample_video_idx(num_frames, original_fps, new_fps):

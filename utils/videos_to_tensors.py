@@ -1,14 +1,10 @@
 import argparse
 import os
-from pprint import pprint
 
 import torch
 import torchvision
 from torchvision.io import read_video
 import h5py
-
-from ..models.ast_utils import aframes_to_fbank
-
 
 def main(args):
     if not any([args.video_h5, args.audio_h5]):
@@ -53,10 +49,10 @@ if __name__ == '__main__':
                                      " and extracting the audio and video frame tensors")
     parser.add_argument("--raw-video-dir", type=str, required=True,
                         help="Path to directory which has the raw videos")
-    # parser.add_argument("--events-csv", type=str, required=True,
-    # help="Dataset of event clips in videos")
+
     parser.add_argument("--video-h5", type=str, required=False,
                         help="Path to store the h5 file for video frame tensors")
+
     parser.add_argument("--audio-h5", type=str, required=False,
                         help="Path to store the h5 file for audio frame tensors")
     main(parser.parse_args())
