@@ -18,4 +18,9 @@ RUN pip install ml-collections \
   wandb \
   h5py
 
+ARG GID=2040
+ENV GROUP="arnavshah"
+RUN groupadd -g $GID $GROUP && usermod -aG $GROUP root
+
+
 CMD ["/usr/bin/zsh"]
