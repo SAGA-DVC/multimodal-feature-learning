@@ -2,6 +2,7 @@ FROM nvcr.io/nvidia/pytorch:22.01-py3
 
 RUN apt update && \
     apt-get update && \
+	apt-get install --fix-missing && \
     apt install -y \
     default-jre \
     htop \

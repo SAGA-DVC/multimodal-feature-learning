@@ -6,10 +6,10 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:3'
+    cfg.device = 'cuda:2'
 
     cfg.batch_size = 3
-    cfg.num_workers = 2
+    cfg.num_workers = 0
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
@@ -18,7 +18,7 @@ def load_config():
     cfg.output_dir = 'output'
     cfg.resume = None
     cfg.start_epoch = 0
-    cfg.epochs = 1
+    cfg.epochs = 3
     cfg.clip_max_norm = 0.1
 
 
@@ -40,9 +40,10 @@ def load_config():
     cfg.dataset.activity_net.max_caption_len_all = 20
     cfg.dataset.activity_net.vocab_size = 5747
     
+    data_rescale = ['interpolate', 'uniform']
+    cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.feature_sample_rate = 2
-    cfg.dataset.activity_net.data_rescale = True
-    cfg.dataset.activity_net.rescale_len = 30
+    cfg.dataset.activity_net.rescale_len = 1500
     cfg.dataset.activity_net.data_norm = False
 
     cfg.dataset.activity_net.max_gt_target_segments = 10

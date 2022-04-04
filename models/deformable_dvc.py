@@ -177,6 +177,8 @@ class DVC(nn.Module):
         """
 
         video = obj['video_tensor']    # (batch_size, num_tokens, d_model)
+        batch_size, _, _ = video.shape
+        
         video_mask = obj['video_mask']    # (batch_size, num_tokens)
         video_durations = obj['video_length'][:, 1]   # (batch_size)
         
@@ -202,7 +204,7 @@ class DVC(nn.Module):
             init_reference, tgt, reference_points, query_embedding = self.deformable_transformer.prepare_decoder_input_proposal(proposals)
         else:
             query_embedding_weight = self.query_embedding.weight
-            proposals_mask = torch.ones(N, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
+            proposals_mask = torch.ones(batch_size, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
             init_reference, tgt, reference_points, query_embedding_weight = self.deformable_transformer.prepare_decoder_input_query(memory, query_embedding_weight)
 
 

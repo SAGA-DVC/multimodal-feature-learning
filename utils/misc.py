@@ -139,7 +139,8 @@ class MetricLogger(object):
                 '{meters}',
                 'iter time: {time}',
                 'data time: {data}',
-                'max mem: {memory:.0f}'
+                'max mem: {memory:.0f}',
+                '\n'
             ])
         else:
             log_msg = self.delimiter.join([
@@ -148,7 +149,8 @@ class MetricLogger(object):
                 'eta: {eta}',
                 '{meters}',
                 'iter time: {time}',
-                'data time: {data}'
+                'data time: {data}',
+                '\n'
             ])
         MB = 1024.0 * 1024.0
         for obj in iterable:

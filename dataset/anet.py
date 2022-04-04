@@ -59,7 +59,7 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:6]
+        self.keys = self.keys[:12]
 
         # self.feature_folder = feature_folder
         self.video_features = h5py.File(feature_folder / 'video_features.h5', 'r')    # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
@@ -145,11 +145,12 @@ class ActivityNet(DVCdataset):
 
         feature = self.get_feature(key) # (num_tokens, d_model)
         
-        if self.args.data_rescale:
+        if self.args.data_rescale == 'interpolate':
             feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, d_model)
-        else:
+        elif self.args.data_rescale == 'uniform':
             feature = feature[::self.args.feature_sample_rate] # (num_tokens//feature_sample_rate, d_model)
-        return feature
+
+        return torch.from_numpy(feature)
 
 
     def __getitem__(self, idx):
@@ -210,10 +211,10 @@ class ActivityNet(DVCdataset):
             `key` (string) : An ID representing a video in the dataset
         
         Returns:
-            Tensor of dimension (num_tokens, d_model)
+            np array of shape (num_tokens, d_model)
         """
-        
-        feature = torch.from_numpy(np.array(self.video_features.get(key)))    # (num_tokens, d_model)
+
+        feature = np.array(self.video_features.get(key)).astype(np.float)    # (num_tokens, d_model)
         return feature
 
 
@@ -223,13 +224,13 @@ class ActivityNet(DVCdataset):
         Resizes the video (number of frames) using interpolation
 
         Parameters:
-            `input_data` : Tensor of dimension (total_frames, height, width, num_channels)
-            `new_size` (int) : total_frames to be scaled to new_size
+            `input_data` : np array of shape (num_tokens, d_model)
+            `new_size` (int) : num_tokens to be scaled to new_size
 
         Returns:
-            `y_new` : np array of shape (new_size, height, width, num_channels)
+            `y_new` : np array of shape (new_size, d_model)
         """
-        
+
         originalSize = len(input_data)
 
         if originalSize == 1:
@@ -241,7 +242,7 @@ class ActivityNet(DVCdataset):
         x_new = [i * float(originalSize - 1) / (new_size - 1) for i in range(new_size)]
         y_new = f(x_new)
 
-        return torch.from_numpy(y_new)
+        return y_new
 
 
 def iou(interval_1, interval_2):
