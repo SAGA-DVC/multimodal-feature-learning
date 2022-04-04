@@ -1,6 +1,8 @@
 #!/bin/sh
 pip install -r requirements.txt
 python -m spacy download en
+sh ./models/ops/make.sh
+python ./models/ops/test.py # unit test for MSDA
 wandb login
 
 # apt update
