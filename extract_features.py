@@ -13,7 +13,7 @@ import pandas as pd
 
 from tsp.config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel
+from tsp.tsp_model import TSPModel, concat_combiner
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -36,6 +36,8 @@ def evaluate(model, dataloader, device):
             _, features = model(clip, return_features=True)
             # Save features as pkl (if features of all clips of a video have been collected)
             dataloader.dataset.save_features(features, batch)
+
+            print(f"Batch: {batch_idx}")
 
 
 def main(cfg):
@@ -84,7 +86,7 @@ def main(cfg):
     # Dataset
     dataset = EvalVideoDataset(
         metadata_df=metadata_df,
-        root_dir=f'{cfg.data_dir}/train',
+        root_dir=f'{cfg.data_dir}/{cfg.feature_extraction.subdir}',
         clip_length=cfg.video.clip_len,
         frame_rate=cfg.video.frame_rate,
         stride=cfg.video.stride,
@@ -133,7 +135,8 @@ def main(cfg):
         d_tsp_feat=d_feats[0],
         num_tsp_classes=[1],
         num_tsp_heads=1, 
-        concat_gvf=False
+        concat_gvf=False,
+        combiner=concat_combiner
     )
 
     # Resume from local checkpoint

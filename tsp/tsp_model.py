@@ -3,7 +3,7 @@ Code adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
-
+from functools import reduce
 
 import torch
 import torch.nn as nn
@@ -40,7 +40,7 @@ class TSPModel(nn.Module):
 
         # Combiner function for the backbones' representations
         # Default combiner is addition
-        self.combiner = combiner if combiner is not None else lambda t1, t2: t1+t2
+        self.combiner = combiner if combiner is not None else add_combiner
 
         self.num_classes = num_tsp_classes
         self.num_heads = num_tsp_heads
@@ -85,3 +85,11 @@ class TSPModel(nn.Module):
         nn.init.normal_(fc.weight, 0, 0.01)
         nn.init.constant_(fc.bias, 0)
         return fc
+
+
+def add_combiner(*features):
+    return reduce(lambda t1, t2: t1 + t2, features)
+
+
+def concat_combiner(*features):
+    return torch.cat(features, dim=1)

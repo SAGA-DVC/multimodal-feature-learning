@@ -19,7 +19,7 @@ import numpy as np
 from models.ast import AudioSpectrogramTransformer
 
 from tsp.vivit_wrapper import VivitWrapper
-from tsp.tsp_model import TSPModel
+from tsp.tsp_model import TSPModel, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
 from tsp.config import load_config
@@ -349,6 +349,7 @@ def main(cfg):
         input_modalities=input_modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
+        combiner=concat_combiner,
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.global_video_features is not None,

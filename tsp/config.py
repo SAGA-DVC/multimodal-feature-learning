@@ -29,7 +29,7 @@ def load_config():
     # Audio
     cfg.audio = ml_collections.ConfigDict()
     cfg.audio.num_mel_bins = 128
-    cfg.audio.target_length = 1024  # For AudioSet
+    cfg.audio.target_length = 64
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -57,42 +57,39 @@ def load_config():
     cfg.vivit.mlp_ratio = 4
     cfg.vivit.qkv_bias = True
 
-    cfg.vivit.positional_embedding_dropout = 0
-    cfg.vivit.attention_dropout = 0
-    cfg.vivit.projection_dropout = 0
-    cfg.vivit.dropout_1 = 0
-    cfg.vivit.dropout_2 = 0
+    cfg.vivit.positional_embedding_dropout = 0.
+    cfg.vivit.attention_dropout = 0.
+    cfg.vivit.projection_dropout = 0.
+    cfg.vivit.dropout_1 = 0.2
+    cfg.vivit.dropout_2 = 0.2
 
     cfg.vivit.pre_norm = True
 
     cfg.vivit.classification_head = False
+    # TODO Check if used
     cfg.vivit.num_classes = 1000
 
-    cfg.vivit.return_preclassifier = False
-    cfg.vivit.return_prelogits = True  # Required for TSP
+    cfg.vivit.return_preclassifier = True  # Set True for GVF & Feature extraction
+    cfg.vivit.return_prelogits = False  # Set True for TSP
 
-    cfg.vivit.weight_init = True
-    cfg.vivit.weight_load = False
+    cfg.vivit.weight_init = False
+    cfg.vivit.weight_load = True
 
     #-------------------------------------------------------------------------------------------------
     # AST
     cfg.ast = ml_collections.ConfigDict()
 
-    cfg.ast.label_dim = 527
     cfg.ast.fstride = 10
     cfg.ast.tstride = 10
     cfg.ast.input_fdim = 128
-    cfg.ast.input_tdim = 1024
+    cfg.ast.input_tdim = 64
     cfg.ast.imagenet_pretrained = True
-    cfg.ast.model_size='base384'
-
-    # assume the task has 527 classes
-    cfg.ast.label_dim = 527
-
+    cfg.ast.model_size='base224'
 
     cfg.ast.depth = 2
     
-    cfg.ast.return_prelogits = True  # Required for TSP
+    cfg.ast.return_preclassifier = True  # Set True for GVF & Feature extraction
+    cfg.ast.return_prelogits = False  # Required for TSP
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
@@ -164,13 +161,15 @@ def load_config():
 
     #-------------------------------------------------------------------------------------------------
     # Feature extraction
-    cfg.num_shards = 1
-    cfg.shard_id = 0
-    cfg.video.stride = 16
-    cfg.local_checkpoint = None
+    cfg.feature_extraction = ml_collections.ConfigDict()
+    cfg.feature_extraction.num_shards = 1
+    cfg.feature_extraction.shard_id = 0
+    cfg.feature_extraction.video_stride = 16
+    cfg.feature_extraction.local_checkpoint = None
+    cfg.feature_extraction.subdir = 'train'
 
     #-------------------------------------------------------------------------------------------------
-    # Distributed Processing  # TODO
+    # Distributed Processing 
     distributed = False
     cfg.distributed = ml_collections.ConfigDict()
     if distributed:

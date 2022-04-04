@@ -24,28 +24,30 @@ class VivitWrapper(nn.Module):
 
         super(VivitWrapper, self).__init__()
         
-        num_frames = num_frames_in // temporal_patch_size
+        self.num_frames = num_frames_in // temporal_patch_size
         num_patches = (img_size // spatial_patch_size) ** 2
+
+        self.model_name = model_name
         
         self.positional_embedding_layer = None
         self.spatial_positional_embedding_layer = None
 
         # Attention
         if model_name == 'spatio temporal attention':
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
+            self.positional_embedding_layer = PositionalEmbedding((1, self.num_frames * num_patches + 1, d_model), positional_embedding_dropout) 
             
         elif model_name == 'factorised encoder':
             self.spatial_positional_embedding_layer = PositionalEmbedding((1, num_patches + 1, d_model), positional_embedding_dropout)
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames + 1, d_model), positional_embedding_dropout)
+            self.positional_embedding_layer = PositionalEmbedding((1, self.num_frames + 1, d_model), positional_embedding_dropout)
 
         else:
-            self.positional_embedding_layer = PositionalEmbedding((1, num_frames, num_patches, d_model), positional_embedding_dropout)
+            self.positional_embedding_layer = PositionalEmbedding((1, self.num_frames, num_patches, d_model), positional_embedding_dropout)
 
         '''Feature dimensions'''
         self.d_model = d_model
 
         self.vivit = VideoVisionTransformer(model_name=model_name, 
-                        num_frames=num_frames, 
+                        num_frames=self.num_frames, 
                         num_patches=num_patches, 
                         img_size=img_size, 
                         spatial_patch_size=spatial_patch_size, 
