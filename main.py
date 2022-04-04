@@ -103,7 +103,7 @@ def main(args):
                 }, checkpoint_path)
 
         # Validation
-        evaluate(model, criterion, data_loader_val, device, args.output_dir)
+        # evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
 
         log_stats = {'epoch': epoch,
                     **{f'train_{k}': v for k, v in train_stats.items()},

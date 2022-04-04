@@ -4,7 +4,7 @@ import pickle
 import torch
 import numpy as np
 import timm
-from .dvc import DVC
+from .deformable_dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
 from config.config_dvc import load_config
@@ -64,7 +64,8 @@ def build_model_and_criterion(args, dataset):
                 weight_load=args.weight_load, 
                 model_official=model_official,
                 return_intermediate=args.return_intermediate,
-                matcher=matcher
+                matcher=matcher,
+                detr_args=args.detr
             )
 
     weight_dict = {'loss_ce': args.cls_loss_coef, 

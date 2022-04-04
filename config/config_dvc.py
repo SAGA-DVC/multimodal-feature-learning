@@ -6,7 +6,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'
+    cfg.device = 'cuda:3'
 
     cfg.batch_size = 3
     cfg.num_workers = 2
@@ -18,7 +18,7 @@ def load_config():
     cfg.output_dir = 'output'
     cfg.resume = None
     cfg.start_epoch = 0
-    cfg.epochs = 2
+    cfg.epochs = 1
     cfg.clip_max_norm = 0.1
 
 
@@ -31,7 +31,8 @@ def load_config():
     cfg.dataset.activity_net = ml_collections.ConfigDict()
 
     cfg.dataset.activity_net.anet_path = '../activity-net/captions'
-    cfg.dataset.activity_net.video_folder = '../activity-net/splits'
+    # cfg.dataset.activity_net.video_folder = '../activity-net/splits'
+    cfg.dataset.activity_net.features_path = './data_features'
     cfg.dataset.activity_net.invalid_videos_json = '../activity-net/captions/invalid_ids.json'
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
@@ -41,7 +42,7 @@ def load_config():
     
     cfg.dataset.activity_net.feature_sample_rate = 2
     cfg.dataset.activity_net.data_rescale = True
-    cfg.dataset.activity_net.frame_rescale_len = 10
+    cfg.dataset.activity_net.rescale_len = 30
     cfg.dataset.activity_net.data_norm = False
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
@@ -84,7 +85,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.dvc.model_name = models[0]
 
-    cfg.dvc.num_frames_in = 10
+    cfg.dvc.num_frames_in = 30
     cfg.dvc.img_size = 224
 
     cfg.dvc.spatial_patch_size = 16
@@ -137,6 +138,27 @@ def load_config():
 
 
     #-------------------------------------------------------------------------------------------------
+    # Deformable DETR
+    cfg.dvc.detr = ml_collections.ConfigDict()
+
+    cfg.dvc.detr.feature_dim = 768  #   dim of frame-level feature vector (default = 500)
+    cfg.dvc.detr.hidden_dim = 768   #   Dimensionality of the hidden layer in the feed-forward networks within the Transformer
+    cfg.dvc.detr.num_queries = 100  #   number of queries givin to decoder
+    cfg.dvc.detr.hidden_dropout_prob = 0.5
+    cfg.dvc.detr.layer_norm_eps = 1e-12 
+    cfg.dvc.detr.nheads = 12 #   the number of heads in the multiheadattention models
+    cfg.dvc.detr.num_feature_levels = 4  #  number of feature levels in multiscale Deformable Attention 
+    cfg.dvc.detr.dec_n_points = 4   #   number of sampling points per attention head per feature level for decoder
+    cfg.dvc.detr.enc_n_points = 4   #   number of sampling points per attention head per feature level for encoder
+    cfg.dvc.detr.enc_layers = 2 #   number of sub-encoder-layers in the encoder
+    cfg.dvc.detr.dec_layers = 2 #   number of sub-decoder-layers in the decode
+    cfg.dvc.detr.transformer_dropout_prob = 0.1 #   the dropout value
+    cfg.dvc.detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
+
+
+
+    
+    #-------------------------------------------------------------------------------------------------
     # Pre-trained models
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
@@ -151,5 +173,14 @@ def load_config():
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Testing the flow of the DVC model"
 
+
+    #-------------------------------------------------------------------------------------------------
+    # Evaluate inferences
+    cfg.eval = ml_collections.ConfigDict()
+    cfg.eval.submission = 'output/test.json'
+    cfg.eval.references = ['../activity-net/captions/val_1.json', '../activity-net/captions/val_2.json']
+    cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
+    cfg.eval.max_proposals_per_video = 100
+    cfg.eval.verbose = False
 
     return cfg

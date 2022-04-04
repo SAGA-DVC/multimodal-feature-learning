@@ -4,5 +4,7 @@ av
 timm
 wandb
 pytorchvideo
+h5py
+MultiScaleDeformableAttention
 
 ###### Requirements with Version Specifiers ######

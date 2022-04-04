@@ -30,3 +30,36 @@ apt update
 apt-get update
 apt install default-jre
 ```
+
+<!-- In Submodules -->
+## EVAL
+
+* submodules/pycocoevalcap/bleu/bleu.py
+```py
+score, scores = bleu_scorer.compute_score(option='closest', verbose=0) # verbose=0
+```
+
+* submodules/pycocoevalcap/tokenizer/ptbtokenizer.py
+```py
+p_tokenizer = subprocess.Popen(cmd, cwd=path_to_jar_dirname, \
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) # stderr=subprocess.DEVNULL
+```
+
+* evaluation/evaluate.py
+```py
+class ANETcaptions(object):
+    ....
+
+    def evaluate(self):
+        ....
+
+        else:
+            ....
+            # REMOVE if self.verbose
+            self.scores['Recall'] = []
+            self.scores['Precision'] = []
+            for tiou in self.tious:
+                precision, recall = self.evaluate_detection(tiou)
+                self.scores['Recall'].append(recall)
+                self.scores['Precision'].append(precision)
+```

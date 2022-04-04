@@ -6,8 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.init import xavier_uniform_, constant_, normal_
 
-from modules import  inverse_sigmoid
-from modules import MSDeformAttn
+from .modules import  inverse_sigmoid, MSDeformAttn
 
 
 class DeformableTransformer(nn.Module):
@@ -87,16 +86,16 @@ class DeformableTransformer(nn.Module):
       
     def prepare_encoder_inputs(self, srcs, masks, pos_embeds):
         '''
-        :param srcs (list[[batch_size, dmodel, num-token]])
-        :param masks (list[[batch_size, num-token]])
-        :param pos_embeds (list[[batch_size, dmodel, num-token]])
+        :param srcs (list[[batch_size, d_model, num_tokens]])
+        :param masks (list[[batch_size, num_tokens]])
+        :param pos_embeds (list[[batch_size, d_model, num_tokens]])
 
-        :return src_flatten (batch_size, sum of num-token in all level, dmodel)
+        :return src_flatten (batch_size, sum of num_tokens in all levels, d_model)
         :return temporal_shapes (num_feature_levels)    #   list of num token at each level
         :return level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         :return valid_ratios (batch_size, num_feature_levels)
-        :return lvl_pos_embed_flatten (batch_size, sum of num_token in all level, dmodel)
-        :return mask_flatten (batch_size, sum of num-token in all level)
+        :return lvl_pos_embed_flatten (batch_size, sum of num_token in all levels, d_model)
+        :return mask_flatten (batch_size, sum of num_tokens in all levels)
         '''
         # prepare input for encoder
         src_flatten = []
@@ -105,24 +104,24 @@ class DeformableTransformer(nn.Module):
         temporal_shapes = []
         for lvl, (src, mask, pos_embed) in enumerate(zip(srcs, masks, pos_embeds)):
             """
-            src: (batch_size, dmodel, num_token)
+            src: (batch_size, d_model, num_tokens)
             mask: (batch_size, num_token)
-            pos_embed: (batch_size, dmodel, num_token)
+            pos_embed: (batch_size, d_model, num_tokens)
             """
-            batch_size, dmodel, num_token = src.shape
-            temporal_shapes.append(num_token)
-            src = src.transpose(1, 2)  #    (batch_size, num_token, dmodel)
-            pos_embed = pos_embed.transpose(1, 2)  #    (batch_size, num_token, dmodel)
-
-            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)    #(batch_size, num_token, dmodel)   
+            batch_size, d_model, num_tokens = src.shape
+            temporal_shapes.append(num_tokens)
+            src = src.transpose(1, 2)  #    (batch_size, num_tokens, d_model)
+            pos_embed = pos_embed.transpose(1, 2)  #    (batch_size, num_tokens, d_model)
+            
+            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)    # (batch_size, num_tokens, d_model)   
             
             lvl_pos_embed_flatten.append(lvl_pos_embed)
             src_flatten.append(src)
             mask_flatten.append(mask)
 
-        src_flatten = torch.cat(src_flatten, 1) #   (batch_size, sum of num-token in all level, dmodel)
-        mask_flatten = torch.cat(mask_flatten, 1)   #   (batch_size, sum of num-token in all level)
-        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)   #   (batch_size, sum of num_token in all level, dmodel)
+        src_flatten = torch.cat(src_flatten, 1) #   (batch_size, sum of num_tokens in all level, d_model)
+        mask_flatten = torch.cat(mask_flatten, 1)   #   (batch_size, sum of num_tokens in all level)
+        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)   #   (batch_size, sum of num_token in all level, d_model)
         
         temporal_shapes = torch.as_tensor(temporal_shapes, dtype=torch.long, device=src_flatten.device) #   list of num token at each level
         level_start_index = torch.cat((temporal_shapes.new_zeros((1,)), temporal_shapes.cumsum(0)[:-1]))    #   list to find the start index of each level from flatten tensor 
@@ -134,14 +133,14 @@ class DeformableTransformer(nn.Module):
     def forward_encoder(self, src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
                         mask_flatten):
         """
-            :param src_flatten (batch_size, sum of num_token in all level, dmodel)
+            :param src_flatten (batch_size, sum of num_token in all level, d_model)
             :param temporal_shapes: (num_feature_levels)    #   list of num token at each level
             :param level_start_index: (num_feature_levels)  #   list to find the start index of each level from flatten tensor
             :param valid_ratios: (batch_size, num_feature_levels)
-            :param lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, dmodel)
-            :param mask_flatten: (batch_size, sum of num-token in all level)
+            :param lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, d_model)
+            :param mask_flatten: (batch_size, sum of num_tokens in all level)
 
-            :return memory (batch_size, sum of num_token in all level, dmodel) #   Multi-scale frame features
+            :return memory (batch_size, sum of num_token in all level, d_model) #   Multi-scale frame features
         """
         # encoder
         if self.no_encoder:
@@ -154,19 +153,19 @@ class DeformableTransformer(nn.Module):
 
     def prepare_decoder_input_query(self, memory, query_embed):
         '''
-        param: memory (batch_size, sum of num_token in all level, dmodel)
-        param: query_embed (num_queries, dmodel * 2)
+        param: memory (batch_size, sum of num_token in all level, d_model)
+        param: query_embed (num_queries, d_model * 2)
 
         return: init_reference_out (batch_size, num_queries, 1)
-        return: tgt (batch_size, num_queries, dmodel)
+        return: tgt (batch_size, num_queries, d_model)
         return: reference_points (batch_size, num_queries, 1)
-        return: query_embed (num_queries, dmodel * 2)
+        return: query_embed (num_queries, d_model * 2)
         '''
         bs, _, _ = memory.shape
-        query_embed, tgt = torch.chunk(query_embed, 2, dim=1)   #   tgt->(num_queries, dmodel)  query_embed->(num_queries, dmodel)
+        query_embed, tgt = torch.chunk(query_embed, 2, dim=1)   #   tgt->(num_queries, d_model)  query_embed->(num_queries, d_model)
        
-        query_embed = query_embed.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, dmodel)  
-        tgt = tgt.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, dmodel) 
+        query_embed = query_embed.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, d_model)  
+        tgt = tgt.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, d_model) 
         reference_points = self.reference_points(query_embed).sigmoid() #   nn.Linear(d_model, 1)  shape-> (batch_size, num_queries, 1)  
         init_reference_out = reference_points   #   (batch_size, num_queries, 1)
         
@@ -226,14 +225,14 @@ class DeformableTransformerEncoderLayer(nn.Module):
 
     def forward(self, src, pos, reference_points, temporal_shapes, level_start_index, padding_mask=None):
         '''
-        param: src (batch_size, sum of num_token in all level, dmodel)
-        param: pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
+        param: src (batch_size, sum of num_token in all level, d_model)
+        param: pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
         param: reference_points (batch_size, sum of num_token in all level, num_feature_levels, 1)
         param: temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
-        param: padding_mask (batch_size, sum of num-token in all level)
+        param: padding_mask (batch_size, sum of num_tokens in all level)
         
-        return: output: (batch_size, sum of num_token in all level, dmodel) 
+        return: output: (batch_size, sum of num_token in all level, d_model) 
         '''
         # self attention
         src2 = self.self_attn(self.with_pos_embed(src, pos), reference_points, src, temporal_shapes, level_start_index,
@@ -268,14 +267,14 @@ class DeformableTransformerEncoder(nn.Module):
 
     def forward(self, src, temporal_shapes, level_start_index, valid_ratios, pos=None, padding_mask=None):
         """
-        param: src (batch_size, sum of num_token in all level, dmodel)
+        param: src (batch_size, sum of num_token in all level, d_model)
         param: temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: valid_ratios (batch_size, num_feature_levels)
-        param: pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
-        param: padding_mask (batch_size, sum of num-token in all level)
+        param: pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
+        param: padding_mask (batch_size, sum of num_tokens in all level)
         
-        return: output: (batch_size, sum of num_token in all level, dmodel) #   Multi-scale frame features
+        return: output: (batch_size, sum of num_token in all level, d_model) #   Multi-scale frame features
 
         """
         
@@ -333,16 +332,16 @@ class DeformableTransformerDecoderLayer(nn.Module):
                 src_padding_mask=None, query_mask=None):
 
         """
-        param: tgt (batch_size, num_queries, dmodel)
+        param: tgt (batch_size, num_queries, d_model)
         param: query_pos (num_queries, hidden_dim * 2)
         param: reference_points (batch_size, num_queries, 1)
-        param: src (batch_size, sum of num_token in all level, dmodel)
+        param: src (batch_size, sum of num_token in all level, d_model)
         param: src_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor    
-        param: src_padding_mask (batch_size, sum of num-token in all level)
+        param: src_padding_mask (batch_size, sum of num_tokens in all level)
         param: query_mask (batch_size, num_queries)
 
-        return: output (batch_size, num_queries, dmodel)
+        return: output (batch_size, num_queries, d_model)
         """
         # self attention
         q = k = self.with_pos_embed(tgt, query_pos)
@@ -375,21 +374,21 @@ class DeformableTransformerDecoder(nn.Module):
     def forward(self, tgt, reference_points, src, src_temporal_shapes, src_level_start_index, src_valid_ratios,
                 query_pos=None, src_padding_mask=None, query_padding_mask=None, disable_iterative_refine=False):
         """
-        param: tgt (batch_size, num_queries, dmodel)
+        param: tgt (batch_size, num_queries, d_model)
         param: reference_points (batch_size, num_queries, 1)
-        param: src (batch_size, sum of num_token in all level, dmodel)
+        param: src (batch_size, sum of num_token in all level, d_model)
         param: src_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: src_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: src_valid_ratios (batch_size, num_feature_levels)
         param: query_pos (num_queries, hidden_dim * 2)
-        param: src_padding_mask (batch_size, sum of num-token in all level)
+        param: src_padding_mask (batch_size, sum of num_tokens in all level)
         param: query_padding_mask (batch_size, num_queries)
         param: disable_iterative_refine bool
         
-        return: output: (number of decoder_layers, batch_size, num_queries, dmodel)
+        return: output: (number of decoder_layers, batch_size, num_queries, d_model)
         return: reference_points: (number of decoder_layers, batch_size, num_queries, 1)
         """
-        output = tgt    #   (batch_size, num_queries, dmodel)
+        output = tgt    #   (batch_size, num_queries, d_model)
 
         intermediate = []
         intermediate_reference_points = []
@@ -401,7 +400,7 @@ class DeformableTransformerDecoder(nn.Module):
             else:
                 assert reference_points.shape[-1] == 1
                 reference_points_input = reference_points[:, :, None] * src_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
-            output = layer(output, query_pos, reference_points_input, src, src_temporal_shapes, src_level_start_index, src_padding_mask, query_padding_mask)    #   (batch_size, num_queries, dmodel)
+            output = layer(output, query_pos, reference_points_input, src, src_temporal_shapes, src_level_start_index, src_padding_mask, query_padding_mask)    #   (batch_size, num_queries, d_model)
             
             # hack implementation for iterative bounding box refinement
             if disable_iterative_refine:

@@ -9,8 +9,11 @@ from torch.nn.init import trunc_normal_
 from .vivit import VideoVisionTransformer
 from .decoder import Decoder
 from .caption_decoder import CaptionDecoder
-from .modules import PositionalEmbedding, FFN
+from .modules import PositionalEmbedding, FFN, decide_two_stage
 from .load_weights import load_positional_embeddings
+from .deformable_transformer import build_deforamble_transformer
+from .base_encoder import build_base_encoder
+
 
 # TODO - src mask
 # TODO - check devices for tensors
@@ -23,7 +26,7 @@ class DVC(nn.Module):
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, 
                 num_classes=None, num_queries=100, aux_loss=False,
                 return_preclassifier=True, return_prelogits=False, weight_init=False, weight_load=False, model_official=None,
-                return_intermediate=False, matcher=None):
+                return_intermediate=False, matcher=None, detr_args=None):
         
         """
         DVC type model
@@ -34,7 +37,9 @@ class DVC(nn.Module):
         self.num_queries = num_queries
         self.aux_loss = aux_loss
 
-        self.query_embedding = nn.Embedding(num_queries, d_model)
+        # self.query_embedding = nn.Embedding(num_queries, d_model)
+        self.query_embedding = nn.Embedding(detr_args.num_queries, d_model * 2)
+
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
@@ -87,21 +92,24 @@ class DVC(nn.Module):
                     )
 
 
-        self.decoder = Decoder(d_model=d_model, 
-                        depth=depth, 
-                        num_heads=num_heads, 
-                        mlp_ratio=mlp_ratio, 
-                        qkv_bias=qkv_bias,  
-                        attention_dropout=attention_dropout, 
-                        projection_dropout=projection_dropout, 
-                        dropout_1=dropout_1, 
-                        dropout_2=dropout_2, 
-                        pre_norm=pre_norm,
-                        weight_init=weight_init, 
-                        weight_load=weight_load, 
-                        model_official=model_official,
-                        return_intermediate=return_intermediate
-                    )
+        # self.decoder = Decoder(d_model=d_model, 
+        #                 depth=depth, 
+        #                 num_heads=num_heads, 
+        #                 mlp_ratio=mlp_ratio, 
+        #                 qkv_bias=qkv_bias,  
+        #                 attention_dropout=attention_dropout, 
+        #                 projection_dropout=projection_dropout, 
+        #                 dropout_1=dropout_1, 
+        #                 dropout_2=dropout_2, 
+        #                 pre_norm=pre_norm,
+        #                 weight_init=weight_init, 
+        #                 weight_load=weight_load, 
+        #                 model_official=model_official,
+        #                 return_intermediate=return_intermediate
+        #             )
+
+        self.base_encoder = build_base_encoder(detr_args)
+        self.deformable_transformer = build_deforamble_transformer(detr_args)
         
         
         self.caption_decoder = CaptionDecoder(vocab_size=vocab_size, 
@@ -168,33 +176,57 @@ class DVC(nn.Module):
 
         """
 
-        x = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
+        video = obj['video_tensor']    # (batch_size, num_tokens, d_model)
+        video_mask = obj['video_mask']    # (batch_size, num_tokens)
+        video_durations = obj['video_length'][:, 1]   # (batch_size)
         
-        # Encoder
-        # (batch_size, num_frames * num_patches + 1, d_model) OR
-        # (batch_size, num_frames + 1, d_model) OR 
-        # (batch_size, num_frames, num_patches, d_model) 
-        feats = self.vivit(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
+        # Base Encoder - for multi-scale features
+        srcs, masks, pos = self.base_encoder(video, video_mask, video_durations)
 
-        # TODO - check grad later
-        if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
-            feats = feats.reshape(feats.shape[0], -1, feats.shape[-1])
+        # Forword Encoder
+        src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
+        
+        # (batch_size, sum of num_tokens in all levels, dmodel) - Multi-scale frame features
+        memory = self.deformable_transformer.forward_encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten)    #   (batch_size, sum of num_token in all level, dmodel) #   Multi-scale frame features
 
 
-        # Decoder
-        query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(x.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
-        target = torch.zeros_like(query_embedding_weight)
+        # Forword Decoder
+        # TODO - see transformer_input_type = "gt_proposals"
+        transformer_input_type = "queries"
+        gt_boxes = None
+        gt_boxes_mask = None
+        criterion = None
+        two_stage, disable_iterative_refine, proposals, proposals_mask = decide_two_stage(transformer_input_type, gt_boxes, gt_boxes_mask, criterion)
 
-        # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
-        res = self.decoder(target=target, memory=feats, 
-                        positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
+        if two_stage:
+            init_reference, tgt, reference_points, query_embedding = self.deformable_transformer.prepare_decoder_input_proposal(proposals)
+        else:
+            query_embedding_weight = self.query_embedding.weight
+            proposals_mask = torch.ones(N, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
+            init_reference, tgt, reference_points, query_embedding_weight = self.deformable_transformer.prepare_decoder_input_query(memory, query_embedding_weight)
+
+
+        # query_features (depth, batch_size, num_queries, d_model)
+        # inter_reference = (depth, batch_size, num_queries, 1)
+        query_features, inter_references = self.deformable_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
+                                                                level_start_index, valid_ratios, query_embedding_weight,
+                                                                mask_flatten, proposals_mask, disable_iterative_refine)
+
+
+        # # Decoder
+        # query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(x.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
+        # target = torch.zeros_like(query_embedding_weight)
+
+        # # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
+        # query_features = self.decoder(target=target, memory=feats, 
+        #                 positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
 
 
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding(res).softmax(dim=-1)
+        outputs_class = self.class_embedding(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
-        outputs_segment = self.segment_embedding(res).sigmoid()
+        outputs_segment = self.segment_embedding(query_features).sigmoid()
 
         out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1]}
 
@@ -208,13 +240,13 @@ class DVC(nn.Module):
             max_gt_target_segments = obj['gt_segments'].shape[1]
 
             # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-            memory, memory_mask = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
+            memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
 
-        memory = memory.to(feats.device)
+        memory = memory.to(video.device)
         memory.requires_grad = True
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-        memory_mask = memory_mask.to(feats.device)
+        memory_mask = memory_mask.to(video.device)
         
         if is_training:
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 

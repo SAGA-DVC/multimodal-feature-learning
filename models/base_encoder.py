@@ -5,8 +5,7 @@ Base Encoder to create multi-level conv features and positional embedding.
 import torch
 import torch.nn.functional as F
 from torch import nn
-from modules import NestedTensor
-from modules import PositionEmbeddingSine
+from .modules import NestedTensor, PositionEmbeddingSine
 
 
 class BaseEncoder(nn.Module):
@@ -17,6 +16,7 @@ class BaseEncoder(nn.Module):
     '''
     def __init__(self, num_feature_levels, vf_dim, hidden_dim):
         super(BaseEncoder, self).__init__()
+        # TODO - check pos_embed
         self.pos_embed = PositionEmbeddingSine(hidden_dim//2, normalize=True)
         self.num_feature_levels = num_feature_levels
         self.hidden_dim = hidden_dim
@@ -49,17 +49,18 @@ class BaseEncoder(nn.Module):
 
     def forward(self, vf, mask, duration):
         """
-        :param vf: video tensor, expected shape: (batch_size, num_token, dmodel)
-        :param mask: video mask, expected shape: (batch_size, num_token)
+        :param vf: video tensor, expected shape: (batch_size, num_tokens, d_model)
+        :param mask: video mask, expected shape: (batch_size, num_tokens)
         :param duration: video length, expected shape: (batch_size)
-        :return: srcs list[[batch_size, dmodel, num-token]]
-        :return: masks list[[batch_size, num-token]]
-        :return: poses list[[batch_size, dmodel, num-token]]
+        :return: srcs - list (len=num_feature_levels) - [(batch_size, d_model, num_tokens*)]
+                        where num_tokens* depends on num_feature_levels (essentially gets halved for each level)
+        :return: masks - list (len=num_feature_levels - [(batch_size, num_tokens)]
+        :return: pos - list (len=num_feature_levels) - [(batch_size, d_model, num_tokens)]
         """
-        vf = vf.transpose(1, 2)  # (batch_size, num_token, dmodel) --> (batch_size, dmodel, num_token)
+        vf = vf.transpose(1, 2)  # (batch_size, num_tokens, d_model) --> (batch_size, d_model, num_tokens)
         vf_nt = NestedTensor(vf, mask, duration)
         pos0 = self.pos_embed(vf_nt) 
-
+        
         srcs = []
         masks = []
         poses = []

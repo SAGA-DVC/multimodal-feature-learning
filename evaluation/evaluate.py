@@ -125,13 +125,13 @@ class ANETcaptions(object):
                     if metric not in self.scores:
                         self.scores[metric] = []
                     self.scores[metric].append(score)
-            if self.verbose:
-                self.scores['Recall'] = []
-                self.scores['Precision'] = []
-                for tiou in self.tious:
-                    precision, recall = self.evaluate_detection(tiou)
-                    self.scores['Recall'].append(recall)
-                    self.scores['Precision'].append(precision)
+        
+            self.scores['Recall'] = []
+            self.scores['Precision'] = []
+            for tiou in self.tious:
+                precision, recall = self.evaluate_detection(tiou)
+                self.scores['Recall'].append(recall)
+                self.scores['Precision'].append(precision)
 
     def evaluate_detection(self, tiou):
         gt_vid_ids = self.get_gt_vid_ids()
@@ -261,6 +261,19 @@ class ANETcaptions(object):
                     print( "Calculated tIoU: %1.1f, %s: %0.3f" % (tiou, method, output[method]))
         return output
 
+
+def run_eval(args):
+    # Call coco eval
+    evaluator = ANETcaptions(ground_truth_filenames=args.references,
+                             prediction_filename=args.submission,
+                             tious=args.tious,
+                             max_proposals=args.max_proposals_per_video,
+                             verbose=args.verbose)
+    evaluator.evaluate()
+
+    return evaluator.scores
+
+
 def main(args):
     # Call coco eval
     evaluator = ANETcaptions(ground_truth_filenames=args.references,
@@ -287,6 +300,7 @@ def main(args):
     for metric in evaluator.scores:
         score = evaluator.scores[metric]
         print ('| %s: %2.4f'%(metric, 100 * sum(score) / float(len(score))))
+
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Evaluate the results stored in a submissions file.')
