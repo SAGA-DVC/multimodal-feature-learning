@@ -78,6 +78,9 @@ class DVCdataset(Dataset):
 
         return len(self.keys)
 
+    def __del__(self):
+        pass
+
 
     def process_time_step(self, duration, timestamps_list, num_frames):
 

@@ -151,13 +151,14 @@ class ActivityNet(DVCdataset):
             `feature` : Tensor of dimension (num_frames, height, width, num_channels) 
         """
 
-        feature = get_feature(key, self.video_folder, data_norm=self.args.data_norm) # (total_frames, height, width, num_channels)
-        
-        if self.args.data_rescale:
-            feature = resizeFeature(feature, self.args.frame_rescale_len) # (frame_rescale_len, height, width, num_channels)
-        else:
-            feature = feature[::self.args.feature_sample_rate] # (total_frames//feature_sample_rate, height, width, num_channels)
-        return feature
+        feature = self.get_feature(key, self.video_folder) # (total_frames, height, width, num_channels)
+
+        if self.args.data_rescale == 'interpolate':
+            feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, d_model)
+        elif self.args.data_rescale == 'uniform':
+            feature = feature[::self.args.feature_sample_rate] # (num_tokens//feature_sample_rate, d_model)
+
+        return torch.from_numpy(feature)
 
 
     def __getitem__(self, idx):
@@ -210,51 +211,51 @@ class ActivityNet(DVCdataset):
         return feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
 
 
-def get_feature(key, video_folder, data_norm=False):
+    def get_feature(self, key, video_folder):
 
-    """
-    Extracts RGB features from a video
+        """
+        Extracts RGB features from a video
 
-    Parameters:
-        `key` (string) : An ID representing a video in the dataset
-        `video_folder` (string) : Path to the folder consisting of the specific video
-    
-    Returns:
-        `video_frames` : Tensor of dimension (total_frames, height, width, num_channels)
-    """
-    
-    path = os.path.join(video_folder, key + '.mp4')
-    assert os.path.exists(path), f'{path} does not exist.'
+        Parameters:
+            `key` (string) : An ID representing a video in the dataset
+            `video_folder` (string) : Path to the folder consisting of the specific video
+        
+        Returns:
+            `video_frames` : Tensor of dimension (total_frames, height, width, num_channels)
+        """
+        
+        path = os.path.join(video_folder, key + '.mp4')
+        assert os.path.exists(path), f'{path} does not exist.'
 
-    video_frames, _, _ = read_video(filename=path) # (total_frames, height, width, num_channels)
-    return video_frames
+        video_frames, _, _ = read_video(filename=path) # (total_frames, height, width, num_channels)
+        return video_frames
 
 
-def resizeFeature(input_data, new_size):
+    def resizeFeature(self, input_data, new_size):
 
-    """
-    Resizes the video (number of frames) using interpolation
+        """
+        Resizes the video (number of frames) using interpolation
 
-    Parameters:
-        `input_data` : Tensor of dimension (total_frames, height, width, num_channels)
-        `new_size` (int) : total_frames to be scaled to new_size
+        Parameters:
+            `input_data` : Tensor of dimension (total_frames, height, width, num_channels)
+            `new_size` (int) : total_frames to be scaled to new_size
 
-    Returns:
-        `y_new` : np array of shape (new_size, height, width, num_channels)
-    """
-    
-    originalSize = len(input_data)
+        Returns:
+            `y_new` : np array of shape (new_size, height, width, num_channels)
+        """
+        
+        originalSize = len(input_data)
 
-    if originalSize == 1:
-        input_data = np.reshape(input_data, [-1])
-        return np.stack([input_data] * new_size)
-    
-    x = np.array(range(originalSize))
-    f = interp1d(x, input_data, axis=0, kind='nearest')
-    x_new = [i * float(originalSize - 1) / (new_size - 1) for i in range(new_size)]
-    y_new = f(x_new)
+        if originalSize == 1:
+            input_data = np.reshape(input_data, [-1])
+            return np.stack([input_data] * new_size)
+        
+        x = np.array(range(originalSize))
+        f = interp1d(x, input_data, axis=0, kind='nearest')
+        x_new = [i * float(originalSize - 1) / (new_size - 1) for i in range(new_size)]
+        y_new = f(x_new)
 
-    return torch.from_numpy(y_new)
+        return y_new
 
 
 def iou(interval_1, interval_2):

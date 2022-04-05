@@ -17,7 +17,7 @@ from .base_encoder import build_base_encoder
 
 # TODO - src mask
 # TODO - check devices for tensors
-class DVC(nn.Module):
+class DeformableDVC(nn.Module):
     def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
                 tokenization_method='central frame', in_channels=3, d_model=768, 
                 vocab_size=1000, seq_len=20, embedding_matrix=None, emb_weights_req_grad=False,
@@ -29,15 +29,14 @@ class DVC(nn.Module):
                 return_intermediate=False, matcher=None, detr_args=None):
         
         """
-        DVC type model
+        DeformableDVC model
         """
 
-        super(DVC, self).__init__()
+        super(DeformableDVC, self).__init__()
         
         self.num_queries = num_queries
         self.aux_loss = aux_loss
 
-        # self.query_embedding = nn.Embedding(num_queries, d_model)
         self.query_embedding = nn.Embedding(detr_args.num_queries, d_model * 2)
 
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
@@ -91,26 +90,8 @@ class DVC(nn.Module):
                         model_official=model_official
                     )
 
-
-        # self.decoder = Decoder(d_model=d_model, 
-        #                 depth=depth, 
-        #                 num_heads=num_heads, 
-        #                 mlp_ratio=mlp_ratio, 
-        #                 qkv_bias=qkv_bias,  
-        #                 attention_dropout=attention_dropout, 
-        #                 projection_dropout=projection_dropout, 
-        #                 dropout_1=dropout_1, 
-        #                 dropout_2=dropout_2, 
-        #                 pre_norm=pre_norm,
-        #                 weight_init=weight_init, 
-        #                 weight_load=weight_load, 
-        #                 model_official=model_official,
-        #                 return_intermediate=return_intermediate
-        #             )
-
         self.base_encoder = build_base_encoder(detr_args)
         self.deformable_transformer = build_deforamble_transformer(detr_args)
-        
         
         self.caption_decoder = CaptionDecoder(vocab_size=vocab_size, 
                         seq_len=seq_len, 
@@ -144,10 +125,11 @@ class DVC(nn.Module):
     # TODO - use log softmax?
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - add position embedding in caption decoder
+    # TODO - check all pos embed
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
-        Performs a forward pass on the DVC model which consists of the encoders, proposal decoder and caption decoder
+        Performs a forward pass on the DeformableDVC model which consists of the encoders, proposal decoder and caption decoder
   
         Parameters:
             obj (collections.defaultdict): Consisitng of various keys including 
@@ -213,15 +195,6 @@ class DVC(nn.Module):
         query_features, inter_references = self.deformable_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
                                                                 level_start_index, valid_ratios, query_embedding_weight,
                                                                 mask_flatten, proposals_mask, disable_iterative_refine)
-
-
-        # # Decoder
-        # query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(x.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
-        # target = torch.zeros_like(query_embedding_weight)
-
-        # # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
-        # query_features = self.decoder(target=target, memory=feats, 
-        #                 positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
 
 
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
@@ -465,7 +438,7 @@ class DVC(nn.Module):
     def init_weights(self):
 
         """
-        Initialises the weights and biases of the modules in the DVC model.
+        Initialises the weights and biases of the modules in the DeformableDVC model.
         These parameters include positional embeddings.
         """
 
@@ -477,7 +450,7 @@ class DVC(nn.Module):
     def load_weights(self, model_official):
 
         """
-        Loads the weights and biases from the pre-trained model to the current model for modules in the DVC model
+        Loads the weights and biases from the pre-trained model to the current model for modules in the DeformableDVC model
         These weights include positional embeddings.
 
         Parameters:

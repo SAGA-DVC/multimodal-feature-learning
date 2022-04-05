@@ -168,25 +168,25 @@ class DVC(nn.Module):
 
         """
 
-        x = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
+        video_input = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
         
         # Encoder
         # (batch_size, num_frames * num_patches + 1, d_model) OR
         # (batch_size, num_frames + 1, d_model) OR 
         # (batch_size, num_frames, num_patches, d_model) 
-        feats = self.vivit(x, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
+        video = self.vivit(video_input, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
 
         # TODO - check grad later
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
-            feats = feats.reshape(feats.shape[0], -1, feats.shape[-1])
+            video = video.reshape(video.shape[0], -1, video.shape[-1])
 
 
         # Decoder
-        query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(x.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
+        query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(video_input.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
         target = torch.zeros_like(query_embedding_weight)
 
         # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
-        res = self.decoder(target=target, memory=feats, 
+        res = self.decoder(target=target, memory=video, 
                         positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
 
 
@@ -208,13 +208,13 @@ class DVC(nn.Module):
             max_gt_target_segments = obj['gt_segments'].shape[1]
 
             # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-            memory, memory_mask = self.get_segment_features(feats, out['pred_segments'], indices, max_gt_target_segments)
+            memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
 
-        memory = memory.to(feats.device)
+        memory = memory.to(video.device)
         memory.requires_grad = True
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-        memory_mask = memory_mask.to(feats.device)
+        memory_mask = memory_mask.to(video.device)
         
         if is_training:
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 

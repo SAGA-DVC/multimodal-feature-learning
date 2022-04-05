@@ -1,3 +1,8 @@
+'''
+If you want to switch between Deformable DVC and regular DVC, change parameters with the "Switch DVC" comment.
+
+'''
+
 import ml_collections
 
 def load_config():
@@ -18,8 +23,10 @@ def load_config():
     cfg.output_dir = 'output'
     cfg.resume = None
     cfg.start_epoch = 0
-    cfg.epochs = 3
+    cfg.epochs = 1
     cfg.clip_max_norm = 0.1
+
+    cfg.use_raw_videos = False    # Switch DVC
 
 
 
@@ -31,7 +38,7 @@ def load_config():
     cfg.dataset.activity_net = ml_collections.ConfigDict()
 
     cfg.dataset.activity_net.anet_path = '../activity-net/captions'
-    # cfg.dataset.activity_net.video_folder = '../activity-net/splits'
+    cfg.dataset.activity_net.video_folder = '../activity-net/splits'
     cfg.dataset.activity_net.features_path = './data_features'
     cfg.dataset.activity_net.invalid_videos_json = '../activity-net/captions/invalid_ids.json'
 
@@ -43,8 +50,7 @@ def load_config():
     data_rescale = ['interpolate', 'uniform']
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.feature_sample_rate = 2
-    cfg.dataset.activity_net.rescale_len = 1500
-    cfg.dataset.activity_net.data_norm = False
+    cfg.dataset.activity_net.rescale_len = 1500    # Switch DVC
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
 
@@ -73,9 +79,11 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # DVC model
     cfg.dvc = ml_collections.ConfigDict()
+    
+    cfg.dvc.use_deformable_detr = True    # Switch DVC
 
-    cfg.dvc.glove_file_path = '../dvc/data/glove.6B.50d.txt'
-    cfg.dvc.pretrained_word_embed_dim = 50
+    cfg.dvc.pretrained_word_embed_dim = 100
+    cfg.dvc.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.pretrained_word_embed_dim}d.txt'
     cfg.dvc.emb_weights_req_grad = False
     cfg.dvc.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
@@ -105,11 +113,11 @@ def load_config():
     cfg.dvc.mlp_ratio = 4
     cfg.dvc.qkv_bias = True
 
-    cfg.dvc.positional_embedding_dropout = 0
-    cfg.dvc.attention_dropout = 0
-    cfg.dvc.projection_dropout = 0
-    cfg.dvc.dropout_1 = 0
-    cfg.dvc.dropout_2 = 0
+    cfg.dvc.positional_embedding_dropout = 0.
+    cfg.dvc.attention_dropout = 0.
+    cfg.dvc.projection_dropout = 0.
+    cfg.dvc.dropout_1 = 0.2
+    cfg.dvc.dropout_2 = 0.2
 
     cfg.dvc.pre_norm = True
 
@@ -179,6 +187,7 @@ def load_config():
     # Evaluate inferences
     cfg.eval = ml_collections.ConfigDict()
     cfg.eval.submission = 'output/test.json'
+    # cfg.eval.submission = 'sample_submission.json'
     cfg.eval.references = ['../activity-net/captions/val_1.json', '../activity-net/captions/val_2.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100

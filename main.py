@@ -13,7 +13,8 @@ from config.config_dvc import load_config
 from utils.misc import *
 from engine import train_one_epoch, evaluate
 
-from dataset.anet import build_dataset, collate_fn 
+from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
+from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 
 
 def main(args):
@@ -29,7 +30,15 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
+    
+    if args.use_raw_videos:
+        build_dataset = build_dataset_with_raw_videos
+        collate_fn = collate_fn_with_raw_videos
+    
+    else:
+        build_dataset = build_dataset_without_raw_videos
+        collate_fn = collate_fn_without_raw_videos
+    
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
     dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
