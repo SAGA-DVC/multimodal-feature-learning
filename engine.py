@@ -89,6 +89,8 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
+# TODO: Pass json instead of creating file and passing file path
+# TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
 def evaluate(model, criterion, data_loader, vocab, device, eval_args):
     
@@ -109,6 +111,8 @@ def evaluate(model, criterion, data_loader, vocab, device, eval_args):
     model.eval()
     criterion.eval()
 
+    submission_json = get_sample_submission()
+
     for i, obj in enumerate(data_loader):
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
@@ -121,8 +125,6 @@ def evaluate(model, criterion, data_loader, vocab, device, eval_args):
         # print("Pred Shapes Eval: ", pred_segments.shape, pred_captions.shape, pred_logits.shape, indices)
 
         # EVALUATION SCORES
-        submission_json = get_sample_submission()
-
         # segments
         idx = get_src_permutation_idx(indices)
         # print("IDX: ", idx)
@@ -146,7 +148,7 @@ def evaluate(model, criterion, data_loader, vocab, device, eval_args):
                 'timestamp': [denormalized_segments[i][0].item(), denormalized_segments[i][1].item()]
             })
 
-        save_submission(submission_json, eval_args.submission)
-        
-        scores = run_eval(eval_args)
-        pprint_eval_scores(scores)
+    save_submission(submission_json, eval_args.submission)
+    
+    scores = run_eval(eval_args)
+    pprint_eval_scores(scores)

@@ -69,7 +69,7 @@ def denormalize_segments(segments, video_durations, segment_batch_id):
     for i, idx in enumerate(segment_batch_id):
         d = video_durations[idx]
         denormalized_segments[i] = torch.tensor(
-            [(d/2 * (2*segments[i][0] - segments[i][1])), (d/2 * (2*segments[i][0] + segments[i][1]))]
+            [max((d/2 * (2*segments[i][0] - segments[i][1])), 0), min((d/2 * (2*segments[i][0] + segments[i][1])), d)]
         ).float()
 
     return denormalized_segments
@@ -84,9 +84,15 @@ def captions_to_string(captions, vocab):
     `vocab` (torchtext.vocab.Vocab): mapping of all the words in the training dataset to indices and vice versa)
     '''
     
+    PAD_IDX = vocab['<pad>']
+    BOS_IDX = vocab['<bos>']
+    EOS_IDX = vocab['<eos>']
+    UNK_IDX = vocab['<unk>']
+    unwanted_tokens = [PAD_IDX, BOS_IDX, EOS_IDX, UNK_IDX]
+
     captions_string = []
     for caption in captions:
-        captions_string.append(' '.join([vocab.get_itos()[token_num] for token_num in caption][1:-1]))
+        captions_string.append(' '.join([vocab.get_itos()[token_num] for token_num in caption if token_num not in unwanted_tokens][1:-1]))
 
     return captions_string
 
