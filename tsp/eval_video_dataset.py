@@ -132,6 +132,7 @@ class EvalVideoDataset(Dataset):
                 with open(output_filename, 'wb') as fobj:
                     pkl.dump(self.saved_features[filename], fobj)
                 del self.saved_features[filename]
+                print(f"Video features saved: {filename}")
 
     @staticmethod
     def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):

@@ -23,7 +23,7 @@ def load_config():
     cfg.video = ml_collections.ConfigDict()
     cfg.video.clip_len = 16  # Number of frames per clip
     cfg.video.frame_rate = 30  # Frames-per-second rate at which the videos are sampled
-    cfg.video.clips_per_segment = 1  # Number of clips sampled per video segment
+    cfg.video.clips_per_segment = 5 # Number of clips sampled per video segment
 
     #-------------------------------------------------------------------------------------------------
     # Audio
@@ -50,7 +50,7 @@ def load_config():
     cfg.vivit.in_channels = 3
     cfg.vivit.d_model = 768
 
-    cfg.vivit.depth = 2
+    cfg.vivit.depth = 12
     cfg.vivit.temporal_depth = 4
 
     cfg.vivit.num_heads = 12
@@ -69,8 +69,8 @@ def load_config():
     # TODO Check if used
     cfg.vivit.num_classes = 1000
 
-    cfg.vivit.return_preclassifier = True  # Set True for GVF & Feature extraction
-    cfg.vivit.return_prelogits = False  # Set True for TSP
+    cfg.vivit.return_preclassifier = False  # Set True for Feature extraction
+    cfg.vivit.return_prelogits = True  # Set True for TSP & GVF extraction
 
     cfg.vivit.weight_init = False
     cfg.vivit.weight_load = True
@@ -86,10 +86,10 @@ def load_config():
     cfg.ast.imagenet_pretrained = True
     cfg.ast.model_size='base224'
 
-    cfg.ast.depth = 2
+    cfg.ast.depth = 12
     
-    cfg.ast.return_preclassifier = True  # Set True for GVF & Feature extraction
-    cfg.ast.return_prelogits = False  # Required for TSP
+    cfg.ast.return_preclassifier = False  # Set True for Feature extraction
+    cfg.ast.return_prelogits = True  # Set True for TSP & GVF extraction
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
@@ -121,19 +121,19 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cpu'
-    cfg.gpu = 0
-    cfg.data_dir = 'data'  # Path to root directory containing the videos files
+    cfg.device = 'cuda:3'
+    # cfg.gpu = 0
+    cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
     # TODO: Better values for these so that working with different datasets or
     # feature extractors is convenient and output isn't inadvertently replaced 
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'output'  # Path for saving checkpoints and results output  # TODO
+    cfg.output_dir = 'features-for-gvf'  # Path for saving checkpoints and results output  # TODO
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 32  # Batch size per GPU
+    cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 1  # Number of data loading workers
 
     cfg.momentum = 0.9
@@ -152,7 +152,7 @@ def load_config():
 
     cfg.print_freq = 100  # Print frequency in number of batches  # TODO
 
-    cfg.debug = True
+    cfg.debug = False 
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 2

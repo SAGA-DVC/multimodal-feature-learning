@@ -13,7 +13,7 @@ import pandas as pd
 
 from tsp.config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel, concat_combiner
+from tsp.tsp_model import TSPModel, add_combiner
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -43,6 +43,7 @@ def evaluate(model, dataloader, device):
 def main(cfg):
     print('TORCH VERSION: ', torch.__version__)
     print('TORCHVISION VERSION: ', torchvision.__version__)
+    print(f'Using device: {cfg.device}')
 
     torch.backends.cudnn.benchmark = True
 
@@ -65,11 +66,11 @@ def main(cfg):
     metadata_df = pd.read_csv(cfg.metadata_csv_filename)
 
     # Shards for parallel processing
-    shards = np.linspace(0,len(metadata_df),cfg.num_shards+1).astype(int)
+    shards = np.linspace(0,len(metadata_df),cfg.feature_extraction.num_shards+1).astype(int)
 
     # Start and end idxs for current process
-    start_idx, end_idx = shards[cfg.shard_id], shards[cfg.shard_id+1]
-    print(f'shard-id: {cfg.shard_id + 1} out of {cfg.num_shards}, '
+    start_idx, end_idx = shards[cfg.feature_extraction.shard_id], shards[cfg.feature_extraction.shard_id+1]
+    print(f'shard-id: {cfg.feature_extraction.shard_id + 1} out of {cfg.feature_extraction.num_shards}, '
         f'total number of videos: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
 
     # Keep current process' shard only
@@ -89,7 +90,7 @@ def main(cfg):
         root_dir=f'{cfg.data_dir}/{cfg.feature_extraction.subdir}',
         clip_length=cfg.video.clip_len,
         frame_rate=cfg.video.frame_rate,
-        stride=cfg.video.stride,
+        stride=cfg.feature_extraction.video_stride,
         output_dir=cfg.output_dir,
         num_mel_bins=cfg.audio.num_mel_bins,
         audio_target_length=cfg.audio.target_length,
@@ -108,10 +109,10 @@ def main(cfg):
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
-        model_official.eval()
+        model_official.to(device).eval()
 
         # Use return_preclassifier=True for VideoVisionTransformer
-        backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+        backbone = VivitWrapper(model_official=model_official, **cfg.vivit).to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
         input_modalities.append('video')
@@ -119,9 +120,9 @@ def main(cfg):
     if 'ast' in cfg.tsp.backbones:
         print("Creating AST backbone")
         model_official = timm.create_model(cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
-        model_official.eval()
+        model_official.to(device).eval()
 
-        backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast)
+        backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast).to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
         input_modalities.append('audio')
@@ -136,13 +137,13 @@ def main(cfg):
         num_tsp_classes=[1],
         num_tsp_heads=1, 
         concat_gvf=False,
-        combiner=concat_combiner
+        combiner=add_combiner
     )
 
     # Resume from local checkpoint
-    if cfg.local_checkpoint:
-        print(f'Resuming from the local checkpoint: {cfg.local_checkpoint}')
-        pretrained_state_dict = torch.load(cfg.local_checkpoint, map_location='cpu')['model']
+    if cfg.feature_extraction.local_checkpoint:
+        print(f'Resuming from the local checkpoint: {cfg.feature_extraction.local_checkpoint}')
+        pretrained_state_dict = torch.load(cfg.feature_extraction.local_checkpoint, map_location='cpu')['model']
         # remove the classifier layers from the pretrained model and load the backbone weights
         pretrained_state_dict = {k: v for k,v in pretrained_state_dict.items() if 'fc' not in k}
         state_dict = model.state_dict()
