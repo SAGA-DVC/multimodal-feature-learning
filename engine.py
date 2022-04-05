@@ -11,6 +11,8 @@ from collections import defaultdict
 import torch
 from torch.nn.utils import clip_grad_norm_
 from utils.misc import MetricLogger, SmoothedValue, reduce_dict
+from utils.preds_postprocess import get_sample_submission, get_src_permutation_idx, denormalize_segments, captions_to_string, pprint_eval_scores, save_submission
+from evaluation.evaluate import run_eval
 
 
 def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args, wandb_log, wandb):
@@ -88,7 +90,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 
 
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, device, output_dir):
+def evaluate(model, criterion, data_loader, vocab, device, eval_args):
     
     """
     Inference on given data and save the results.
@@ -97,8 +99,9 @@ def evaluate(model, criterion, data_loader, device, output_dir):
         `model` (torch.nn.Module) : Trained Model
         `criterion` (torch.nn.Module) : Losses used to train the model
         `data_loader` (Iterable) : DataLoader for the test dataset (ActivityNet)
+        `vocab` (torchtext.vocab.Vocab): mapping of all the words in the training dataset to indices and vice versa)
         `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
-        `output_dir` (string) : path to save results
+        `eval_args` (ml_collections.ConfigDict) : config params for run_eval
     
     Returns: ???
     """
@@ -114,5 +117,36 @@ def evaluate(model, criterion, data_loader, device, output_dir):
 
         obj = defaultdict(lambda: None, obj)
 
-        pred_segments, pred_captions = model(obj, is_training=False)
-        print(pred_segments.shape, pred_captions.shape)
+        pred_segments, pred_captions, pred_logits, indices = model(obj, is_training=False, faster_eval=False)
+        # print("Pred Shapes Eval: ", pred_segments.shape, pred_captions.shape, pred_logits.shape, indices)
+
+        # EVALUATION SCORES
+        submission_json = get_sample_submission()
+
+        # segments
+        idx = get_src_permutation_idx(indices)
+        # print("IDX: ", idx)
+
+        video_durations = list(obj['video_length'][:, 1])
+        denormalized_segments = denormalize_segments(pred_segments[idx], video_durations, idx[0])
+        # print("Video_DUR: ",video_durations, pred_segments[idx], denormalized_segments, denormalized_segments.shape)
+
+        # captions
+        captions_string = captions_to_string(pred_captions, vocab)
+        # print("Captions: ", pred_captions[0], captions_string[0])
+
+        for i, batch_id in enumerate(idx[0]):
+            video_id = obj['video_key'][batch_id]
+            
+            if video_id not in submission_json['results']:
+                submission_json['results'][video_id] = []
+
+            submission_json['results'][video_id].append({
+                'sentence': captions_string[i],
+                'timestamp': [denormalized_segments[i][0].item(), denormalized_segments[i][1].item()]
+            })
+
+        save_submission(submission_json, eval_args.submission)
+        
+        scores = run_eval(eval_args)
+        pprint_eval_scores(scores)
