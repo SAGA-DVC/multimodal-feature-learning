@@ -1,5 +1,5 @@
 '''
-If you want to switch between Deformable DVC and regular DVC, change parameters with the "Switch DVC" comment.
+If you want to switch between Deformable DVC and regular DVC, change all parameters having the "Switch DVC" comment.
 
 '''
 
@@ -11,9 +11,9 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:2'
+    cfg.device = 'cuda'
 
-    cfg.batch_size = 3
+    cfg.batch_size = 8
     cfg.num_workers = 0
 
     cfg.lr = 1e-4
@@ -29,7 +29,6 @@ def load_config():
     cfg.use_raw_videos = False    # Switch DVC
 
 
-
     #-------------------------------------------------------------------------------------------------
     # Dataset
     cfg.dataset = ml_collections.ConfigDict()
@@ -37,12 +36,13 @@ def load_config():
     # ActivityNet
     cfg.dataset.activity_net = ml_collections.ConfigDict()
 
-    cfg.dataset.activity_net.anet_path = '../activity-net/captions'
-    cfg.dataset.activity_net.video_folder = '../activity-net/splits'
-    cfg.dataset.activity_net.features_path = './data_features'
-    cfg.dataset.activity_net.invalid_videos_json = '../activity-net/captions/invalid_ids.json'
+    cfg.dataset.activity_net.anet_path = './anet_data'
+    cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
+    cfg.dataset.activity_net.video_features_folder = './data_features'
+    cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
+    cfg.dataset.activity_net.min_freq = 2
 
     cfg.dataset.activity_net.max_caption_len_all = 20
     cfg.dataset.activity_net.vocab_size = 5747
@@ -53,9 +53,8 @@ def load_config():
     cfg.dataset.activity_net.rescale_len = 1500    # Switch DVC
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
-
-    cfg.dataset.activity_net.num_queries = 100
     cfg.dataset.activity_net.num_classes = 100
+
 
     # Kinetics 
     cfg.dataset.kinetics = ml_collections.ConfigDict()
@@ -63,17 +62,6 @@ def load_config():
     cfg.dataset.kinetics.num_temporal_samples = 10
     cfg.dataset.kinetics.frame_size = (224, 224)
     cfg.dataset.kinetics.batch_size = 1
-
-    #-------------------------------------------------------------------------------------------------
-    # Distributed training
-    cfg.distributed = ml_collections.ConfigDict()
-    cfg.distributed.is_distributed = True
-    cfg.distributed.rank = 0
-    cfg.distributed.world_size = 1
-    cfg.distributed.gpu = 0
-    cfg.distributed.device = 'cuda'
-    cfg.distributed.dist_backend = 'nccl'
-    cfg.distributed.dist_url = 'env://'
 
 
     #-------------------------------------------------------------------------------------------------
@@ -145,27 +133,31 @@ def load_config():
     cfg.dvc.captions_loss_coef = 1
     cfg.dvc.eos_coef = 1
 
+    cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
 
-    #-------------------------------------------------------------------------------------------------
+
     # Deformable DETR
     cfg.dvc.detr = ml_collections.ConfigDict()
 
-    cfg.dvc.detr.feature_dim = 768  #   dim of frame-level feature vector (default = 500)
-    cfg.dvc.detr.hidden_dim = 768   #   Dimensionality of the hidden layer in the feed-forward networks within the Transformer
-    cfg.dvc.detr.num_queries = 100  #   number of queries givin to decoder
+    cfg.dvc.detr.feature_dim = 768    # dim of frame-level feature vector
+    cfg.dvc.detr.d_model = 768 
+    
     cfg.dvc.detr.hidden_dropout_prob = 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
-    cfg.dvc.detr.nheads = 12 #   the number of heads in the multiheadattention models
-    cfg.dvc.detr.num_feature_levels = 4  #  number of feature levels in multiscale Deformable Attention 
-    cfg.dvc.detr.dec_n_points = 4   #   number of sampling points per attention head per feature level for decoder
-    cfg.dvc.detr.enc_n_points = 4   #   number of sampling points per attention head per feature level for encoder
-    cfg.dvc.detr.enc_layers = 2 #   number of sub-encoder-layers in the encoder
-    cfg.dvc.detr.dec_layers = 2 #   number of sub-decoder-layers in the decode
-    cfg.dvc.detr.transformer_dropout_prob = 0.1 #   the dropout value
-    cfg.dvc.detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
 
+    cfg.dvc.detr.num_heads = 12 
 
+    cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
+    cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
+    cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
 
+    cfg.dvc.detr.enc_layers = 2
+    cfg.dvc.detr.dec_layers = 2
+
+    cfg.dvc.detr.transformer_dropout_prob = 0.1
+    cfg.dvc.detr.transformer_ff_dim = 2048
+
+    
     
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
@@ -173,6 +165,19 @@ def load_config():
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
     cfg.pretrained_models.deit = 'deit_base_patch16_224'
     
+
+    #-------------------------------------------------------------------------------------------------
+    # Distributed training
+    # is_distributed, rank, world_size, gpu - doesn't matter what it is during init. It is set in init_distributed_mode() in utils/misc.py
+    cfg.distributed = ml_collections.ConfigDict()
+    cfg.distributed.is_distributed = True    
+    cfg.distributed.rank = 0
+    cfg.distributed.world_size = 1
+    cfg.distributed.gpu = 0
+    # cfg.distributed.device = 'cuda'
+    cfg.distributed.dist_backend = 'nccl'
+    cfg.distributed.dist_url = 'env://'
+
 
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
@@ -188,7 +193,7 @@ def load_config():
     cfg.eval = ml_collections.ConfigDict()
     cfg.eval.submission = 'output/test.json'
     # cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = ['../activity-net/captions/val_1.json', '../activity-net/captions/val_2.json']
+    cfg.eval.references = ['./anet_data/val_1.json', '../anet_data/val_2.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False

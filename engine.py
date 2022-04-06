@@ -39,7 +39,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
-    print_freq = 10
+    print_freq = 1
 
     for obj in metric_logger.log_every(data_loader, print_freq, wandb_log, wandb, header):
 

@@ -86,6 +86,16 @@ class SmoothedValue(object):
             max=self.max,
             value=self.value)
 
+import subprocess as sp
+import os
+
+def get_gpu_memory():
+    command = "nvidia-smi --query-gpu=memory.free --format=csv"
+    memory_free_info = sp.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+    memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
+    print(memory_free_values)
+
+
 
 class MetricLogger(object):
     def __init__(self, delimiter="\t"):
@@ -171,7 +181,8 @@ class MetricLogger(object):
                         i + 1, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time))
-                        
+                
+                get_gpu_memory()
                 print(log)
                 
                 if wandb_log:
@@ -434,7 +445,7 @@ def init_distributed_mode(args):
     args.is_distributed = True
 
     torch.cuda.set_device(args.gpu)
-    args.dist_backend = 'nccl'
+    # args.dist_backend = 'gloo'
     print('| distributed init (rank {}): {}'.format(
         args.rank, args.dist_url), flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,

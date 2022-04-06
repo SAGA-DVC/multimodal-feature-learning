@@ -35,6 +35,7 @@ def main(args):
         build_dataset = build_dataset_with_raw_videos
         collate_fn = collate_fn_with_raw_videos
     
+    # uses encoded video features instead of raw video features
     else:
         build_dataset = build_dataset_without_raw_videos
         collate_fn = collate_fn_without_raw_videos
@@ -58,15 +59,22 @@ def main(args):
 
     output_dir = Path(args.output_dir)
 
-
+    # TODO - pass dataset or specific params?
     model, criterion = build_model_and_criterion(args.dvc, dataset_train)
     model.to(device)
     criterion.to(device)
 
+    print('Model and criterion initialized')
+
     model_without_ddp = model
+
     if args.distributed.is_distributed:
+        print('Started wrapping model in DDP constructor')
+
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
+
+        print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'number of params: {n_parameters / 1000000} M', )
@@ -112,7 +120,7 @@ def main(args):
                 }, checkpoint_path)
 
         # Validation
-        evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
+        # evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
 
         log_stats = {'epoch': epoch,
                     **{f'train_{k}': v for k, v in train_stats.items()},

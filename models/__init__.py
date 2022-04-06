@@ -120,11 +120,9 @@ def build_model_and_criterion(args, dataset):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    # losses = ['labels', 'segments', 'cardinality']
-    losses = ['labels', 'segments', 'cardinality', 'captions']
 
     criterion = SetCriterion(num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
-                            eos_coef=args.eos_coef, losses=losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
+                            eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
                             focal_alpha=0.25, focal_gamma=2, )
 
     # # postprocessors = {'bbox': PostProcess(args)}

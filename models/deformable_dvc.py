@@ -18,14 +18,14 @@ from .base_encoder import build_base_encoder
 # TODO - src mask
 # TODO - check devices for tensors
 class DeformableDVC(nn.Module):
-    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
+    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=2,
                 tokenization_method='central frame', in_channels=3, d_model=768, 
                 vocab_size=1000, seq_len=20, embedding_matrix=None, emb_weights_req_grad=False,
                 depth=12, temporal_depth=4, num_heads=12, 
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, 
                 num_classes=None, num_queries=100, aux_loss=False,
-                return_preclassifier=True, return_prelogits=False, weight_init=False, weight_load=False, model_official=None,
+                return_preclassifier=True, return_prelogits=False, weight_init=True, weight_load=False, model_official=None,
                 return_intermediate=False, matcher=None, detr_args=None):
         
         """
@@ -37,7 +37,7 @@ class DeformableDVC(nn.Module):
         self.num_queries = num_queries
         self.aux_loss = aux_loss
 
-        self.query_embedding = nn.Embedding(detr_args.num_queries, d_model * 2)
+        self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)

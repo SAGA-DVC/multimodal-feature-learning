@@ -12,7 +12,7 @@ from .modules import  inverse_sigmoid, MSDeformAttn
 class DeformableTransformer(nn.Module):
     '''Args:
         d_model: the number of expected features in the encoder/decoder inputs (default=256).
-        nhead: the number of heads in the multiheadattention models (default=8).
+        num_head: the number of heads in the multiheadattention models (default=8).
         num_encoder_layers: the number of sub-encoder-layers in the encoder (default=6).
         num_decoder_layers: the number of sub-decoder-layers in the decoder (default=6).
         dim_feedforward: the dimension of the feedforward network model (default=1024).
@@ -23,26 +23,26 @@ class DeformableTransformer(nn.Module):
         dec_n_points: number of sampling points per attention head per feature level for decoder (default=4)
         enc_n_points: number of sampling points per attention head per feature level for encoder (default=4)
     '''
-    def __init__(self, d_model=256, nhead=8,
+    def __init__(self, d_model=256, num_head=8,
                  num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=1024, dropout=0.1,
                  activation="relu", return_intermediate_dec=False,
                  num_feature_levels=4, dec_n_points=4, enc_n_points=4):
         super().__init__()
 
         self.d_model = d_model
-        self.nhead = nhead
+        self.num_head = num_head
 
         self.no_encoder = (num_encoder_layers == 0)
         self.num_feature_levels = num_feature_levels
 
         encoder_layer = DeformableTransformerEncoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
-                                                          num_feature_levels, nhead, enc_n_points)
+                                                          num_feature_levels, num_head, enc_n_points)
         self.encoder = DeformableTransformerEncoder(encoder_layer, num_encoder_layers)
 
         decoder_layer = DeformableTransformerDecoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
-                                                          num_feature_levels, nhead, dec_n_points)
+                                                          num_feature_levels, num_head, dec_n_points)
         self.decoder = DeformableTransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate_dec)
 
         self.level_embed = nn.Parameter(torch.Tensor(num_feature_levels, d_model))
@@ -333,7 +333,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
 
         """
         param: tgt (batch_size, num_queries, d_model)
-        param: query_pos (num_queries, hidden_dim * 2)
+        param: query_pos (num_queries, d_model * 2)
         param: reference_points (batch_size, num_queries, 1)
         param: src (batch_size, sum of num_token in all level, d_model)
         param: src_temporal_shapes (num_feature_levels)    #   list of num token at each level
@@ -380,7 +380,7 @@ class DeformableTransformerDecoder(nn.Module):
         param: src_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: src_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: src_valid_ratios (batch_size, num_feature_levels)
-        param: query_pos (num_queries, hidden_dim * 2)
+        param: query_pos (num_queries, d_model * 2)
         param: src_padding_mask (batch_size, sum of num_tokens in all level)
         param: query_padding_mask (batch_size, num_queries)
         param: disable_iterative_refine bool
@@ -448,8 +448,8 @@ def _get_activation_fn(activation):
 
 def build_deforamble_transformer(args):
     return DeformableTransformer(
-        d_model=args.hidden_dim,
-        nhead=args.nheads,
+        d_model=args.d_model,
+        num_head=args.num_heads,
         num_encoder_layers=args.enc_layers,
         num_decoder_layers=args.dec_layers,
         dim_feedforward=args.transformer_ff_dim,

@@ -12,35 +12,35 @@ class BaseEncoder(nn.Module):
     '''Args:
         num_feature_levels: number of feature levels in multiscale Deformable Attention (default=4)
         vf_dim: dim of frame-level feature vector (default = 500)
-        hidden_dim: Dimensionality of the hidden layer in the feed-forward networks within the Transformer (default=512).
+        d_model: Dimensionality of the hidden layer in the feed-forward networks within the Transformer (default=512).
     '''
-    def __init__(self, num_feature_levels, vf_dim, hidden_dim):
+    def __init__(self, num_feature_levels, vf_dim, d_model):
         super(BaseEncoder, self).__init__()
         # TODO - check pos_embed
-        self.pos_embed = PositionEmbeddingSine(hidden_dim//2, normalize=True)
+        self.pos_embed = PositionEmbeddingSine(d_model//2, normalize=True)
         self.num_feature_levels = num_feature_levels
-        self.hidden_dim = hidden_dim
+        self.d_model = d_model
 
         #   creating base_encoder
         if num_feature_levels > 1:
             input_proj_list = []
             in_channels = vf_dim
             input_proj_list.append(nn.Sequential(
-                nn.Conv1d(in_channels, hidden_dim, kernel_size=1),
-                nn.GroupNorm(32, hidden_dim),
+                nn.Conv1d(in_channels, d_model, kernel_size=1),
+                nn.GroupNorm(32, d_model),
             ))
             for _ in range(num_feature_levels - 1):
                 input_proj_list.append(nn.Sequential(
-                    nn.Conv1d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
-                    nn.GroupNorm(32, hidden_dim),
+                    nn.Conv1d(in_channels, d_model, kernel_size=3, stride=2, padding=1),
+                    nn.GroupNorm(32, d_model),
                 ))
-                in_channels = hidden_dim
+                in_channels = d_model
             self.input_proj = nn.ModuleList(input_proj_list)
         else:
             self.input_proj = nn.ModuleList([
                 nn.Sequential(
-                    nn.Conv2d(vf_dim, hidden_dim, kernel_size=1),
-                    nn.GroupNorm(32, hidden_dim),
+                    nn.Conv2d(vf_dim, d_model, kernel_size=1),
+                    nn.GroupNorm(32, d_model),
                 )])
 
         for proj in self.input_proj:
@@ -85,5 +85,5 @@ class BaseEncoder(nn.Module):
         return srcs, masks, poses
 
 def build_base_encoder(args):
-    base_encoder = BaseEncoder(args.num_feature_levels, args.feature_dim, args.hidden_dim)
+    base_encoder = BaseEncoder(args.num_feature_levels, args.feature_dim, args.d_model)
     return base_encoder
