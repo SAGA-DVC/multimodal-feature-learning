@@ -4,7 +4,7 @@ import torch
 import json
 
 hf = h5py.File('video_features.h5', 'a')
-annotation = json.load(open('../activity-net/captions/val_1.json', 'r'))
+annotation = json.load(open('../activity-net/captions/train.json', 'r'))
 
 keys = list(annotation.keys())
 
