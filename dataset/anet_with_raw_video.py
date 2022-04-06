@@ -67,13 +67,12 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:6]
+        self.keys = self.keys[:100]
 
         self.video_folder = video_folder
         self.feature_sample_rate = args.feature_sample_rate
         self.is_training = is_training
         self.max_gt_target_segments = args.max_gt_target_segments
-        self.num_queries = args.num_queries
         self.args = args
 
     def __len__(self):
@@ -245,7 +244,6 @@ class ActivityNet(DVCdataset):
         """
         
         originalSize = len(input_data)
-
         if originalSize == 1:
             input_data = np.reshape(input_data, [-1])
             return np.stack([input_data] * new_size)
@@ -391,7 +389,7 @@ def collate_fn(batch, pad_idx):
     return obj
 
 
-def build_vocab(annotation, tokenizer):
+def build_vocab(annotation, tokenizer, min_freq):
         """
         Builds the vocabulary (word to idx and idx to word mapping) based on all the captions in the training dataset.
         """
@@ -405,7 +403,7 @@ def build_vocab(annotation, tokenizer):
         for caption in captions:
             counter.update(tokenizer(caption))
 
-        return vocab(counter, min_freq=2, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
+        return vocab(counter, min_freq=min_freq, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 
 
 def build_dataset(video_set, args):
@@ -446,7 +444,7 @@ def build_dataset(video_set, args):
     if vocab_file.exists():
         vocab = pickle.load(open(vocab_file, 'rb'))
     else:
-        vocab = build_vocab(json.load(open("../activity-net/captions/train.json", 'r')), tokenizer)
+        vocab = build_vocab(json.load(open(PATHS_ANNOTATION['train'], 'r')), tokenizer, args.min_freq)
         pickle.dump(vocab, open(vocab_file, 'wb'))
 
     # (num_frames, height, width, num_channels) -> (num_frames, num_channels, height, width)

@@ -18,7 +18,7 @@ from config.config_dvc import load_config
 
 class DVCdataset(Dataset):
 
-    def __init__(self, annotation_file, feature_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
 
         """
         Parent class of the dataset to be used for training the DVC model (activity-net)
@@ -31,7 +31,7 @@ class DVCdataset(Dataset):
                                             "action_labels" : [label_1, label_2, label_3]
                                             }
                                         }
-            `feature_folder` (string) : Path to the file consisting of the features of all videos in the dataset
+            `video_features_folder` (string) : Path to the file consisting of the features of all videos in the dataset
             `tokenizer` : Spacy english tokenizer for captions
             `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) : 
@@ -52,6 +52,7 @@ class DVCdataset(Dataset):
 
         self.keys = list(self.annotation.keys())
 
+        # TODO - convert mkv foles (in invalid_ids for now)
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
@@ -59,15 +60,14 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:12]
+        self.keys = self.keys[:1000]
 
-        # self.feature_folder = feature_folder
-        self.video_features = h5py.File(feature_folder / 'video_features.h5', 'r')    # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
+        # self.video_features_folder = video_features_folder
+        self.video_features = h5py.File(video_features_folder / 'video_features.h5', 'r')    # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
 
         self.feature_sample_rate = args.feature_sample_rate
         self.is_training = is_training
         self.max_gt_target_segments = args.max_gt_target_segments
-        self.num_queries = args.num_queries
         self.args = args
 
     def __len__(self):
@@ -110,7 +110,7 @@ class DVCdataset(Dataset):
 
 class ActivityNet(DVCdataset):
 
-    def __init__(self, annotation_file, feature_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
 
         """
         Class for the ActivityNet dataset to be used for Dense Video Caption 
@@ -123,14 +123,14 @@ class ActivityNet(DVCdataset):
                                             "action_labels" : [label_1, label_2, label_3]
                                             }
                                         }
-            `feature_folder` (string) : Path to the file consisting of the features of all videos in the dataset
+            `video_features_folder` (string) : Path to the file consisting of the features of all videos in the dataset
             `tokenizer` : Spacy english tokenizer for captions
             `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) :  
             `args` (ml_collections.ConfigDict): Configuration object for the dataset
         """
 
-        super(ActivityNet, self).__init__(annotation_file, feature_folder, tokenizer, vocab, is_training, args)
+        super(ActivityNet, self).__init__(annotation_file, video_features_folder, tokenizer, vocab, is_training, args)
 
 
     def load_feature(self, key):  
@@ -381,7 +381,7 @@ def collate_fn(batch, pad_idx):
     return obj
 
 
-def build_vocab(annotation, tokenizer):
+def build_vocab(annotation, tokenizer, min_freq):
         """
         Builds the vocabulary (word to idx and idx to word mapping) based on all the captions in the training dataset.
         """
@@ -395,7 +395,7 @@ def build_vocab(annotation, tokenizer):
         for caption in captions:
             counter.update(tokenizer(caption))
 
-        return vocab(counter, min_freq=2, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
+        return vocab(counter, min_freq=min_freq, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 
 
 def build_dataset(video_set, args):
@@ -409,7 +409,7 @@ def build_dataset(video_set, args):
     """
     
     root_annotation = Path(args.anet_path)
-    root_feature = Path(args.features_path)
+    root_feature = Path(args.video_features_folder)
 
     assert root_annotation.exists(), f'Provided ActivityNet path {root_annotation} does not exist.'
     assert root_feature.exists(), f'Provided ActivityNet feature folder path {root_feature} does not exist.'
@@ -426,7 +426,7 @@ def build_dataset(video_set, args):
     }
 
     annotation_file = PATHS_ANNOTATION[video_set]
-    feature_folder = PATHS_VIDEO[video_set]
+    video_features_folder = PATHS_VIDEO[video_set]
     
     tokenizer = get_tokenizer('spacy', language='en_core_web_sm')
 
@@ -436,12 +436,12 @@ def build_dataset(video_set, args):
     if vocab_file.exists():
         vocab = pickle.load(open(vocab_file, 'rb'))
     else:
-        vocab = build_vocab(json.load(open("../activity-net/captions/train.json", 'r')), tokenizer)
+        vocab = build_vocab(json.load(open(PATHS_ANNOTATION['train'], 'r')), tokenizer, args.min_freq)
         pickle.dump(vocab, open(vocab_file, 'wb'))
     
 
     dataset = ActivityNet(annotation_file=annotation_file, 
-                          feature_folder=feature_folder,
+                          video_features_folder=video_features_folder,
                           tokenizer=tokenizer,
                           vocab=vocab,
                           is_training=(video_set == 'train'),
