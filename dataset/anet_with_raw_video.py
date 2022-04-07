@@ -1,5 +1,8 @@
+import sys
+# sys.path.insert(0, '../config')
+
+import os
 import json
-import h5py
 from pathlib import Path
 from collections import Counter, defaultdict
 from itertools import chain
@@ -10,6 +13,8 @@ from scipy.interpolate import interp1d
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torchvision.io import read_video
+from torchvision import transforms
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import vocab
 
@@ -18,7 +23,7 @@ from config.config_dvc import load_config
 
 class DVCdataset(Dataset):
 
-    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args):
 
         """
         Parent class of the dataset to be used for training the DVC model (activity-net)
@@ -31,7 +36,9 @@ class DVCdataset(Dataset):
                                             "action_labels" : [label_1, label_2, label_3]
                                             }
                                         }
-            `video_features_folder` (string) : Path to the file consisting of the features of all videos in the dataset
+            `video_folder` (string) : Path to folder containing all the videos in the dataset
+            `transforms_fn` (callable): A function/transform that takes in a (num_frames, height, width, num_channels) video 
+                                    and returns a transformed version.
             `tokenizer` : Spacy english tokenizer for captions
             `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) : 
@@ -41,6 +48,7 @@ class DVCdataset(Dataset):
         super(DVCdataset, self).__init__()
 
         self.annotation = json.load(open(annotation_file, 'r'))
+        self.transforms_fn = transforms_fn
 
         self.tokenizer = tokenizer
         self.vocab = vocab
@@ -52,7 +60,6 @@ class DVCdataset(Dataset):
 
         self.keys = list(self.annotation.keys())
 
-        # TODO - convert mkv foles (in invalid_ids for now)
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
@@ -60,11 +67,9 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:1000]
+        self.keys = self.keys[:100]
 
-        # self.video_features_folder = video_features_folder
-        self.video_features = h5py.File(video_features_folder / 'video_features.h5', 'r')    # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
-
+        self.video_folder = video_folder
         self.feature_sample_rate = args.feature_sample_rate
         self.is_training = is_training
         self.max_gt_target_segments = args.max_gt_target_segments
@@ -77,9 +82,6 @@ class DVCdataset(Dataset):
         """
 
         return len(self.keys)
-
-    def __del__(self):
-        pass
 
 
     def process_time_step(self, duration, timestamps_list, num_frames):
@@ -110,7 +112,7 @@ class DVCdataset(Dataset):
 
 class ActivityNet(DVCdataset):
 
-    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args):
 
         """
         Class for the ActivityNet dataset to be used for Dense Video Caption 
@@ -123,14 +125,16 @@ class ActivityNet(DVCdataset):
                                             "action_labels" : [label_1, label_2, label_3]
                                             }
                                         }
-            `video_features_folder` (string) : Path to the file consisting of the features of all videos in the dataset
+            `video_folder` (string) : Path to folder containing all the videos in the dataset
+            `transforms_fn` (callable): A function/transform that takes in a (num_frames, height, width, num_channels) video 
+                                    and returns a transformed version. 
             `tokenizer` : Spacy english tokenizer for captions
             `vocab` (torchtext.vocab.Vocab) : mapping of all the words in the training dataset to indices and vice versa
             `is_training` (boolean) :  
             `args` (ml_collections.ConfigDict): Configuration object for the dataset
         """
 
-        super(ActivityNet, self).__init__(annotation_file, video_features_folder, tokenizer, vocab, is_training, args)
+        super(ActivityNet, self).__init__(annotation_file, video_folder, transforms_fn, tokenizer, vocab, is_training, args)
 
 
     def load_feature(self, key):  
@@ -143,11 +147,11 @@ class ActivityNet(DVCdataset):
             `key` (string) : An unique string representing a video in the dataset.
 
         Returns:
-            `feature` : Tensor of dimension (num_tokens, d_model) 
+            `feature` : Tensor of dimension (num_frames, height, width, num_channels) 
         """
 
-        feature = self.get_feature(key) # (num_tokens, d_model)
-        
+        feature = self.get_feature(key, self.video_folder) # (total_frames, height, width, num_channels)
+
         if self.args.data_rescale == 'interpolate':
             feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, d_model)
         elif self.args.data_rescale == 'uniform':
@@ -165,7 +169,7 @@ class ActivityNet(DVCdataset):
             `idx` (int) : An ID representing a video in the dataset.
 
         Returns:
-            `feature` (tensor): Tensor of dimension (num_tokens, d_model) representing the video
+            `feature` (tensor): Tensor of dimension (num_frames, height, width, num_channels) representing the video (RGB)
             `gt_framestamps` (list): 2d list of ints, [gt_target_segments, 2], representing the start and end frames of the events in the video 
             `action_labels` (list): [gt_target_segments] representing class labels for each event in the video 
             `captions_label` (list): [gt_target_segments, max_caption_len] {variable dim 1} representing the token labels for the caption of each event in the video
@@ -177,7 +181,8 @@ class ActivityNet(DVCdataset):
 
         key = self.keys[idx] # string
 
-        feature = self.load_feature(key) # (num_tokens, d_model) 
+        feature = self.load_feature(key) # (num_frames, height, width, num_channels) 
+        feature = self.transforms_fn(feature) # (num_frames, num_channels, img_size, img_size)
 
         duration = self.annotation[key]['duration'] # float
         captions = self.annotation[key]['sentences'] # [gt_target_segments] -- list of strings
@@ -205,20 +210,24 @@ class ActivityNet(DVCdataset):
         return feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
 
 
-    def get_feature(self, key):
+    def get_feature(self, key, video_folder):
 
         """
         Extracts RGB features from a video
 
         Parameters:
             `key` (string) : An ID representing a video in the dataset
+            `video_folder` (string) : Path to the folder consisting of the specific video
         
         Returns:
-            np array of shape (num_tokens, d_model)
+            `video_frames` : Tensor of dimension (total_frames, height, width, num_channels)
         """
+        
+        path = os.path.join(video_folder, key + '.mp4')
+        assert os.path.exists(path), f'{path} does not exist.'
 
-        feature = np.array(self.video_features.get(key)).astype(np.float)    # (num_tokens, d_model)
-        return feature
+        video_frames, _, _ = read_video(filename=path) # (total_frames, height, width, num_channels)
+        return video_frames
 
 
     def resizeFeature(self, input_data, new_size):
@@ -227,15 +236,14 @@ class ActivityNet(DVCdataset):
         Resizes the video (number of frames) using interpolation
 
         Parameters:
-            `input_data` : np array of shape (num_tokens, d_model)
-            `new_size` (int) : num_tokens to be scaled to new_size
+            `input_data` : Tensor of dimension (total_frames, height, width, num_channels)
+            `new_size` (int) : total_frames to be scaled to new_size
 
         Returns:
-            `y_new` : np array of shape (new_size, d_model)
+            `y_new` : np array of shape (new_size, height, width, num_channels)
         """
-
+        
         originalSize = len(input_data)
-
         if originalSize == 1:
             input_data = np.reshape(input_data, [-1])
             return np.stack([input_data] * new_size)
@@ -274,7 +282,7 @@ def collate_fn(batch, pad_idx):
         `batch` : list of shape (batch_size, 8) {8 attributes}
         `pad_idx` : index of the '<pad>' token in the vocabulary
     Attributes
-        `feature_list` (tensor): Tensor of dimension (batch_size, num_tokens, d_model) representing the video
+        `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
         `gt_timestamps_list` (list, int): [batch_size, gt_target_segments, 2], representing the start and end frames of the events in the video 
         `action_labels` (list, int): [batch_size, gt_target_segments] representing class labels for each event in the video 
         `caption_list` (list, int): [batch_size, gt_target_segments, max_caption_len] {variable dim 1 and 2} representing the token labels for the caption of each event in the video
@@ -288,7 +296,7 @@ def collate_fn(batch, pad_idx):
     """
 
     batch_size = len(batch)
-    _, d_model = batch[0][0].shape
+    _, num_channels, height, width = batch[0][0].shape
     
     feature_list, gt_timestamps_list, action_labels, caption_list, gt_raw_timestamps, raw_duration, raw_caption, key = zip(*batch)
 
@@ -298,7 +306,7 @@ def collate_fn(batch, pad_idx):
 
     gt_timestamps = list(chain(*gt_timestamps_list)) # (batch_size * gt_target_segments, 2) {dim 0 is an avg value}
 
-    video_tensor = torch.FloatTensor(batch_size, max_video_length, d_model).zero_()
+    video_tensor = torch.FloatTensor(batch_size, max_video_length, num_channels, height, width).zero_()
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
 
@@ -341,22 +349,22 @@ def collate_fn(batch, pad_idx):
 
         total_caption_idx += gt_segment_length
 
-    gt_segments_mask = (gt_segments_tensor != 0).sum(2) > 0    # (batch_size, max_gt_target_segments)
+    gt_segments_mask = (gt_segments_tensor != 0).sum(2) > 0 # (batch_size, max_gt_target_segments)
 
     target = [{'segments': torch.tensor([[(ts[1] + ts[0]) / (2 * raw_duration[i]), 
                             (ts[1] - ts[0]) / raw_duration[i]] 
-                            for ts in gt_raw_timestamps[i]]).float(),    # (gt_target_segments, 2)
-               'labels': torch.tensor(action_labels[i]).long(),    # (gt_target_segments)
+                            for ts in gt_raw_timestamps[i]]).float(), # (gt_target_segments, 2)
+               'labels': torch.tensor(action_labels[i]).long(), # (gt_target_segments)
                'masks': None,
                'vid_id': vid} for i, vid in enumerate(list(key))]
 
     obj = {
         "video":
             {
-                "tensor": video_tensor,    # (batch_size, max_video_length, d_model)
-                "length": video_length,    # (batch_size, 3) - num_frames, duration, gt_target_segments
-                "mask": video_mask,    # (batch_size, max_video_length)
-                "key": list(key),    # list, (batch_size)
+                "tensor": video_tensor.permute(0, 2, 1, 3, 4),  # (batch_size, num_channels, max_video_length, height, width)
+                "length": video_length, # (batch_size, 3) - num_frames, duration, gt_target_segments
+                "mask": video_mask,  # (batch_size, max_video_length)
+                "key": list(key),  # list, (batch_size)
                 "target": target,
             },
        
@@ -409,10 +417,10 @@ def build_dataset(video_set, args):
     """
     
     root_annotation = Path(args.anet_path)
-    root_feature = Path(args.video_features_folder)
+    root_video = Path(args.video_folder)
 
     assert root_annotation.exists(), f'Provided ActivityNet path {root_annotation} does not exist.'
-    assert root_feature.exists(), f'Provided ActivityNet feature folder path {root_feature} does not exist.'
+    assert root_video.exists(), f'Provided ActivityNet video folder path {root_video} does not exist.'
     
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
@@ -421,12 +429,12 @@ def build_dataset(video_set, args):
         "val": (root_annotation / 'val_1.json'),
     }
     PATHS_VIDEO = {
-        "train": (root_feature / 'train'),
-        "val": (root_feature / 'val'),
+        "train": (root_video / 'train'),
+        "val": (root_video / 'val'),
     }
 
     annotation_file = PATHS_ANNOTATION[video_set]
-    video_features_folder = PATHS_VIDEO[video_set]
+    video_folder = PATHS_VIDEO[video_set]
     
     tokenizer = get_tokenizer('spacy', language='en_core_web_sm')
 
@@ -438,10 +446,41 @@ def build_dataset(video_set, args):
     else:
         vocab = build_vocab(json.load(open(PATHS_ANNOTATION['train'], 'r')), tokenizer, args.min_freq)
         pickle.dump(vocab, open(vocab_file, 'wb'))
+
+    # (num_frames, height, width, num_channels) -> (num_frames, num_channels, height, width)
+    float_zero_to_one = transforms.Lambda(lambda video: video.permute(0, 3, 1, 2).to(torch.float32) / 255) 
+
+    # permute_frames_and_channels = transforms.Lambda(lambda video: video.permute(1, 0, 2, 3))
+
+    normalize = transforms.Normalize(
+        mean=[0.43216, 0.394666, 0.37645], 
+        std=[0.22803, 0.22145, 0.216989])
+
+    resize = transforms.Resize((256))
+
+    train_transform = transforms.Compose([
+        float_zero_to_one,
+        resize,
+        transforms.RandomHorizontalFlip(),
+        normalize,
+        # permute_frames_and_channels,
+        transforms.RandomCrop((224, 224))
+    ])
+
+    val_transform = transforms.Compose([
+        float_zero_to_one,
+        resize,
+        normalize,
+        # permute_frames_and_channels,
+        transforms.CenterCrop((224, 224))
+    ])
+
+    transforms_fn = train_transform if video_set == 'train' else val_transform
     
 
     dataset = ActivityNet(annotation_file=annotation_file, 
-                          video_features_folder=video_features_folder,
+                          video_folder=video_folder,
+                          transforms_fn=transforms_fn,
                           tokenizer=tokenizer,
                           vocab=vocab,
                           is_training=(video_set == 'train'),

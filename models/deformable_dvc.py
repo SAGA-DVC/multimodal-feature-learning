@@ -11,33 +11,38 @@ from .decoder import Decoder
 from .caption_decoder import CaptionDecoder
 
 from .modules.embedding_layers import PositionalEmbedding
-from .modules.misc_modules import FFN
+from .modules.misc_modules import FFN, decide_two_stage
 
 from .load_weights import load_positional_embeddings
 
+from .deformable_transformer import build_deforamble_transformer
+from .base_encoder import build_base_encoder
+
+
 # TODO - src mask
 # TODO - check devices for tensors
-class DVC(nn.Module):
-    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=1,
+class DeformableDVC(nn.Module):
+    def __init__(self, model_name, num_frames_in, img_size=224, spatial_patch_size=16, temporal_patch_size=2,
                 tokenization_method='central frame', in_channels=3, d_model=768, 
                 vocab_size=1000, seq_len=20, embedding_matrix=None, emb_weights_req_grad=False,
                 depth=12, temporal_depth=4, num_heads=12, 
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, 
                 num_classes=None, num_queries=100, aux_loss=False,
-                return_preclassifier=True, return_prelogits=False, weight_init=False, weight_load=False, model_official=None,
-                return_intermediate=False, matcher=None):
+                return_preclassifier=True, return_prelogits=False, weight_init=True, weight_load=False, model_official=None,
+                return_intermediate=False, matcher=None, detr_args=None):
         
         """
-        DVC type model
+        DeformableDVC model
         """
 
-        super(DVC, self).__init__()
+        super(DeformableDVC, self).__init__()
         
         self.num_queries = num_queries
         self.aux_loss = aux_loss
 
-        self.query_embedding = nn.Embedding(num_queries, d_model)
+        self.query_embedding = nn.Embedding(num_queries, d_model * 2)
+
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
@@ -89,23 +94,8 @@ class DVC(nn.Module):
                         model_official=model_official
                     )
 
-
-        self.decoder = Decoder(d_model=d_model, 
-                        depth=depth, 
-                        num_heads=num_heads, 
-                        mlp_ratio=mlp_ratio, 
-                        qkv_bias=qkv_bias,  
-                        attention_dropout=attention_dropout, 
-                        projection_dropout=projection_dropout, 
-                        dropout_1=dropout_1, 
-                        dropout_2=dropout_2, 
-                        pre_norm=pre_norm,
-                        weight_init=weight_init, 
-                        weight_load=weight_load, 
-                        model_official=model_official,
-                        return_intermediate=return_intermediate
-                    )
-        
+        self.base_encoder = build_base_encoder(detr_args)
+        self.deformable_transformer = build_deforamble_transformer(detr_args)
         
         self.caption_decoder = CaptionDecoder(vocab_size=vocab_size, 
                         seq_len=seq_len, 
@@ -139,10 +129,11 @@ class DVC(nn.Module):
     # TODO - use log softmax?
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - add position embedding in caption decoder
+    # TODO - check all pos embed
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
-        Performs a forward pass on the DVC model which consists of the encoders, proposal decoder and caption decoder
+        Performs a forward pass on the DeformableDVC model which consists of the encoders, proposal decoder and caption decoder
   
         Parameters:
             obj (collections.defaultdict): Consisitng of various keys including 
@@ -171,33 +162,50 @@ class DVC(nn.Module):
 
         """
 
-        video_input = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
+        video = obj['video_tensor']    # (batch_size, num_tokens, d_model)
+        batch_size, _, _ = video.shape
         
-        # Encoder
-        # (batch_size, num_frames * num_patches + 1, d_model) OR
-        # (batch_size, num_frames + 1, d_model) OR 
-        # (batch_size, num_frames, num_patches, d_model) 
-        video = self.vivit(video_input, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
+        video_mask = obj['video_mask']    # (batch_size, num_tokens)
+        video_durations = obj['video_length'][:, 1]   # (batch_size)
+        
+        # Base Encoder - for multi-scale features
+        srcs, masks, pos = self.base_encoder(video, video_mask, video_durations)
 
-        # TODO - check grad later
-        if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
-            video = video.reshape(video.shape[0], -1, video.shape[-1])
+        # Forword Encoder
+        src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
+        
+        # (batch_size, sum of num_tokens in all levels, dmodel) - Multi-scale frame features
+        memory = self.deformable_transformer.forward_encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten)    #   (batch_size, sum of num_token in all level, dmodel) #   Multi-scale frame features
 
 
-        # Decoder
-        query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(video_input.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
-        target = torch.zeros_like(query_embedding_weight)
+        # Forword Decoder
+        # TODO - see transformer_input_type = "gt_proposals"
+        transformer_input_type = "queries"
+        gt_boxes = None
+        gt_boxes_mask = None
+        criterion = None
+        two_stage, disable_iterative_refine, proposals, proposals_mask = decide_two_stage(transformer_input_type, gt_boxes, gt_boxes_mask, criterion)
 
-        # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
-        res = self.decoder(target=target, memory=video, 
-                        positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
+        if two_stage:
+            init_reference, tgt, reference_points, query_embedding = self.deformable_transformer.prepare_decoder_input_proposal(proposals)
+        else:
+            query_embedding_weight = self.query_embedding.weight
+            proposals_mask = torch.ones(batch_size, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
+            init_reference, tgt, reference_points, query_embedding_weight = self.deformable_transformer.prepare_decoder_input_query(memory, query_embedding_weight)
+
+
+        # query_features (depth, batch_size, num_queries, d_model)
+        # inter_reference = (depth, batch_size, num_queries, 1)
+        query_features, inter_references = self.deformable_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
+                                                                level_start_index, valid_ratios, query_embedding_weight,
+                                                                mask_flatten, proposals_mask, disable_iterative_refine)
 
 
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding(res).softmax(dim=-1)
+        outputs_class = self.class_embedding(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
-        outputs_segment = self.segment_embedding(res).sigmoid()
+        outputs_segment = self.segment_embedding(query_features).sigmoid()
 
         out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1]}
 
@@ -434,7 +442,7 @@ class DVC(nn.Module):
     def init_weights(self):
 
         """
-        Initialises the weights and biases of the modules in the DVC model.
+        Initialises the weights and biases of the modules in the DeformableDVC model.
         These parameters include positional embeddings.
         """
 
@@ -446,7 +454,7 @@ class DVC(nn.Module):
     def load_weights(self, model_official):
 
         """
-        Loads the weights and biases from the pre-trained model to the current model for modules in the DVC model
+        Loads the weights and biases from the pre-trained model to the current model for modules in the DeformableDVC model
         These weights include positional embeddings.
 
         Parameters:

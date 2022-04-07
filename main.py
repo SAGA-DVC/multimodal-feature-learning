@@ -1,23 +1,27 @@
 import sys
 from pathlib import Path
 import random, time, datetime, json
+from functools import partial
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
+import wandb
 
 from models import build_model_and_criterion
 from config.config_dvc import load_config
 from utils.misc import *
-from engine import train_one_epoch
+from engine import train_one_epoch, evaluate
 
-from dataset.anet import build_dataset, collate_fn 
+from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
+from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 
 
 def main(args):
     init_distributed_mode(args.distributed)
 
-    # print(args)
+    if args.wandb.on:
+        wandb.init(project=args.wandb.project, entity=args.wandb.entity, config=args.to_dict(), notes=args.wandb.notes)
 
     device = torch.device(args.device)
 
@@ -26,26 +30,16 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-    model, criterion = build_model_and_criterion(args.dvc)
-    model.to(device)
-    criterion.to(device)
-
-    model_without_ddp = model
-    if args.distributed.is_distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
-
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('number of params:', n_parameters)
-
-    param_dicts = [
-        {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
-    ]
-    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
-                                  weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
-
+    
+    if args.use_raw_videos:
+        build_dataset = build_dataset_with_raw_videos
+        collate_fn = collate_fn_with_raw_videos
+    
+    # uses encoded video features instead of raw video features
+    else:
+        build_dataset = build_dataset_without_raw_videos
+        collate_fn = collate_fn_without_raw_videos
+    
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
     dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
@@ -59,11 +53,38 @@ def main(args):
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=collate_fn, num_workers=args.num_workers)
+                                   collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
     data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                 drop_last=False, collate_fn=collate_fn, num_workers=args.num_workers)
+                                 drop_last=False, collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
+
+    # TODO - pass dataset or specific params?
+    model, criterion = build_model_and_criterion(args.dvc, dataset_train)
+    model.to(device)
+    criterion.to(device)
+
+    print('Model and criterion initialized')
+
+    model_without_ddp = model
+
+    if args.distributed.is_distributed:
+        print('Started wrapping model in DDP constructor')
+
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
+        model_without_ddp = model.module
+
+        print('Finished wrapping model in DDP constructor')
+
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'number of params: {n_parameters / 1000000} M', )
+
+    param_dicts = [
+        {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
+    ]
+    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+
 
     if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -80,7 +101,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args, args.wandb.on, wandb)
         
         lr_scheduler.step()
 
@@ -98,9 +119,15 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     'epoch': epoch,
+        # Validation
+        # evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
+
+        log_stats = {'epoch': epoch,
+                    **{f'train_{k}': v for k, v in train_stats.items()},
                      'n_parameters': n_parameters}
+        
+        if args.wandb.on:
+            wandb.log(log_stats)
 
         if args.output_dir and is_main_process():
             with (output_dir / "log.txt").open("a") as f:
@@ -109,6 +136,11 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f'Training time {total_time_str}')
+
+    if args.wandb.on:
+            wandb.log({f"Total training time for {args.epochs - args.start_epoch} epochs": total_time_str})
+
+    
 
 
 if __name__ == '__main__':

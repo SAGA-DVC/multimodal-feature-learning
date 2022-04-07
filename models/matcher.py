@@ -38,6 +38,7 @@ class HungarianMatcher(nn.Module):
 
         assert cost_class != 0 or cost_segment != 0 or cost_giou != 0, "Costs cant be 0."
 
+    # TODO - check CPU in forward
     @torch.no_grad()
     def forward(self, outputs, targets):
         """ Performs the matching
@@ -92,6 +93,7 @@ class HungarianMatcher(nn.Module):
 
         sizes = [len(v["segments"]) for v in targets] # (batch_size)
         
+        # c[i]: (batch_size, num_queries, nb_target_segments) -> (batch_size, num_queries, num_target_segments) per ground truth event
         # (batch_size, num_queries, gt_target_segments) -> list (len=batch_size) of tuple of lists (shape=(2, gt_target_segments))
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(cost_matrix.split(sizes, -1))]
 
