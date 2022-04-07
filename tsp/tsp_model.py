@@ -22,7 +22,7 @@ class TSPModel(nn.Module):
                 features before applying the second head FC layer.
             combiner (function or torch.nn.Module): function or network that combines features extracted by backbones.
                 If not provided, the addition function will be used. The function should take as inputs the features of
-                individual backbones.
+                individual backbones and give as output features of dimension `d_tsp_feat`.
             input_modalities (List[str]): list of keys for accessing features of modalities for each backbone
                 Example ['video', 'audio']. x['video'] will be given to the first backbone, x['audio'] will be given to 
                 the second backbone

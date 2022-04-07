@@ -40,7 +40,7 @@ class UntrimmedVideoDataset(Dataset):
             clips_per_segment (int): The number of clips to sample per segment (a row) in the CSV file.
             temporal_jittering (bool): If True, clips are randomly sampled between t-start and t-end of
                 each segment. Otherwise, clips are are sampled uniformly between t-start and t-end.
-            num_mel_bins (int) TODO
+            num_mel_bins (int) Number of Mel bins
             audio_target_length TODO
             seed (int): Seed of the random number generator used for the temporal jittering.
             video_transform (callable): A function/transform that takes in a TxHxWxC video
@@ -185,8 +185,7 @@ class UntrimmedVideoDataset(Dataset):
     def _resample_video_idx(num_frames, original_fps, new_fps):
         step = float(original_fps) / new_fps
         if step.is_integer():
-            # optimization: if step is integer, don't need to perform
-            # advanced indexing
+            # optimization: if step is integer, don't need to perform advanced indexing
             step = int(step)
             return slice(None, None, step)
         idxs = torch.arange(num_frames, dtype=torch.float32) * step
