@@ -4,7 +4,8 @@ from torch import nn
 from deformable_transformer import build_deforamble_transformer
 from base_encoder import build_base_encoder
 from config import load_config
-from modules import decide_two_stage
+
+from .modules.misc_modules import decide_two_stage
 
 
 cfg = load_config()

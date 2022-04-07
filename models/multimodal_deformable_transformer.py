@@ -4,8 +4,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.init import xavier_uniform_, constant_, normal_
-from .modules import  inverse_sigmoid, MSDeformAttn
 
+from .modules.misc_modules import inverse_sigmoid 
+from .modules.attention import MSDeformAttn
 
 class MultimodalDeformableTransformer(nn.Module):
     '''Args:

@@ -5,7 +5,9 @@ Base Encoder to create multi-level conv features and positional embedding.
 import torch
 import torch.nn.functional as F
 from torch import nn
-from .modules import NestedTensor, PositionEmbeddingSine
+
+from .modules.misc_modules import NestedTensor
+from .modules.embedding_layers import PositionEmbeddingSine
 
 
 class BaseEncoder(nn.Module):

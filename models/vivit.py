@@ -12,8 +12,9 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
+from .modules.embedding_layers import TokenEmbedding, PositionalEmbedding, VivitEncoder
+from .modules.encoder import  VivitEncoder
 
-from .modules import TokenEmbedding, PositionalEmbedding, VivitEncoder
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 

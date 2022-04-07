@@ -9,7 +9,10 @@ from torch.nn.init import trunc_normal_
 from .vivit import VideoVisionTransformer
 from .decoder import Decoder
 from .caption_decoder import CaptionDecoder
-from .modules import PositionalEmbedding, FFN
+
+from .modules.embedding_layers import PositionalEmbedding
+from .modules.misc_modules import FFN
+
 from .load_weights import load_positional_embeddings
 
 # TODO - src mask

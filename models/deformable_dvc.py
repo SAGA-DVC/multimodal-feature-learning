@@ -9,8 +9,12 @@ from torch.nn.init import trunc_normal_
 from .vivit import VideoVisionTransformer
 from .decoder import Decoder
 from .caption_decoder import CaptionDecoder
-from .modules import PositionalEmbedding, FFN, decide_two_stage
+
+from .modules.embedding_layers import PositionalEmbedding
+from .modules.misc_modules import FFN, decide_two_stage
+
 from .load_weights import load_positional_embeddings
+
 from .deformable_transformer import build_deforamble_transformer
 from .base_encoder import build_base_encoder
 
