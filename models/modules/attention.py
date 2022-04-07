@@ -63,10 +63,11 @@ class Attention(nn.Module):
         Performs a forward pass on the multi-headed attention block followed by a linear (projection) layer.
   
         Parameters:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            x (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens)
         
         Returns:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
+            x (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
 
         """
 
@@ -232,7 +233,8 @@ class CrossAttention(nn.Module):
         self.projection_layer = nn.Linear(d_model, d_model)
         self.projection_dropout = nn.Dropout(projection_dropout)
 
-    # src_mask not yet added
+    # TODO - check if 1,0 or True False in memory mask
+    # TODO - add src mask
     def forward(self, q, k, v, mask=None):
 
         """
@@ -242,6 +244,7 @@ class CrossAttention(nn.Module):
             q (tensor): Tensor of dimension (batch_size, num_tokens_q, d_model) represeting a query vector
             k (tensor): Tensor of dimension (batch_size, num_tokens_k, d_model) represeting a key vector
             v (tensor): Tensor of dimension (batch_size, num_tokens_v, d_model) represeting a value vector
+            mask (tensor) : Tensor of dimension (batch_size, 1, 1, num_tokens_k) represeting a value vector
 
         Returns:
             x (tensor): Tensor of dimension (batch_size, num_tokens_q, d_model)
