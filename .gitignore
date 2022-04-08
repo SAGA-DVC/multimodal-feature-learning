@@ -5,6 +5,10 @@ features
 *.pkl
 *.out
 
+# Don't ignore GVF
+!tsp/dataset/val-gvf.h5
+!tsp/dataset/train-gvf.h5
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
