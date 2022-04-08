@@ -1,5 +1,6 @@
 import argparse
 
+import numpy as np
 import torch
 import h5py
 from tqdm import tqdm
@@ -9,18 +10,18 @@ def main(args):
     compression_flags = dict(compression='gzip', compression_opts=9)
 
     # Open features h5 file
-    with h5py.File(args.features_h5, 'r') as f:
+    with h5py.File(args.features_h5, 'r') as features_file:
         # Open output gvf h5 file
-        with h5py.File(args.output_h5, 'a') as output:
+        with h5py.File(args.output_h5, 'a') as output_file:
             # For each video
-            for (video_id, video_clips) in tqdm(f.items()):
-                if f.get(video_id) is None:
+            for (video_id, video_clips) in tqdm(features_file.items()):
+                if output_file.get(video_id) is None:
                     if args.pooling_fn == 'max':
-                        gvf, _ = torch.tensor(video_clips).max(dim=0)
+                        gvf, _ = torch.tensor(np.array(video_clips)).max(dim=0)
                     elif args.pooling_fn == 'avg':
-                        gvf, _ = torch.tensor(video_clips).mean(dim=0)
+                        gvf, _ = torch.tensor(np.array(video_clips)).mean(dim=0)
 
-                    output.create_dataset(video_id, data=gvf, **compression_flags)
+                    output_file.create_dataset(video_id, data=gvf, **compression_flags)
 
     print(f"Saved output file at {args.output_h5}")
 

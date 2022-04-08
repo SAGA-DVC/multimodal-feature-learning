@@ -1,5 +1,5 @@
 '''
-Code adapted from https://github.com/HumamAlwassel/TSP
+Codr adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
@@ -80,13 +80,14 @@ class EvalVideoDataset(Dataset):
             # TODO
             # Temp fix, not sure whether this is the right way
             vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
-            # print(vframes.shape)
-            # if vframes.shape[0] != self.clip_length:
-            #     raise RuntimeError(f'<EvalVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
-            #                    f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
-            #                    f'fps={fps}')
 
-        aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+        try:
+            aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+        except AssertionError:
+            print(f"aframes_to_fbank failed for video: {filename}")
+            print(info)
+            print(aframes.shape)
+            print(f"{clip_t_start}, {clip_t_end}")
         # TODO: Normalization with dataset mean & stddev?
         sample['clip'] = {
           "video": self.video_transform(vframes),
@@ -141,6 +142,13 @@ class EvalVideoDataset(Dataset):
 
         # remove unavailable videos from dataframe
         df = df.loc[df['filename'].isin(videos)].copy()
+
+
+        # TODO very temporary! The below videos give an error in aframes_to_fbank
+        # Update: This is because of wrong duration metadata in df
+        # TODO Append these to invalid videos
+        erroneous_vids = ['v_b1RAYvxWawA.mp4', 'v_G4mX4StOvQE.mp4', 'v_YcDlkZkPb6g.mp4', 'v_7rf06_5zNJk.mp4', 'v_z9l32VOM6wY.mp4', 'v_7Iy7Cjv2SAE.mp4', 'v_0gf3AgK1YLY.mp4', 'v_5asz3rt3QyQ.mp4', 'v_QDjaaUtepHo.mp4', 'v_0BXBfSWIR2k.mp4', 'v_D2JvqkKa-qM.mp4', 'v_fmtW5lcdT_0.mp4', 'v_DXu_aHrZaUs.mp4', 'v_vvdmMyyAtN0.mp4', 'v_JQf_oSGY8q4.mp4', 'v_jNGa0jPAMjI.mp4', 'v_BSl22Hx2WGM.mp4', 'v_mFWRIp164r4.mp4', 'v_4BofYu8Soz8.mp4', 'v_Mzojo2EeWu8.mp4', 'v_nHafujMomWg.mp4', 'v_QjaEDlh805g.mp4', 'v_QJfuxpFMn8s.mp4', 'v_u1upxlAgsqM.mp4', 'v_tD30qafrkhM.mp4', 'v_PG0ao4HkF8M.mp4', 'v_8wqlhbw4e30.mp4', 'v_QXN6odBnVmI.mp4', 'v_DwaoxjXwC1M.mp4', 'v_JTGS1YulUQw.mp4', 'v_jto8_gMKUjE.mp4']
+        df = df.loc[~ (df['filename'].isin(erroneous_vids))]
 
         df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
         print("Number of videos: ", len(df))

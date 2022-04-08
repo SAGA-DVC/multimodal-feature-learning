@@ -14,9 +14,9 @@ def load_config():
     cfg.dataset.train_csv_filename = "tsp/dataset/activitynet_v1-3_train_tsp_groundtruth.csv"  # Path to the training CSV file
     cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
 
-    cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_train_metadata.csv"
-    # cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_valid_metadata.csv"
-    # cfg.metadata_csv_filename = "tsp/dataset/activitynet_v1-3_test_metadata.csv"
+    cfg.metadata_csv_filename = "tsp/dataset/train-metadata.csv"
+    # cfg.metadata_csv_filename = "tsp/dataset/val-metadata.csv"
+    # cfg.metadata_csv_filename = "tsp/dataset/test-metadata.csv"
     
     #-------------------------------------------------------------------------------------------------
     # Video
@@ -121,7 +121,8 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda:3'
+    cfg.device = 'cuda:0'
+    # cfg.device = 'cpu'
     # cfg.gpu = 0
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
@@ -129,12 +130,12 @@ def load_config():
     # feature extractors is convenient and output isn't inadvertently replaced 
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'features-for-gvf'  # Path for saving checkpoints and results output  # TODO
+    cfg.output_dir = 'features-for-gvf'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
     cfg.batch_size = 64  # Batch size per GPU
-    cfg.num_workers = 1  # Number of data loading workers
+    cfg.num_workers = 4  # Number of data loading workers
 
     cfg.momentum = 0.9
     cfg.weight_decay = 0.005
@@ -162,15 +163,15 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Feature extraction
     cfg.feature_extraction = ml_collections.ConfigDict()
-    cfg.feature_extraction.num_shards = 1
-    cfg.feature_extraction.shard_id = 0
+    cfg.feature_extraction.num_shards = 2
+    cfg.feature_extraction.shard_id = 1
     cfg.feature_extraction.video_stride = 16
     cfg.feature_extraction.local_checkpoint = None
     cfg.feature_extraction.subdir = 'train'
 
     #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
-    distributed = False
+    distributed = True
     cfg.distributed = ml_collections.ConfigDict()
     if distributed:
         cfg.distributed.on = True
