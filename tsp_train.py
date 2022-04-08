@@ -196,6 +196,8 @@ def write_metrics_results_to_file(metric_logger, epoch, label_columns, output_di
 def main(cfg):
     print('TORCH VERSION: ', torch.__version__)
     print('TORCHVISION VERSION: ', torchvision.__version__)
+    print(f"Training dataset CSV: {cfg.dataset.train_csv_filename}")
+    print(f"Validation dataset CSV: {cfg.dataset.valid_csv_filename}")
 
     # Setup distributed processes (if enabled)
     utils.init_distributed_mode(cfg.distributed)
@@ -211,7 +213,9 @@ def main(cfg):
     train_dir = os.path.join(cfg.data_dir, cfg.train_subdir)
     valid_dir = os.path.join(cfg.data_dir, cfg.valid_subdir)
 
-    print("Loading data")
+    print(f"Training dataset videos directory: {train_dir}")
+    print(f"Validation dataset videos directory: {valid_dir}")
+
     label_mappings = []
     for label_mapping_json in cfg.dataset.label_mapping_jsons:
         with open(label_mapping_json) as f:
@@ -219,6 +223,8 @@ def main(cfg):
             label_mappings.append(
                 dict(zip(label_mapping, range(len(label_mapping)))))
 
+
+    print("Initializing datasets and dataloaders")
 
     # Video transforms
     float_zero_to_one = torchvision.transforms.Lambda(
@@ -286,7 +292,6 @@ def main(cfg):
     )
 
 
-    print("Creating dataloaders")
     train_sampler = torch.utils.data.DistributedSampler(
         train_dataset, shuffle=True) if cfg.distributed.on else None
     valid_sampler = torch.utils.data.DistributedSampler(
