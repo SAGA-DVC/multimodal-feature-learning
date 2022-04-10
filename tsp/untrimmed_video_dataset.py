@@ -28,7 +28,7 @@ class UntrimmedVideoDataset(Dataset):
     '''
 
     def __init__(self, csv_filename, root_dir, clip_length, frame_rate, clips_per_segment, temporal_jittering,
-            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False):
+            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False, unavailable_videos=[]):
         '''
         Args:
             csv_filename (string): Path to the CSV file with temporal segments information and annotations.
@@ -53,7 +53,12 @@ class UntrimmedVideoDataset(Dataset):
             debug (bool): If true, create a debug dataset with 100 samples.
         '''
         df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length, frame_rate)
-        self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
+        df = UntrimmedVideoDataset._remove_unavailable_raw_videos_from_df(df, root_dir, unavailable_videos)
+        self.df = UntrimmedVideoDataset._make_filenames_absolute(df, root_dir)
+        UntrimmedVideoDataset._check_files_exist(self.df)
+
+        
+        # self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
 
         self.clip_length = clip_length
         self.frame_rate = frame_rate
@@ -102,6 +107,10 @@ class UntrimmedVideoDataset(Dataset):
         # of the video frames between clip_t_start and clip_t_end seconds
         vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
 
+        if aframes.shape[1] == 0:
+            # Known issue, why unkown
+            return None
+
         # If video has different FPS than self.frame_rate, then change idxs to reflect this
         # If video fps == self.frame_rate, then idxs is simply [::1]
         idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
@@ -109,9 +118,13 @@ class UntrimmedVideoDataset(Dataset):
         vframes = vframes[idxs][:self.clip_length]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
 
         if vframes.shape[0] != self.clip_length:
-            raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
-                               f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
-                               f'fps={fps}, t_start={t_start}, t_end={t_end}')
+            # TODO
+            # Temp fix, not sure whether this is the right way
+            # Sometimes vframes.shape[0] is 15, probably due to precision errors, e.g. 15.9999 -> 15 (int)
+            vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
+            # raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
+            #                    f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
+            #                    f'fps={fps}, t_start={t_start}, t_end={t_end}')
 
         # apply video transforms
         sample['video'] = self.video_transform(vframes)
@@ -180,6 +193,39 @@ class UntrimmedVideoDataset(Dataset):
                 # print(f"Video {f} not present")
                 pass
         return df
+    
+    @staticmethod
+    def _remove_unavailable_raw_videos_from_df(df: pd.DataFrame, root_dir, unavailable_videos):
+        # get all available videos from root_dir
+        video_filenames = os.listdir(root_dir)
+
+        # remove unavailable videos from dataframe
+        df = df.loc[df['filename'].isin(video_filenames)].copy()
+        df = df.loc[~df['filename'].isin(unavailable_videos)]
+        
+        print(f"Number of segments after removing unavailable raw videos: {df.shape[0]}")
+
+        return df
+
+
+    @staticmethod
+    def _make_filenames_absolute(df, root_dir):
+        # Change filenames in df to absolute filenames
+        df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
+
+        return df
+
+    @staticmethod
+    def _check_files_exist(df):
+        filenames = df.drop_duplicates('filename')['filename'].values
+        for f in filenames:
+            try:
+                if not os.path.exists(f):
+                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
+                                    f'Double-check root_dir and csv_filename inputs.')
+            except ValueError:
+                # print(f"Video {f} not present")
+                pass
 
     @staticmethod
     def _resample_video_idx(num_frames, original_fps, new_fps):

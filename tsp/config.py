@@ -13,6 +13,7 @@ def load_config():
     cfg.dataset.label_columns = ["action-label", "temporal-region-label"]  # Names of the label columns in the CSV files
     cfg.dataset.train_csv_filename = "tsp/dataset/activitynet_v1-3_train_tsp_groundtruth.csv"  # Path to the training CSV file
     cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
+    cfg.dataset.unavailable_videos = 'tsp/dataset/unavailable-videos.json'
 
     cfg.metadata_csv_filename = "tsp/dataset/train-metadata.csv"
     # cfg.metadata_csv_filename = "tsp/dataset/val-metadata.csv"
@@ -50,7 +51,7 @@ def load_config():
     cfg.vivit.in_channels = 3
     cfg.vivit.d_model = 768
 
-    cfg.vivit.depth = 12
+    cfg.vivit.depth = 6
     cfg.vivit.temporal_depth = 4
 
     cfg.vivit.num_heads = 12
@@ -86,7 +87,7 @@ def load_config():
     cfg.ast.imagenet_pretrained = True
     cfg.ast.model_size='base224'
 
-    cfg.ast.depth = 12
+    cfg.ast.depth = 6
     
     cfg.ast.return_preclassifier = False  # Set True for Feature extraction
     cfg.ast.return_prelogits = True  # Set True for TSP & GVF extraction
@@ -109,10 +110,10 @@ def load_config():
     # TSP specific
     cfg.tsp = ml_collections.ConfigDict()
 
-    # Path to the h5 file containing global video features (GVF)
+    # Paths to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    cfg.tsp.global_video_features = None
-    # cfg.tsp.global_video_features = "gvf.h5"
+    cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
+    cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
     cfg.tsp.backbones = ['vivit', 'ast']
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
@@ -121,37 +122,36 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda:0'
+    cfg.device = 'cuda'
     # cfg.device = 'cpu'
-    # cfg.gpu = 0
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
-    # TODO: Better values for these so that working with different datasets or
-    # feature extractors is convenient and output isn't inadvertently replaced 
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'features-for-gvf'  # Path for saving checkpoints and results output
+    cfg.output_dir = 'tsp-output'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 64  # Batch size per GPU
-    cfg.num_workers = 4  # Number of data loading workers
+    cfg.batch_size = 16  # Batch size per GPU
+    cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
     cfg.weight_decay = 0.005
+    cfg.lr_drop = 200
+    cfg.lr_gamma = 0.1
 
-    cfg.lr_warmup_epochs = 2  # Number of warmup epochs
-    cfg.lr_milestones = [4, 6]  # Decrease lr on milestone epoch
-    cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
-    cfg.lr_warmup_factor = 1e-5
+    # cfg.lr_warmup_epochs = 0 # Number of warmup epochs
+    # cfg.lr_milestones = [4, 6]  # Decrease lr on milestone epoch
+    # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
+    # cfg.lr_warmup_factor = 1e-5
 
-    # cfg.resume = "output/epoch_1.pth"  # Resume from checkpoint (path specified)
-    cfg.resume = None
-    cfg.start_epoch = 0
+    cfg.resume = "tsp-output/epoch_1.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    # cfg.resume = None 
+    cfg.start_epoch = 0  # not used when resume is specified
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
 
-    cfg.print_freq = 100  # Print frequency in number of batches  # TODO
+    cfg.print_freq = 50  # Print frequency in number of batches
 
     cfg.debug = False 
     if cfg.debug:
@@ -161,10 +161,10 @@ def load_config():
         cfg.print_freq = 5
 
     #-------------------------------------------------------------------------------------------------
-    # Feature extraction
+    # Feature extraction, not used for TSP training
     cfg.feature_extraction = ml_collections.ConfigDict()
-    cfg.feature_extraction.num_shards = 2
-    cfg.feature_extraction.shard_id = 1
+    cfg.feature_extraction.num_shards = 1
+    cfg.feature_extraction.shard_id = 0
     cfg.feature_extraction.video_stride = 16
     cfg.feature_extraction.local_checkpoint = None
     cfg.feature_extraction.subdir = 'train'
@@ -188,10 +188,10 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = False
-    cfg.wandb.project = "vivit-tsp"
-    cfg.wandb.entity = "saga-vivit"
-    cfg.wandb.notes = "Test"
-
+    cfg.wandb.on = True
+    cfg.wandb.project = "tsp"
+    cfg.wandb.entity = "saga-dvc"
+    cfg.wandb.notes = "First run of TSP, continued after a break with 3 GPUs!"
+    # TODO Use wandb resume
 
     return cfg

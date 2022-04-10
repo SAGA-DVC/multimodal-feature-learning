@@ -19,14 +19,14 @@ import numpy as np
 from models.ast import AudioSpectrogramTransformer
 
 from tsp.vivit_wrapper import VivitWrapper
-from tsp.tsp_model import TSPModel, concat_combiner
+from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
 from tsp.config import load_config
 from tsp import utils
 
 
-def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log):
+def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log):
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter=' ')
@@ -36,6 +36,8 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         metric_logger.add_meter(
             'clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.2f}'))
     header = f'Train Epoch {epoch}:'
+
+    scaler = torch.cuda.amp.GradScaler()
 
     for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
         start_time = time.time()
@@ -53,19 +55,25 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
                    for x in label_columns]  # [(B, 1), (B, 1)]
 
         # Forward pass through TSPModel
-        outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
+        with torch.cuda.amp.autocast():
+            outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
 
-        # compute losses for each label column
-        head_losses, loss = [], 0
-        for output, target, alpha in zip(outputs, targets, loss_alphas):
-            head_loss = criterion(output, target)
-            head_losses.append(head_loss)
-            loss += alpha * head_loss
+            # compute losses for each label column
+            head_losses, loss = [], 0
+            for output, target, alpha in zip(outputs, targets, loss_alphas):
+                head_loss = criterion(output, target)
+                head_losses.append(head_loss)
+                loss += alpha * head_loss
 
         # backprop
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        for (idx, head_loss) in enumerate(head_losses):
+            if idx == len(head_losses)-1:
+                scaler.scale(head_loss).backward()
+            else:
+                scaler.scale(head_loss).backward(retain_graph=True)
+        scaler.step(optimizer)
+        scaler.update()
 
         compute_and_log_metrics(
             metric_logger=metric_logger,
@@ -75,6 +83,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
             targets=targets,
             head_losses=head_losses,
             label_columns=label_columns,
+            optimizer=optimizer,
             epoch=epoch,
             batch_idx=batch_idx,
             wandb_log=wandb_log
@@ -85,7 +94,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         metric_logger.meters['clips/s'].update(
             clip['video'].shape[0] / (time.time() - start_time))
 
-        lr_scheduler.step()
+    # lr_scheduler.step()
 
 
 def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir, wandb_log):
@@ -127,6 +136,7 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
                 targets=targets,
                 head_losses=head_losses,
                 label_columns=label_columns,
+                optimizer=None,
                 epoch=epoch,
                 batch_idx=batch_idx,
                 wandb_log=wandb_log
@@ -140,7 +150,7 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
     print(results)
 
 
-def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_losses, label_columns, epoch, batch_idx, wandb_log=False):
+def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_losses, label_columns, optimizer, epoch, batch_idx, wandb_log=False):
     log = {
         "epoch": epoch,
         "batch": batch_idx,
@@ -163,11 +173,15 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
         metric_logger.meters[f'loss-{label_column}'].update(head_loss.item())
 
     if wandb_log:
-        wandb.log({
+        log_dict = {
             f"{phase}/{key}": value
             for key, value in log.items()
-        })
-
+        }
+        if optimizer:
+            for g in optimizer.param_groups:
+                log_dict[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
+        
+        wandb.log(log_dict)
     pprint(log)
     print()
 
@@ -208,7 +222,8 @@ def main(cfg):
                    config=cfg.to_dict(), notes=cfg.wandb.notes)
 
     device = torch.device(cfg.device)
-
+    
+    print(f"Output directory: {cfg.output_dir}")
     os.makedirs(cfg.output_dir, exist_ok=True)
     train_dir = os.path.join(cfg.data_dir, cfg.train_subdir)
     valid_dir = os.path.join(cfg.data_dir, cfg.valid_subdir)
@@ -247,6 +262,9 @@ def main(cfg):
             (cfg.vivit.img_size, cfg.vivit.img_size))
     ])
 
+    with open(cfg.dataset.unavailable_videos, "r") as f:
+        unavailable_videos = json.load(f)
+
     # Training dataset
     train_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.train_csv_filename,
@@ -260,8 +278,9 @@ def main(cfg):
         video_transform=train_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
-        global_video_features=cfg.tsp.global_video_features,
-        debug=cfg.debug
+        global_video_features=cfg.tsp.train_global_video_features,
+        debug=cfg.debug,
+        unavailable_videos=unavailable_videos
     )
 
     valid_video_transform = torchvision.transforms.Compose([
@@ -273,6 +292,8 @@ def main(cfg):
         torchvision.transforms.CenterCrop(
             (cfg.vivit.img_size, cfg.vivit.img_size))
     ])
+
+    print("Length of train dataset: ", len(train_dataset))
 
     # Validation dataset
     valid_dataset = UntrimmedVideoDataset(
@@ -287,8 +308,9 @@ def main(cfg):
         video_transform=valid_video_transform,
         label_columns=cfg.dataset.label_columns,
         label_mappings=label_mappings,
-        global_video_features=cfg.tsp.global_video_features,
-        debug=cfg.debug
+        global_video_features=cfg.tsp.val_global_video_features,
+        debug=cfg.debug,
+        unavailable_videos=unavailable_videos
     )
 
 
@@ -298,22 +320,30 @@ def main(cfg):
         valid_dataset, shuffle=False) if cfg.distributed.on else None
 
     # Dataloaders
+
+    def collate_fn(batch):
+        batch = list(filter(lambda x: x is not None, batch))
+        return torch.utils.data.dataloader.default_collate(batch)
+
+
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=cfg.batch_size,
         shuffle=False,
         sampler=train_sampler,
         num_workers=cfg.num_workers,
-        pin_memory=True
+        pin_memory=True,
+        collate_fn=collate_fn
     )
 
     valid_dataloader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=cfg.batch_size,
         shuffle=False,
-        sampler=train_sampler,
+        sampler=valid_sampler,
         num_workers=cfg.num_workers,
-        pin_memory=True
+        pin_memory=True,
+        collate_fn=collate_fn
     )
 
 
@@ -331,9 +361,12 @@ def main(cfg):
 
         # Use return_preclassifier=True for VideoVisionTransformer
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+        backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
         input_modalities.append('video')
+        n_parameters_vivit = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+        print(f'Number of trainable params in ViViT: {n_parameters_vivit / 1000000} M')
 
     if 'ast' in cfg.tsp.backbones:
         print("Creating AST backbone")
@@ -343,9 +376,12 @@ def main(cfg):
 
         backbone = AudioSpectrogramTransformer(
             model_official=model_official, **cfg.ast)
+        backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
         input_modalities.append('audio')
+        n_parameters_ast = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+        print(f'Number of trainable params in AST: {n_parameters_ast / 1000000} M')
 
 
     # Model to be trained
@@ -354,12 +390,14 @@ def main(cfg):
         input_modalities=input_modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
-        combiner=concat_combiner,
+        combiner=add_combiner,
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
-        concat_gvf=cfg.tsp.global_video_features is not None,
+        concat_gvf=cfg.tsp.train_global_video_features is not None,
     )
 
+    n_parameters_tsp = sum(p.numel() for p in tsp_model.parameters() if p.requires_grad)
+    print(f'Total number of trainable params: {(n_parameters_tsp + n_parameters_ast + n_parameters_vivit) / 1000000} M')
 
     tsp_model.to(device)
     if cfg.distributed.on and cfg.distributed.sync_bn:
@@ -401,15 +439,20 @@ def main(cfg):
     )
 
     # Scheduler per iteration, not per epoch for warmup that lasts between epochs
-    warmup_iters = cfg.lr_warmup_epochs * len(train_dataloader)
-    lr_milestones = [len(train_dataloader) * m for m in cfg.lr_milestones]
-    lr_scheduler = WarmupMultiStepLR(
-        optimizer,
-        milestones=lr_milestones,
-        gamma=cfg.lr_gamma,
-        warmup_iters=warmup_iters,
-        warmup_factor=cfg.lr_warmup_factor
-    )
+    # warmup_iters = cfg.lr_warmup_epochs * len(train_dataloader)
+    # lr_milestones = [len(train_dataloader) * m for m in cfg.lr_milestones]
+
+
+    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, cfg.lr_drop, cfg.lr_gamma)
+
+
+    # lr_scheduler = WarmupMultiStepLR(
+    #     optimizer,
+    #     milestones=lr_milestones,
+    #     gamma=cfg.lr_gamma,
+    #     warmup_iters=warmup_iters,
+    #     warmup_factor=cfg.lr_warmup_factor
+    # )
 
 
     model_without_ddp = tsp_model
@@ -424,8 +467,10 @@ def main(cfg):
         checkpoint = torch.load(cfg.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        # lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         cfg.start_epoch = checkpoint['epoch'] + 1
+   
+    print("Start epoch: ", cfg.start_epoch)
 
 
     # Only evaluate model on validation dataset
@@ -458,7 +503,7 @@ def main(cfg):
             model=tsp_model,
             criterion=criterion,
             optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
+            # lr_scheduler=lr_scheduler,
             dataloader=train_dataloader,
             device=device,
             epoch=epoch,
@@ -474,7 +519,7 @@ def main(cfg):
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
+                # 'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'cfg': cfg
             }
