@@ -152,9 +152,9 @@ class DeformableTransformer(nn.Module):
 
         return memory
 
-    def prepare_decoder_input_query(self, memory, query_embed):
+    def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
-        param: memory (batch_size, sum of num_token in all level, d_model)
+        param: batch_size
         param: query_embed (num_queries, d_model * 2)
 
         return: init_reference_out (batch_size, num_queries, 1)
@@ -162,11 +162,10 @@ class DeformableTransformer(nn.Module):
         return: reference_points (batch_size, num_queries, 1)
         return: query_embed (num_queries, d_model * 2)
         '''
-        bs, _, _ = memory.shape
         query_embed, tgt = torch.chunk(query_embed, 2, dim=1)   #   tgt->(num_queries, d_model)  query_embed->(num_queries, d_model)
        
-        query_embed = query_embed.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, d_model)  
-        tgt = tgt.unsqueeze(0).expand(bs, -1, -1)   #   (batch_size, num_queries, d_model) 
+        query_embed = query_embed.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, d_model)  
+        tgt = tgt.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, d_model) 
         reference_points = self.reference_points(query_embed).sigmoid() #   nn.Linear(d_model, 1)  shape-> (batch_size, num_queries, 1)  
         init_reference_out = reference_points   #   (batch_size, num_queries, 1)
         
@@ -447,7 +446,7 @@ def _get_activation_fn(activation):
 )
 
 
-def build_deforamble_transformer(args):
+def build_unimodal_deformable_transformer(args):
     return DeformableTransformer(
         d_model=args.d_model,
         num_head=args.num_heads,

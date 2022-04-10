@@ -67,7 +67,7 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:100]
+        self.keys = self.keys[:12]
 
         self.video_folder = video_folder
         self.feature_sample_rate = args.feature_sample_rate
@@ -417,7 +417,7 @@ def build_dataset(video_set, args):
     """
     
     root_annotation = Path(args.anet_path)
-    root_video = Path(args.video_folder)
+    root_video = Path(args.raw_video_folder)
 
     assert root_annotation.exists(), f'Provided ActivityNet path {root_annotation} does not exist.'
     assert root_video.exists(), f'Provided ActivityNet video folder path {root_video} does not exist.'

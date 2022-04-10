@@ -12,8 +12,8 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.embedding_layers import TokenEmbedding, PositionalEmbedding, VivitEncoder
-from .modules.encoder import  VivitEncoder
+from .modules.embedding_layers import TokenEmbedding, PositionalEmbedding
+from .modules.encoders import VivitEncoder
 
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
@@ -229,3 +229,36 @@ class VideoVisionTransformer(nn.Module):
 
         if self.classification_head:
             load_classification_weights(self, model_official)
+
+
+
+
+def build_vivit(args):
+    # return VideoVisionTransformer(**args)
+    return VideoVisionTransformer(model_name=args.model_name, 
+                                num_frames=args.num_frames, 
+                                num_patches=args.num_patches, 
+                                img_size=args.img_size, 
+                                spatial_patch_size=args.spatial_patch_size, 
+                                temporal_patch_size=args.temporal_patch_size,
+                                tokenization_method=args.tokenization_method, 
+                                in_channels=args.in_channels, 
+                                d_model=args.d_model, 
+                                depth=args.depth, 
+                                temporal_depth=args.temporal_depth,
+                                num_heads=args.num_heads, 
+                                mlp_ratio=args.mlp_ratio, 
+                                qkv_bias=args.qkv_bias, 
+                                attention_dropout=args.attention_dropout, 
+                                projection_dropout=args.projection_dropout, 
+                                dropout_1=args.dropout_1, 
+                                dropout_2=args.dropout_2,
+                                pre_norm=args.pre_norm,
+                                classification_head=args.classification_head, 
+                                num_classes=args.num_classes,
+                                return_preclassifier=args.return_preclassifier, 
+                                return_prelogits=args.return_prelogits, 
+                                weight_init=args.weight_init, 
+                                weight_load=args.weight_load, 
+                                model_official=args.model_official
+                            )
