@@ -149,7 +149,7 @@ def load_config():
     # cfg.resume = None 
     cfg.start_epoch = 0  # not used when resume is specified
 
-    cfg.valid_only = True  # Test the model on the validation subset and exit
+    cfg.valid_only = False  # Test the model on the validation subset and exit
 
     cfg.print_freq = 50  # Print frequency in number of batches
 

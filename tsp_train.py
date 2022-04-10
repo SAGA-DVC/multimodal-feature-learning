@@ -468,7 +468,7 @@ def main(cfg):
         optimizer.load_state_dict(checkpoint['optimizer'])
         # lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         cfg.start_epoch = checkpoint['epoch'] + 1
-   
+
     print("Start epoch: ", cfg.start_epoch)
 
 
@@ -534,6 +534,12 @@ def main(cfg):
                 checkpoint,
                 os.path.join(cfg.output_dir, "checkpoint.pth")
             )
+
+            if cfg.wandb.on:
+                # versioning on wandb
+                artifact = wandb.Artifact("tsp", type="model", description=f"tsp model with backbones: {cfg.tsp.backbones}")
+                artifact.add_file(os.path.join(cfg.output_dir, f"epoch_{epoch}.pth"))
+                wandb.log_artifact(artifact)
 
 
         if cfg.train_only_one_epoch:
