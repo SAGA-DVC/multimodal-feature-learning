@@ -153,9 +153,9 @@ class ActivityNet(DVCdataset):
         feature = self.get_feature(key, self.video_folder) # (total_frames, height, width, num_channels)
 
         if self.args.data_rescale == 'interpolate':
-            feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, d_model)
+            feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, height, width, num_channels)
         elif self.args.data_rescale == 'uniform':
-            feature = feature[::self.args.feature_sample_rate] # (num_tokens//feature_sample_rate, d_model)
+            feature = feature[::self.args.feature_sample_rate] # (num_tokens//feature_sample_rate, height, width, num_channels)
 
         return torch.from_numpy(feature)
 

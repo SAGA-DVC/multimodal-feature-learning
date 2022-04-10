@@ -49,8 +49,13 @@ def load_config():
     
     data_rescale = ['interpolate', 'uniform']
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
-    cfg.dataset.activity_net.feature_sample_rate = 2
-    cfg.dataset.activity_net.rescale_len = 30    # Switch DVC
+    cfg.dataset.activity_net.video_feature_sample_rate = 2
+    cfg.dataset.activity_net.video_rescale_len = 30    # Switch DVC
+    cfg.dataset.activity_net.audio_feature_sample_rate = 2
+    cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
+
+    cfg.dataset.activity_net.num_mel_bins = 128
+    cfg.dataset.activity_net.audio_target_length = 64
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
     cfg.dataset.activity_net.num_classes = 100

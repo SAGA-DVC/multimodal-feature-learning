@@ -124,8 +124,8 @@ class UnimodalDeformableDVC(nn.Module):
         
         durations = obj['video_length'][:, 1]   # (batch_size)
 
-        # audio = obj['audio_tensor']    # (batch_size, num_tokens_a, d_model)
-        # audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
+        audio = obj['audio_tensor']    # (batch_size, num_tokens_a, d_model)
+        audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
         
         batch_size, _, _ = video.shape
 
@@ -181,11 +181,11 @@ class UnimodalDeformableDVC(nn.Module):
         indices = self.matcher(out, obj['video_target']) 
 
         # Context Features
-        with torch.no_grad():
-            max_gt_target_segments = obj['gt_segments'].shape[1]
+        # with torch.no_grad():
+        max_gt_target_segments = obj['gt_segments'].shape[1]
 
-            # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-            memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
+        # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
+        memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
 
         memory = memory.to(video.device)
         memory.requires_grad = True
@@ -353,6 +353,7 @@ class UnimodalDeformableDVC(nn.Module):
 
 
     # TODO - padding like in BMT??
+    # TODO - start end time to center length
     def crop_segments(self, features, pred_segment_boundaries, indices, max_gt_target_segments):
 
         """
