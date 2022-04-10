@@ -145,11 +145,11 @@ def load_config():
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    cfg.resume = "tsp-output/epoch_1.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    cfg.resume = "tsp-output/epoch_2.pth"    # Resume from checkpoint (path to checkpoint .pth)
     # cfg.resume = None 
     cfg.start_epoch = 0  # not used when resume is specified
 
-    cfg.valid_only = False  # Test the model on the validation subset and exit
+    cfg.valid_only = True  # Test the model on the validation subset and exit
 
     cfg.print_freq = 50  # Print frequency in number of batches
 
@@ -157,7 +157,7 @@ def load_config():
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 2
-        cfg.batch_size=4
+        cfg.batch_size=16
         cfg.print_freq = 5
 
     #-------------------------------------------------------------------------------------------------
@@ -191,7 +191,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "First run of TSP, continued after a break with 3 GPUs!"
+    cfg.wandb.notes = "First run of TSP, continued **again** after a break with 3 GPUs and hopefully no NaNs"
     # TODO Use wandb resume
 
     return cfg

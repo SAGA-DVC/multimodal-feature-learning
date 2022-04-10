@@ -177,9 +177,9 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
             f"{phase}/{key}": value
             for key, value in log.items()
         }
-        if optimizer:
-            for g in optimizer.param_groups:
-                log_dict[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
+        # if optimizer:
+        #     for g in optimizer.param_groups:
+        #         log_dict[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
         
         wandb.log(log_dict)
     pprint(log)
@@ -191,12 +191,12 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
 def write_metrics_results_to_file(metric_logger, epoch, label_columns, output_dir):
     results = f'** Valid Epoch {epoch}: '
     for label_column in label_columns:
-        results += f' <{label_column}> Accuracy {metric_logger.meters[f"acc_{label_column}"].global_avg:.3f}'
-        results += f' Loss {metric_logger.meters[f"loss_{label_column}"].global_avg:.3f};'
+        results += f' <{label_column}> Accuracy {metric_logger.meters[f"acc-{label_column}"].global_avg:.3f}'
+        results += f' Loss {metric_logger.meters[f"loss-{label_column}"].global_avg:.3f};'
 
     results += f' Total Loss {metric_logger.meters["loss"].global_avg:.3f}'
     avg_acc = np.average(
-        [metric_logger.meters[f'acc_{label_column}'].global_avg for label_column in label_columns])
+        [metric_logger.meters[f'acc-{label_column}'].global_avg for label_column in label_columns])
     results += f' Avg Accuracy {avg_acc:.3f}'
 
     results = f'{results}\n'
@@ -317,7 +317,7 @@ def main(cfg):
     train_sampler = torch.utils.data.DistributedSampler(
         train_dataset, shuffle=True) if cfg.distributed.on else None
     valid_sampler = torch.utils.data.DistributedSampler(
-        valid_dataset, shuffle=False) if cfg.distributed.on else None
+        valid_dataset, shuffle=True) if cfg.distributed.on else None
 
     # Dataloaders
 
@@ -404,8 +404,7 @@ def main(cfg):
         tsp_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(tsp_model)
 
     # Criterion for training (both heads)
-    criterion = torch.nn.CrossEntropyLoss(
-        ignore_index=-1)  # label == -1 => missing label
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)  # label == -1 => missing label
 
 
     if len(cfg.dataset.label_columns) == 1:

@@ -109,6 +109,7 @@ class UntrimmedVideoDataset(Dataset):
 
         if aframes.shape[1] == 0:
             # Known issue, why unkown
+            print(f"Read 0 audio frames for video: {filename}, clip_t_start:{clip_t_start}, clip_t_end:{clip_t_end}")
             return None
 
         # If video has different FPS than self.frame_rate, then change idxs to reflect this
@@ -119,20 +120,25 @@ class UntrimmedVideoDataset(Dataset):
 
         if vframes.shape[0] != self.clip_length:
             # TODO
-            # Temp fix, not sure whether this is the right way
             # Sometimes vframes.shape[0] is 15, probably due to precision errors, e.g. 15.9999 -> 15 (int)
+            print(f"[UntrimmedVideoDataset]: got clip of length {vframes.shape[0]} != {self.clip_length}."
+                               f"filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, "
+                               f"fps={fps}, t_start={t_start}, t_end={t_end}\n"
+                               "Padding frames with 0")
             vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
-            # raise RuntimeError(f'<UntrimmedVideoDataset>: got clip of length {vframes.shape[0]} != {self.clip_length}.'
-            #                    f'filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, '
-            #                    f'fps={fps}, t_start={t_start}, t_end={t_end}')
 
         # apply video transforms
         sample['video'] = self.video_transform(vframes)
 
-        # apply audio transforms
-        aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
-        # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
-        # TODO: Normalization with dataset mean & stddev?
+        try:
+            # apply audio transforms
+            aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+            # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
+            # TODO: Normalization with dataset mean & stddev?
+        except AssertionError:
+            print(f"aframes_to_fbank failed for video: {filename} clip_t_start: {clip_t_end} clip_t_end: {clip_t_end}")
+            return None
+
         sample['audio'] = aframes
 
         # add labels
@@ -162,7 +168,7 @@ class UntrimmedVideoDataset(Dataset):
         if num_segments - num_segments_to_keep > 0:
             # if at least one segment is applicable
             df = df[mask].reset_index(drop=True)
-            print(f'<UntrimmedVideoDataset>: removed {num_segments - num_segments_to_keep}='
+            print(f'[UntrimmedVideoDataset]: removed {num_segments - num_segments_to_keep}='
                 f'{100*(1 - num_segments_to_keep/num_segments):.2f}% from the {num_segments} '
                 f'segments from the input CSV file because they are shorter than '
                 f'clip_length={clip_length} frames using frame_rate={frame_rate} fps.')
@@ -187,7 +193,7 @@ class UntrimmedVideoDataset(Dataset):
         for f in filenames:
             try:
                 if not os.path.exists(f):
-                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
+                    raise ValueError(f'[UntrimmedVideoDataset]: file={f} does not exists. '
                                     f'Double-check root_dir and csv_filename inputs.')
             except ValueError:
                 # print(f"Video {f} not present")
@@ -221,7 +227,7 @@ class UntrimmedVideoDataset(Dataset):
         for f in filenames:
             try:
                 if not os.path.exists(f):
-                    raise ValueError(f'<UntrimmedVideoDataset>: file={f} does not exists. '
+                    raise ValueError(f'[UntrimmedVideoDataset]: file={f} does not exist. '
                                     f'Double-check root_dir and csv_filename inputs.')
             except ValueError:
                 # print(f"Video {f} not present")
