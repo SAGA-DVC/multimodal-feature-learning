@@ -24,6 +24,8 @@ except:
 from torch.autograd.function import once_differentiable
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 
+from .misc_modules import NestedTensor
+
 
 
 class TokenEmbedding(nn.Module):
@@ -34,12 +36,12 @@ class TokenEmbedding(nn.Module):
         temporal patch size, these embeddings can follow 'uniform frame sampling' or 'tubelet embedding' schemes.
 
         Parameters:
-            `img_size` (int): dimension of one frame of the video (should be a square i.e. height=width) (default 224)
-            `spatial_patch_size` (int): dimension of the patch that will be used to convolve over a frame (default 16)
-            `temporal_patch_size` (int): dimension of the patch that will be used to convolve over multiple frames (default 1)
+            `img_size` (int): Dimension of one frame of the video (should be a square i.e. height=width) (default 224)
+            `spatial_patch_size` (int): Dimension of the patch that will be used to convolve over a frame (default 16)
+            `temporal_patch_size` (int): Dimension of the patch that will be used to convolve over multiple frames (default 1)
             `in_channels` (int): number of channels of the each frame in the video. e.g. RGB. (default 3)
-            `num_classes` (int): number of classes for the prediction task (default 1000)
             `d_model` (int): Dimension of the tensors used to compute attention
+            `layer_norm` (): Normalization layer to be applied after the convolutional layer.
 
         """
         
@@ -71,6 +73,54 @@ class TokenEmbedding(nn.Module):
         x = self.layer_norm(x)
         
         return x
+
+
+class PatchEmbedding(nn.Module):
+    def __init__(self, img_size=224, patch_size=16, in_channels=3, d_model=768, layer_norm=None):
+
+        """
+        Converts audio into patch embeddings based on specified patches that convolve over the audio.
+
+        Parameters:
+            `img_size` (int): {irrelevant as num_patches computed using img_size is set in models/ast.py}
+            `patch_size` (int): {irrelevant as num_patches computed using patch_size is set in models/ast.py}
+            `in_channels` (int): {irrelevant as project_to_patch_embeddings layer computed using in_channels is set in models/ast.py}
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `layer_norm` (): Normalization layer to be applied after the convolutional layer.
+        """
+
+        super(PatchEmbedding, self).__init__()
+
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = (img_size // patch_size)  ** 2    # is assigned a new value in /models/ast.py
+
+        self.project_to_patch_embeddings = nn.Conv2d(in_channels, d_model, kernel_size=patch_size, stride=patch_size)    # is assigned a new object in /models/ast.py
+        
+        self.layer_norm = layer_norm(d_model) if layer_norm else nn.Identity()
+
+    def forward(self, x):
+
+        """
+        2D Convolutions are used to get the patch embeddings. 
+  
+        Parameters:
+           x (tensor): Tensor of dimension (batch_size, in_channels, time_frame_num, frequency_bins)
+
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, num_patches, d_model)
+
+        """
+
+        x = self.project_to_patch_embeddings(x)    # (batch_size, d_model, num_patches_height, num_patches_width)
+
+        x = x.flatten(2)    # (batch_size, d_model, num_patches) where num_patches = num_patches_height * num_patches_width
+        x = x.transpose(1, 2)    # (batch_size, num_patches, d_model)
+
+        x = self.layer_norm(x)
+
+        return x
+
 
 # TODO - pos emebd to accomomdate variable length input
 class PositionalEmbedding(nn.Module):

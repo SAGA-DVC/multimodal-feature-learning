@@ -24,7 +24,8 @@ except:
 from torch.autograd.function import once_differentiable
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 
-from .encoders import *
+from .layers import *
+from .embedding_layers import PatchEmbedding
  
 
 
@@ -218,4 +219,77 @@ class VivitEncoder(nn.Module):
                 x = positional_embedding_layer(x) # (batch_size, num_frames, num_patches, d_model)
                 x = layer(x) # (batch_size, num_frames, num_patches, d_model)
 
+        return x
+
+
+# TODO - move PatchEmbedding from AstEncoder to AudioSpectogramTransformer in models/ast.py
+class AstEncoder(nn.Module):
+
+    def __init__(self, img_size=224, patch_size=16, in_channels=3, num_classes=1000, d_model=768, depth=12,
+                 num_heads=12, mlp_ratio=4., qkv_bias=True,
+                 positional_embedding_dropout=0., attention_dropout=0., projection_dropout=0., 
+                 mlp_dropout_1=0., mlp_dropout_2=0., layer_norm=None, activation_layer=None, weight_init=''):
+
+        super(AstEncoder, self).__init__()
+
+        self.num_classes = num_classes
+        self.d_model = d_model
+
+        norm_layer = layer_norm or partial(nn.LayerNorm, eps=1e-6)
+        self.activation_layer = activation_layer or nn.GELU
+
+        self.patch_embeddings_layer = PatchEmbedding(img_size=img_size, patch_size=patch_size, 
+                                                    in_channels=in_channels, d_model=self.d_model, 
+                                                    layer_norm=None)
+        self.num_patches = self.patch_embeddings_layer.num_patches
+
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model)) # [class] token
+        # self.dist_token = nn.Parameter(torch.zeros(1, 1, d_model))
+
+        self.positional_embedding = nn.Parameter(torch.zeros(1, 1 + self.num_patches, d_model))
+        self.positional_embedding_dropout = nn.Dropout(p=positional_embedding_dropout)
+
+        self.encoderBlocks = nn.Sequential(
+            *[
+                EncoderBlock(
+                    d_model=self.d_model,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    dropout_1=mlp_dropout_1,
+                    dropout_2=mlp_dropout_2,
+                    attention_dropout=attention_dropout,
+                    projection_dropout=projection_dropout,
+                    activation_layer=self.activation_layer
+                )
+                for _ in range(depth)
+            ]
+        )
+
+        self.layer_norm = norm_layer(d_model)
+        self.head = nn.Linear(self.d_model, self.num_classes) if self.num_classes > 0 else nn.Identity()
+
+
+    def forward(self, x):
+        """
+        Performs a forward pass on the AST model
+
+        Parameters:
+            `x`: the input spectrogram, expected shape: (batch_size, in_channels = 1, time_frame_num, frequency_bins)
+        
+        Returns: 
+            `x`: tensor of dimension (batch_size, num_patches + 1, d_model)
+        """
+
+        x = self.patch_embeddings_layer(x)    # (batch_size, num_patches, d_model)
+        
+        cls_token = self.cls_token.expand(x.shape[0], -1, -1)    # (batch_size, 1, d_model)
+        x = torch.cat((cls_token, x), dim=1)    # (batch_size, num_patches + 1, d_model)
+        
+        x = self.positional_embedding_dropout(x + self.positional_embedding)    # (batch_size, num_patches + 1, d_model)
+        
+        x = self.encoderBlocks(x)    # (batch_size, num_patches + 1, d_model)
+        
+        x = self.layer_norm(x)    # (batch_size, num_patches + 1, d_model)
+        
         return x

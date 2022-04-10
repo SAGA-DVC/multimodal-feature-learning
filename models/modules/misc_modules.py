@@ -11,6 +11,7 @@ import numpy as np
 
 import torch
 import torchvision
+# import torchaudio
 import torch.nn as nn
 from torch import Tensor
 from torch.nn.init import xavier_uniform_, constant_
@@ -23,89 +24,6 @@ except:
     pass
 from torch.autograd.function import once_differentiable
 # needed due to empty tensor bug in pytorch and torchvision 0.5
-
-
-
-class MLP(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, dropout_1=0., dropout_2=0.):
-
-        """
-        Multi-layer perceptron which consists of 2 fully connected layers.
-  
-        Parameters:
-            `in_dim` (int): Input dimension of the MLP block
-            `hidden_dim` (int): Dimension of the intermediate layer
-            `out_dim` (int): Output dimension of the MLP block
-            `drouput_1` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
-            `drouput_2` (float): Dropout probability applied after the second fully connected layer in the MLP block (default 0.0)
-            
-        """
-
-        super(MLP, self).__init__()
-
-        self.fully_connected_1 = nn.Linear(in_dim, hidden_dim)
-        self.activation_layer = nn.GELU()
-        self.dropout_1 = nn.Dropout(dropout_1)
-        self.fully_connected_2 = nn.Linear(hidden_dim, out_dim)
-        self.dropout_2 = nn.Dropout(dropout_2)
-
-    def forward(self, x):
-
-        """
-        Performs a forward pass on the Multi-layer perceptron.
-
-        Parameters:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-        
-        Returns:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-
-        """
-
-        x = self.fully_connected_1(x) # (batch_size, num_tokens, hidden_dim)
-        x = self.activation_layer(x)
-        x = self.dropout_1(x) 
-        x = self.fully_connected_2(x)  # (batch_size, num_tokens, out_dim)
-        x = self.dropout_2(x) 
-
-        return x
-
-class FFN(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, num_layers, dropout=0.):
-
-        """
-        Feed Forward Network with 'n' layers
-  
-        Parameters:
-            `in_dim` (int): Input dimension of the MLP block
-            `hidden_dim` (int): Dimension of the intermediate layer
-            `out_dim` (int): Output dimension of the MLP block
-            `num_layers` (int): Depth of FFN
-            `drouput` (float): Dropout probability applied after the first fully connected layer in the MLP block (default 0.0)
-            
-        """
-
-        super(FFN, self).__init__()
-
-        self.num_layers = num_layers
-        h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([in_dim] + h, h + [out_dim]))
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-
-        """
-        Performs a forward pass on the Feed Forward Network.
-        Parameters:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-        
-        Returns:
-            x (tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-        """
-
-        for i, layer in enumerate(self.layers):
-            x = self.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-        return x
 
 
 def inverse_sigmoid(x, eps=1e-5):
@@ -175,3 +93,30 @@ def decide_two_stage(transformer_input_type, gt_boxes, gt_boxes_mask, criterion)
     else:
         raise ValueError('Wrong value of transformer_input_type, got {}'.format(transformer_input_type))
     return two_stage, disable_iterative_refine, proposals, proposals_mask
+
+
+
+def aframes_to_fbank(aframes: torch.Tensor, sample_frequency, num_mel_bins, target_length, ):
+    aframes = aframes - aframes.mean()
+
+    fbank = torchaudio.compliance.kaldi.fbank(
+        aframes, 
+        htk_compat=True,
+        sample_frequency=sample_frequency, 
+        use_energy=False,
+        window_type='hanning', 
+        num_mel_bins=num_mel_bins, 
+        dither=0.0, 
+        frame_shift=10)
+    
+    n_frames = fbank.shape[0]
+    p = target_length - n_frames
+
+    # cut and pad
+    if p > 0:
+        m = torch.nn.ZeroPad2d((0, 0, 0, p))
+        fbank = m(fbank)
+    elif p < 0:
+        fbank = fbank[0:target_length, :]
+    
+    return fbank
