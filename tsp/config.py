@@ -128,7 +128,7 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'tsp-output'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
@@ -145,8 +145,8 @@ def load_config():
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    cfg.resume = "tsp-output/epoch_2.pth"    # Resume from checkpoint (path to checkpoint .pth)
-    # cfg.resume = None 
+    # cfg.resume = "/home/arnavshah/tsp/tsp-output/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    cfg.resume = None 
     cfg.start_epoch = 0  # not used when resume is specified
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
@@ -191,7 +191,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "First run of TSP, continued **again** after a break with 3 GPUs and hopefully no NaNs"
-    # TODO Use wandb resume
+    cfg.wandb.notes = "Second run of TSP"
 
     return cfg

@@ -172,7 +172,7 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
         log[f"loss-{label_column}"] = head_loss.item()
         metric_logger.meters[f'loss-{label_column}'].update(head_loss.item())
 
-    if wandb_log:
+    if wandb_log and utils.is_main_process():
         log_dict = {
             f"{phase}/{key}": value
             for key, value in log.items()
@@ -217,7 +217,7 @@ def main(cfg):
     utils.init_distributed_mode(cfg.distributed)
 
     # Setup wandb
-    if cfg.wandb.on:
+    if cfg.wandb.on and utils.is_main_process():
         wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity,
                    config=cfg.to_dict(), notes=cfg.wandb.notes)
 
@@ -465,6 +465,11 @@ def main(cfg):
         print(f'Resuming from checkpoint {cfg.resume}')
         checkpoint = torch.load(cfg.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
+
+        for (i, backbone) in enumerate(cfg.tsp.backbones):
+            model_without_ddp.backbones[i].load_state_dict(checkpoint[backbone])
+            print(f"Loaded {backbone} weights from checkpoint")
+
         optimizer.load_state_dict(checkpoint['optimizer'])
         # lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         cfg.start_epoch = checkpoint['epoch'] + 1
@@ -523,11 +528,15 @@ def main(cfg):
                 'cfg': cfg
             }
 
+            for (key, backbone) in zip(cfg.tsp.backbones, model_without_ddp.backbones):
+                checkpoint[key] = backbone.state_dict()
+
             # save by epoch, "epoch_x.pth"
             utils.torch_save_on_master(
                 checkpoint,
                 os.path.join(cfg.output_dir, f"epoch_{epoch}.pth")
             )
+
 
             # latest checkpoint is called "checkpoint.pth"
             utils.torch_save_on_master(
@@ -535,7 +544,8 @@ def main(cfg):
                 os.path.join(cfg.output_dir, "checkpoint.pth")
             )
 
-            if cfg.wandb.on:
+
+            if cfg.wandb.on and utils.is_main_process():
                 # versioning on wandb
                 artifact = wandb.Artifact("tsp", type="model", description=f"tsp model with backbones: {cfg.tsp.backbones}")
                 artifact.add_file(os.path.join(cfg.output_dir, f"epoch_{epoch}.pth"))
