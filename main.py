@@ -14,7 +14,8 @@ from utils.misc import *
 from engine import train_one_epoch, evaluate
 
 from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
-from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
+# from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
+from dataset.anet_with_raw_video_audio import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 
 
 def main(args):

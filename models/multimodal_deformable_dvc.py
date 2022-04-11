@@ -7,55 +7,66 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
 from .vivit import build_vivit
-from .decoder import build_decoder
+from .ast import build_ast
+from .multimodal_deformable_transformer import build_multimodal_deformable_transformer
+from .base_encoder import build_base_encoder
 from .caption_decoder import build_caption_decoder
 
 from .modules.embedding_layers import PositionalEmbedding
+from .modules.misc_modules import decide_two_stage
 from .modules.layers import FFN
 
 from .load_weights import load_positional_embeddings
 
+
 # TODO - src mask
 # TODO - check devices for tensors
-class DVC(nn.Module):
-    def __init__(self, num_queries, d_model, num_classes, aux_loss, matcher, vocab_size, seq_len, embedding_matrix, 
-                vivit_args, ast_args, decoder_args, caption_args):
+class MultimodalDeformableDVC(nn.Module):
+    def __init__(self, input_modalities,num_queries, d_model, num_classes, aux_loss, matcher, 
+                vocab_size, seq_len, embedding_matrix, 
+                vivit_args, ast_args, detr_args, caption_args):
         
         """
-        DVC type model
+        MultimodalDeformableDVC model
         """
 
-        super(DVC, self).__init__()
+        super(MultimodalDeformableDVC, self).__init__()
         
+        self.input_modalities = input_modalities
         self.num_queries = num_queries
         self.aux_loss = aux_loss
 
-        self.query_embedding = nn.Embedding(num_queries, d_model)
+        self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
         self.matcher = matcher
-        
+
         # for ViViT    
-        self.positional_embedding_layer = None
-        self.spatial_positional_embedding_layer = None
+        # self.positional_embedding_layer = None
+        # self.spatial_positional_embedding_layer = None
 
-        if vivit_args.model_name == 'spatio temporal attention':
-            self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames * vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout) 
+        # if vivit_args.model_name == 'spatio temporal attention':
+        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames * vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout) 
             
-        elif vivit_args.model_name == 'factorised encoder':
-            self.spatial_positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout)
-            self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames + 1, d_model), vivit_args.positional_embedding_dropout)
+        # elif vivit_args.model_name == 'factorised encoder':
+        #     self.spatial_positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout)
+        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames + 1, d_model), vivit_args.positional_embedding_dropout)
 
-        else:
-            self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames, vivit_args.num_patches, d_model), vivit_args.positional_embedding_dropout)
+        # else:
+        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames, vivit_args.num_patches, d_model), vivit_args.positional_embedding_dropout)
 
 
-        self.vivit = build_vivit(vivit_args)
+        assert 'video' in input_modalities and 'audio' in input_modalities, f'input_modalities should contain both, "video" and "audio". You have {input_modalities}'
 
-        # TODO - add bimodal encoder
-        self.decoder = build_decoder(decoder_args)
+        # self.vivit = build_vivit(vivit_args)
+        # self.ast = build_ast(ast_args)
+
+        self.base_encoder = build_base_encoder(detr_args)
+
+        # Multimodal Deformable DETR
+        self.multimodal_deformable_transformer = build_multimodal_deformable_transformer(detr_args)
         
         # Captioning module
         self.caption_decoder = build_caption_decoder(caption_args, vocab_size, seq_len, embedding_matrix)
@@ -72,10 +83,11 @@ class DVC(nn.Module):
     # TODO - use log softmax?
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - add position embedding in caption decoder
+    # TODO - check all pos embed
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
-        Performs a forward pass on the DVC model which consists of the encoders, proposal decoder and caption decoder
+        Performs a forward pass on the MultimodalDeformableDVC model which consists of the encoders, proposal decoder and caption decoder
   
         Parameters:
             obj (collections.defaultdict): Consisitng of various keys including 
@@ -104,42 +116,72 @@ class DVC(nn.Module):
 
         """
 
-        video_input = obj['video_tensor']    # (batch_size, in_channels, num_frames, img_size, img_size)
+        video = obj['video_tensor']    # (batch_size, num_tokens_v, d_model)
+        video_mask = obj['video_mask']    # (batch_size, num_tokens_v)
         
-        # Encoder
-        # (batch_size, num_frames * num_patches + 1, d_model) OR
-        # (batch_size, num_frames + 1, d_model) OR 
-        # (batch_size, num_frames, num_patches, d_model) 
-        video = self.vivit(video_input, self.positional_embedding_layer, self.spatial_positional_embedding_layer)
+        durations = obj['video_length'][:, 1]   # (batch_size)
 
-        # TODO - check grad later
-        if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
-            video = video.reshape(video.shape[0], -1, video.shape[-1])
+        audio = obj['audio_tensor']    # (batch_size, num_tokens_a, d_model)
+        audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
+        
+        batch_size, _, _ = video.shape
+
+        # Base Encoder - for multi-scale features
+        video_srcs, video_masks, video_pos = self.base_encoder(video, video_mask, durations)
+        audio_srcs, audio_masks, audio_pos = self.base_encoder(audio, audio_mask, durations)
+
+        # Forword Encoder
+        video_src_flatten, video_temporal_shapes, video_level_start_index, video_valid_ratios, video_lvl_pos_embed_flatten, video_mask_flatten = self.multimodal_deformable_transformer.prepare_encoder_inputs(video_srcs, video_masks, video_pos)
+        audio_src_flatten, audio_temporal_shapes, audio_level_start_index, audio_valid_ratios, audio_lvl_pos_embed_flatten, audio_mask_flatten = self.multimodal_deformable_transformer.prepare_encoder_inputs(audio_srcs, audio_masks, audio_pos)
+
+        # (batch_size, sum of num_tokens in all levels, d_model) - Multi-scale frame features
+        video_memory, audio_memory = self.multimodal_deformable_transformer.forward_encoder(video_src_flatten, video_temporal_shapes, 
+                                                                video_level_start_index, video_valid_ratios, 
+                                                                video_lvl_pos_embed_flatten, video_mask_flatten, 
+                                                                audio_src_flatten, audio_temporal_shapes, 
+                                                                audio_level_start_index, audio_valid_ratios, 
+                                                                audio_lvl_pos_embed_flatten, audio_mask_flatten)
 
 
-        # Decoder
-        query_embedding_weight = self.query_embedding.weight.unsqueeze(0).repeat(video_input.shape[0], 1, 1)    # (batch_size, num_queries, d_model)
-        target = torch.zeros_like(query_embedding_weight)
+        # Forword Decoder
+        # TODO - see transformer_input_type = "gt_proposals"
+        transformer_input_type = "queries"
+        gt_boxes = None
+        gt_boxes_mask = None
+        criterion = None
+        two_stage, disable_iterative_refine, proposals, proposals_mask = decide_two_stage(transformer_input_type, gt_boxes, gt_boxes_mask, criterion)
 
-        # (1, batch_size, num_queries, d_model) OR # (depth, batch_size, num_queries, d_model)
-        res = self.decoder(target=target, memory=video, 
-                        positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
+        if two_stage:
+            init_reference, tgt, reference_points, query_embedding = self.multimodal_deformable_transformer.prepare_decoder_input_proposal(proposals)
+        else:
+            query_embedding_weight = self.query_embedding.weight
+            proposals_mask = torch.ones(batch_size, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
+            init_reference, tgt, reference_points, query_embedding_weight = self.multimodal_deformable_transformer.prepare_decoder_input_query(batch_size, query_embedding_weight)
+
+
+        # query_features (depth, batch_size, num_queries, d_model)
+        # inter_reference = (depth, batch_size, num_queries, 1)
+        query_features, inter_references = self.multimodal_deformable_transformer.forward_decoder(tgt, reference_points, query_embed, proposals_mask, video_memory, video_temporal_shapes,
+                                                        video_level_start_index, video_valid_ratios,
+                                                        video_mask_flatten, audio_memory, audio_temporal_shapes,
+                                                        audio_level_start_index, audio_valid_ratios,
+                                                        audio_mask_flatten,  disable_iterative_refine)
 
 
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding(res).softmax(dim=-1)
+        outputs_class = self.class_embedding(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
-        outputs_segment = self.segment_embedding(res).sigmoid()
+        outputs_segment = self.segment_embedding(query_features).sigmoid()
 
         out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1]}
 
 
-        # Caption Decoder
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
         indices = self.matcher(out, obj['video_target']) 
-
+        
+        # Context Features
         with torch.no_grad():
             max_gt_target_segments = obj['gt_segments'].shape[1]
 
@@ -152,6 +194,7 @@ class DVC(nn.Module):
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         memory_mask = memory_mask.to(video.device)
         
+        # Caption Decoder
         if is_training:
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
             tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
@@ -218,7 +261,7 @@ class DVC(nn.Module):
                 captions = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
 
             return out['pred_segments'], captions, out['pred_logits'], indices
-    
+
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_segment, outputs_captions):
@@ -367,7 +410,7 @@ class DVC(nn.Module):
     def init_weights(self):
 
         """
-        Initialises the weights and biases of the modules in the DVC model.
+        Initialises the weights and biases of the modules in the MultimodalDeformableDVC model.
         These parameters include positional embeddings.
         """
 
@@ -379,7 +422,7 @@ class DVC(nn.Module):
     def load_weights(self, model_official):
 
         """
-        Loads the weights and biases from the pre-trained model to the current model for modules in the DVC model
+        Loads the weights and biases from the pre-trained model to the current model for modules in the MultimodalDeformableDVC model
         These weights include positional embeddings.
 
         Parameters:

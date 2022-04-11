@@ -4,7 +4,8 @@ import pickle
 import torch
 import numpy as np
 import timm
-from .deformable_dvc import DeformableDVC
+from .unimodal_deformable_dvc import UnimodalDeformableDVC
+from .multimodal_deformable_dvc import MultimodalDeformableDVC
 from .dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
@@ -14,98 +15,70 @@ from config.config_dvc import load_config
 def build_model_and_criterion(args, dataset):
 
     # device = torch.device(args.device)
-
+    
     model_official = None
     
-    if args.model_official is not None:
-        model_official = timm.create_model(args.model_official, pretrained=True)
-        model_official.eval()
+    # if args.model_official is not None:
+    #     model_official = timm.create_model(args.model_official, pretrained=True)
+    #     model_official.eval()
 
-    matcher = build_matcher(args)
+    matcher = build_matcher(args.matcher)
     
-    embedding_matrix_file = Path(args.embedding_matrix_file_path)
+    embedding_matrix_file = Path(args.caption.embedding_matrix_file_path)
 
     if embedding_matrix_file.exists():
         embedding_matrix = pickle.load(open(embedding_matrix_file, 'rb'))
     else:
-        embedding_matrix = build_word_embedding_matrix(args.glove_file_path, dataset.vocab, args.pretrained_word_embed_dim)
+        embedding_matrix = build_word_embedding_matrix(args.caption.glove_file_path, dataset.vocab, args.caption.pretrained_word_embed_dim)
         pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
 
     if args.use_deformable_detr:
-
-        model = DeformableDVC(model_name=args.model_name, 
-                    num_frames_in=args.num_frames_in, 
-                    img_size=args.img_size, 
-                    spatial_patch_size=args.spatial_patch_size, 
-                    temporal_patch_size=args.temporal_patch_size,
-                    tokenization_method=args.tokenization_method, 
-                    in_channels=args.in_channels, 
-                    d_model=args.d_model, 
-                    vocab_size=len(dataset.vocab), 
-                    seq_len=dataset.max_caption_len_all, 
-                    embedding_matrix=embedding_matrix, 
-                    emb_weights_req_grad=False,
-                    depth=args.depth, 
-                    temporal_depth=args.temporal_depth,
-                    num_heads=args.num_heads, 
-                    mlp_ratio=args.mlp_ratio, 
-                    qkv_bias=args.qkv_bias,
-                    positional_embedding_dropout=args.positional_embedding_dropout,
-                    attention_dropout=args.attention_dropout, 
-                    projection_dropout=args.projection_dropout, 
-                    dropout_1=args.dropout_1, 
-                    dropout_2=args.dropout_2, 
-                    pre_norm=args.pre_norm,
-                    classification_head=args.classification_head, 
-                    num_classes=args.num_classes,
-                    num_queries=args.num_queries,
-                    aux_loss=args.aux_loss,
-                    return_preclassifier=args.return_preclassifier, 
-                    return_prelogits=args.return_prelogits, 
-                    weight_init=args.weight_init, 
-                    weight_load=args.weight_load, 
-                    model_official=model_official,
-                    return_intermediate=args.return_intermediate,
-                    matcher=matcher,
-                    detr_args=args.detr
-                )
+        
+        if len(args.input_modalities) == 1:
+            model = UnimodalDeformableDVC(input_modalities=args.input_modalities,
+                        num_queries=args.num_queries,
+                        d_model=args.d_model, 
+                        num_classes=args.num_classes,
+                        aux_loss=args.aux_loss,
+                        matcher=matcher,
+                        vocab_size=len(dataset.vocab), 
+                        seq_len=dataset.max_caption_len_all, 
+                        embedding_matrix=embedding_matrix, 
+                        vivit_args=args.vivit, 
+                        ast_args=args.ast, 
+                        detr_args=args.detr, 
+                        caption_args=args.caption
+                    )
+        else:
+            model = MultimodalDeformableDVC(input_modalities=args.input_modalities,
+                        num_queries=args.num_queries,
+                        d_model=args.d_model, 
+                        num_classes=args.num_classes,
+                        aux_loss=args.aux_loss,
+                        matcher=matcher,
+                        vocab_size=len(dataset.vocab), 
+                        seq_len=dataset.max_caption_len_all, 
+                        embedding_matrix=embedding_matrix, 
+                        vivit_args=args.vivit, 
+                        ast_args=args.ast, 
+                        detr_args=args.detr, 
+                        caption_args=args.caption
+                    )
     
     else :
         
-        model = DVC(model_name=args.model_name, 
-                    num_frames_in=args.num_frames_in, 
-                    img_size=args.img_size, 
-                    spatial_patch_size=args.spatial_patch_size, 
-                    temporal_patch_size=args.temporal_patch_size,
-                    tokenization_method=args.tokenization_method, 
-                    in_channels=args.in_channels, 
+        model = DVC(num_queries=args.num_queries,
                     d_model=args.d_model, 
+                    num_classes=args.num_classes,
+                    aux_loss=args.aux_loss,
+                    matcher=matcher,
                     vocab_size=len(dataset.vocab), 
                     seq_len=dataset.max_caption_len_all, 
                     embedding_matrix=embedding_matrix, 
-                    emb_weights_req_grad=False,
-                    depth=args.depth, 
-                    temporal_depth=args.temporal_depth,
-                    num_heads=args.num_heads, 
-                    mlp_ratio=args.mlp_ratio, 
-                    qkv_bias=args.qkv_bias,
-                    positional_embedding_dropout=args.positional_embedding_dropout,
-                    attention_dropout=args.attention_dropout, 
-                    projection_dropout=args.projection_dropout, 
-                    dropout_1=args.dropout_1, 
-                    dropout_2=args.dropout_2, 
-                    pre_norm=args.pre_norm,
-                    classification_head=args.classification_head, 
-                    num_classes=args.num_classes,
-                    num_queries=args.num_queries,
-                    aux_loss=args.aux_loss,
-                    return_preclassifier=args.return_preclassifier, 
-                    return_prelogits=args.return_prelogits, 
-                    weight_init=args.weight_init, 
-                    weight_load=args.weight_load, 
-                    model_official=model_official,
-                    return_intermediate=args.return_intermediate,
-                    matcher=matcher
+                    vivit_args=args.vivit, 
+                    ast_args=args.ast, 
+                    decoder_args=args.decoder,
+                    caption_args=args.caption
                 )
 
     weight_dict = {'loss_ce': args.cls_loss_coef, 
@@ -123,7 +96,7 @@ def build_model_and_criterion(args, dataset):
 
     criterion = SetCriterion(num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
                             eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
-                            focal_alpha=0.25, focal_gamma=2, )
+                            focal_alpha=0.25, focal_gamma=2)
 
     # # postprocessors = {'bbox': PostProcess(args)}
 

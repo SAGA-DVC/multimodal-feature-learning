@@ -130,4 +130,25 @@ class CaptionDecoder(nn.Module):
         load_positional_embeddings(self, model_official)
     
 
-    
+
+def build_caption_decoder(args, vocab_size, seq_len, embedding_matrix):
+    # return CaptionDecoder(vocab_size=vocab_size, seq_len=seq_len, embedding_matrix=embedding_matrix, **args)
+    return CaptionDecoder(vocab_size=vocab_size, 
+                        seq_len=seq_len, 
+                        d_model=args.d_model, 
+                        embedding_matrix=embedding_matrix, 
+                        emb_weights_req_grad=args.emb_weights_req_grad, 
+                        depth=args.depth, 
+                        num_heads=args.num_heads, 
+                        mlp_ratio=args.mlp_ratio, 
+                        qkv_bias=args.qkv_bias, 
+                        positional_embedding_dropout=args.positional_embedding_dropout,
+                        attention_dropout=args.attention_dropout, 
+                        projection_dropout=args.projection_dropout, 
+                        dropout_1=args.dropout_1, 
+                        dropout_2=args.dropout_2, 
+                        pre_norm=args.pre_norm,
+                        weight_init=args.weight_init, 
+                        weight_load=args.weight_load, 
+                        model_official=args.model_official, 
+                        return_intermediate=args.return_intermediate)

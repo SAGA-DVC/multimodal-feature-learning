@@ -53,7 +53,7 @@ if two_stage:
 else:
     query_embed = query_embed.weight
     proposals_mask = torch.ones(N, query_embed.shape[0], device=query_embed.device).bool()  #   (batch_size, num_queries)
-    init_reference, tgt, reference_points, query_embed = transformer.prepare_decoder_input_query(memory, query_embed)
+    init_reference, tgt, reference_points, query_embed = transformer.prepare_decoder_input_query(batch_size, query_embed)
 
 output, inter_references = transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
                                                         level_start_index, valid_ratios, query_embed,

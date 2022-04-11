@@ -110,4 +110,21 @@ class Decoder(nn.Module):
 
         self.decoder.apply(init_encoder_block_weights)
 
-    
+
+def build_decoder(args):
+    # return Decoder(**args)
+    return Decoder(d_model=args.d_model, 
+                depth=args.depth, 
+                num_heads=args.num_heads, 
+                mlp_ratio=args.mlp_ratio, 
+                qkv_bias=args.qkv_bias,  
+                attention_dropout=args.attention_dropout, 
+                projection_dropout=args.projection_dropout, 
+                dropout_1=args.dropout_1, 
+                dropout_2=args.dropout_2, 
+                pre_norm=args.pre_norm,
+                weight_init=args.weight_init, 
+                weight_load=args.weight_load, 
+                model_official=args.model_official,
+                return_intermediate=args.return_intermediate
+            )

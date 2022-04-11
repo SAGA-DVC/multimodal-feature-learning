@@ -19,6 +19,7 @@ from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import vocab
 
 from config.config_dvc import load_config
+from models.modules.misc_modules import aframes_to_fbank
 
 
 class DVCdataset(Dataset):
@@ -70,7 +71,6 @@ class DVCdataset(Dataset):
         self.keys = self.keys[:12]
 
         self.video_folder = video_folder
-        self.feature_sample_rate = args.feature_sample_rate
         self.is_training = is_training
         self.max_gt_target_segments = args.max_gt_target_segments
         self.args = args
@@ -147,17 +147,25 @@ class ActivityNet(DVCdataset):
             `key` (string) : An unique string representing a video in the dataset.
 
         Returns:
-            `feature` : Tensor of dimension (num_frames, height, width, num_channels) 
+            `video_feature` : Tensor of dimension (num_frames, height, width, num_channels) 
+            `audio_feature` : Tensor of dimension (time_frame_num, freq_bins)
         """
 
-        feature = self.get_feature(key, self.video_folder) # (total_frames, height, width, num_channels)
+        # (total_frames, height, width, num_channels), (time_frame_num, freq_bins)
+        video_feature, audio_feature = self.get_feature(key, self.video_folder)
+
+        if video_feature is None :
+            return None, None
 
         if self.args.data_rescale == 'interpolate':
-            feature = self.resizeFeature(feature, self.args.rescale_len) # (rescale_len, height, width, num_channels)
-        elif self.args.data_rescale == 'uniform':
-            feature = feature[::self.args.feature_sample_rate] # (num_tokens//feature_sample_rate, height, width, num_channels)
+            video_feature = self.resizeFeature(video_feature, self.args.video_rescale_len) # (video_rescale_len, height, width, num_channels)
+            audio_feature = self.resizeFeature(audio_feature, self.args.audio_rescale_len) # (audio_rescale_len, freq_bins)
 
-        return torch.from_numpy(feature)
+        elif self.args.data_rescale == 'uniform':
+            video_feature = video_feature[::self.args.video_feature_sample_rate] # (total_frames // video_feature_sample_rate, height, width, num_channels)
+            audio_feature = audio_feature[::self.args.audio_feature_sample_rate] # (time_frame_num // audio_feature_sample_rate, freq_bins)
+
+        return torch.from_numpy(video_feature), torch.from_numpy(audio_feature)
 
 
     def __getitem__(self, idx):
@@ -169,7 +177,8 @@ class ActivityNet(DVCdataset):
             `idx` (int) : An ID representing a video in the dataset.
 
         Returns:
-            `feature` (tensor): Tensor of dimension (num_frames, height, width, num_channels) representing the video (RGB)
+            `video_feature` (Tensor): Tensor of dimension (num_frames, height, width, num_channels) representing the video (RGB)
+            `audio_feature` (Tensor): Tensor of dimension (time_frame_num, freq_bins) representing the audio
             `gt_framestamps` (list): 2d list of ints, [gt_target_segments, 2], representing the start and end frames of the events in the video 
             `action_labels` (list): [gt_target_segments] representing class labels for each event in the video 
             `captions_label` (list): [gt_target_segments, max_caption_len] {variable dim 1} representing the token labels for the caption of each event in the video
@@ -181,8 +190,15 @@ class ActivityNet(DVCdataset):
 
         key = self.keys[idx] # string
 
-        feature = self.load_feature(key) # (num_frames, height, width, num_channels) 
-        feature = self.transforms_fn(feature) # (num_frames, num_channels, img_size, img_size)
+        # (num_frames, height, width, num_channels) , (time_frame_num, freq_bins)
+        video_feature, audio_feature = self.load_feature(key)
+
+        # TODO - unpack?
+        if video_feature is None:
+            return None, None, None, None, None, None, None, None, None   # number of return values
+
+        # transformsw for audio features done in get_feature()
+        video_feature = self.transforms_fn(video_feature) # (num_frames, num_channels, img_size, img_size)
 
         duration = self.annotation[key]['duration'] # float
         captions = self.annotation[key]['sentences'] # [gt_target_segments] -- list of strings
@@ -205,9 +221,9 @@ class ActivityNet(DVCdataset):
             caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len_all - 2] + [self.EOS_IDX]
             captions_label.append(caption_label)
 
-        gt_framestamps = self.process_time_step(duration, gt_timestamps, feature.shape[0]) # [gt_target_segments, 2] -- 2d list of ints
+        gt_framestamps = self.process_time_step(duration, gt_timestamps, video_feature.shape[0]) # [gt_target_segments, 2] -- 2d list of ints
 
-        return feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
+        return video_feature, audio_feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
 
 
     def get_feature(self, key, video_folder):
@@ -221,13 +237,27 @@ class ActivityNet(DVCdataset):
         
         Returns:
             `video_frames` : Tensor of dimension (total_frames, height, width, num_channels)
+            `audio_frames` : Tensor of dimension (time_frame_num, freq_bins)
         """
         
         path = os.path.join(video_folder, key + '.mp4')
         assert os.path.exists(path), f'{path} does not exist.'
 
-        video_frames, _, _ = read_video(filename=path) # (total_frames, height, width, num_channels)
-        return video_frames
+        video_frames, audio_frames, info = read_video(filename=path) # (total_frames, height, width, num_channels)
+
+        if audio_frames.shape[1] == 0:
+            # Known issue, why unkown
+            return None, None
+
+        try:
+            # apply audio transforms
+            audio_frames = aframes_to_fbank(audio_frames, info['audio_fps'], self.args.num_mel_bins, self.args.audio_target_length)
+
+        except AssertionError:
+            print(f"aframes_to_fbank failed for video: {key}")
+            return None, None
+
+        return video_frames, audio_frames
 
 
     def resizeFeature(self, input_data, new_size):
@@ -282,7 +312,8 @@ def collate_fn(batch, pad_idx):
         `batch` : list of shape (batch_size, 8) {8 attributes}
         `pad_idx` : index of the '<pad>' token in the vocabulary
     Attributes
-        `feature_list` (tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
+        `video_feature_list` (Tensor): Tensor of dimension (batch_size, num_frames, num_channels, height, width) representing the video (RGB)
+        `audio_feature_list` (Tensor):  Tensor of dimension (batch_size, time_frame_num, freq_bins) representing the audio
         `gt_timestamps_list` (list, int): [batch_size, gt_target_segments, 2], representing the start and end frames of the events in the video 
         `action_labels` (list, int): [batch_size, gt_target_segments] representing class labels for each event in the video 
         `caption_list` (list, int): [batch_size, gt_target_segments, max_caption_len] {variable dim 1 and 2} representing the token labels for the caption of each event in the video
@@ -295,12 +326,18 @@ def collate_fn(batch, pad_idx):
         `obj` : 
     """
 
+    # filter out all samples which are 'None'. This handles a glitch in torchvision.io.read_video() function for audio frames
+    batch = list(filter(lambda x: x[0] is not None, batch))
+
     batch_size = len(batch)
     _, num_channels, height, width = batch[0][0].shape
+    _, freq_bins = batch[0][1].shape
     
-    feature_list, gt_timestamps_list, action_labels, caption_list, gt_raw_timestamps, raw_duration, raw_caption, key = zip(*batch)
+    video_feature_list, audio_feature_list, gt_timestamps_list, action_labels, caption_list, gt_raw_timestamps, raw_duration, raw_caption, key = zip(*batch)
 
-    max_video_length = max([x.shape[0] for x in feature_list]) 
+    max_video_length = max([x.shape[0] for x in video_feature_list]) 
+    max_audio_length = max([x.shape[0] for x in audio_feature_list])
+
     max_caption_len = max(chain(*[[len(caption) for caption in captions] for captions in caption_list]))
     total_caption_num = sum([len(captions) for captions in caption_list])
 
@@ -309,6 +346,10 @@ def collate_fn(batch, pad_idx):
     video_tensor = torch.FloatTensor(batch_size, max_video_length, num_channels, height, width).zero_()
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
+
+    audio_tensor = torch.FloatTensor(batch_size, max_audio_length, freq_bins).zero_()
+    audio_length = torch.FloatTensor(batch_size, 3).zero_()  # time_frame_num, duration, gt_target_segments
+    audio_mask = torch.BoolTensor(batch_size, max_audio_length).zero_()
 
     caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(pad_idx)
     caption_length_all = torch.LongTensor(total_caption_num).zero_()
@@ -322,15 +363,22 @@ def collate_fn(batch, pad_idx):
     total_caption_idx = 0
 
     for idx in range(batch_size):
-        video_len = feature_list[idx].shape[0]
+        video_len = video_feature_list[idx].shape[0]
+        audio_len = audio_feature_list[idx].shape[0]
 
         gt_segment_length = len(gt_timestamps_list[idx])
 
-        video_tensor[idx, :video_len] = feature_list[idx]
+        video_tensor[idx, :video_len] = video_feature_list[idx]
         video_length[idx, 0] = float(video_len)
         video_length[idx, 1] = raw_duration[idx]
         video_length[idx, 2] = gt_segment_length
         video_mask[idx, :video_len] = True
+
+        audio_tensor[idx, :audio_len] = audio_feature_list[idx]
+        audio_length[idx, 0] = float(audio_len)
+        audio_length[idx, 1] = raw_duration[idx]
+        audio_length[idx, 2] = gt_segment_length
+        audio_mask[idx, :audio_len] = True
 
         caption_gather_idx[total_caption_idx:total_caption_idx + gt_segment_length] = idx
 
@@ -366,6 +414,15 @@ def collate_fn(batch, pad_idx):
                 "mask": video_mask,  # (batch_size, max_video_length)
                 "key": list(key),  # list, (batch_size)
                 "target": target,
+            },
+        
+        "audio":
+            {
+                "tensor": audio_tensor,  # (batch_size, max_audio_length, freq_bins)
+                "length": audio_length, # (batch_size, 3) - num_frames, duration, gt_target_segments
+                "mask": audio_mask,  # (batch_size, max_audio_length)
+                "key": list(key),  # list, (batch_size)
+                # "target": target,
             },
        
         "gt":

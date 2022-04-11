@@ -85,16 +85,16 @@ class MultimodalDeformableTransformer(nn.Module):
       
     def prepare_encoder_inputs(self, srcs, masks, pos_embeds):
         '''
-        :param srcs (list[[batch_size, dmodel, num-token]])
-        :param masks (list[[batch_size, num-token]])
-        :param pos_embeds (list[[batch_size, dmodel, num-token]])
+        :param srcs (list[[batch_size, d_model, num_tokens]])
+        :param masks (list[[batch_size, num_tokens]])
+        :param pos_embeds (list[[batch_size, d_model, num_tokens]])
 
-        :return src_flatten (batch_size, sum of num-token in all level, dmodel)
+        :return src_flatten (batch_size, sum of num_tokens in all level, d_model)
         :return temporal_shapes (num_feature_levels)    #   list of num token at each level
         :return level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         :return valid_ratios (batch_size, num_feature_levels)
-        :return lvl_pos_embed_flatten (batch_size, sum of num_token in all level, dmodel)
-        :return mask_flatten (batch_size, sum of num-token in all level)
+        :return lvl_pos_embed_flatten (batch_size, sum of num_token in all level, d_model)
+        :return mask_flatten (batch_size, sum of num_tokens in all level)
         '''
         # prepare input for encoder
         src_flatten = []
@@ -103,24 +103,24 @@ class MultimodalDeformableTransformer(nn.Module):
         temporal_shapes = []
         for lvl, (src, mask, pos_embed) in enumerate(zip(srcs, masks, pos_embeds)):
             """
-            src: (batch_size, dmodel, num_token)
+            src: (batch_size, d_model, num_token)
             mask: (batch_size, num_token)
-            pos_embed: (batch_size, dmodel, num_token)
+            pos_embed: (batch_size, d_model, num_token)
             """
-            batch_size, dmodel, num_token = src.shape
+            batch_size, d_model, num_token = src.shape
             temporal_shapes.append(num_token)
-            src = src.transpose(1, 2)  #    (batch_size, num_token, dmodel)
-            pos_embed = pos_embed.transpose(1, 2)  #    (batch_size, num_token, dmodel)
+            src = src.transpose(1, 2)  #    (batch_size, num_token, d_model)
+            pos_embed = pos_embed.transpose(1, 2)  #    (batch_size, num_token, d_model)
 
-            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)    #(batch_size, num_token, dmodel)   
+            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)    #(batch_size, num_token, d_model)   
             
             lvl_pos_embed_flatten.append(lvl_pos_embed)
             src_flatten.append(src)
             mask_flatten.append(mask)
 
-        src_flatten = torch.cat(src_flatten, 1) #   (batch_size, sum of num-token in all level, dmodel)
-        mask_flatten = torch.cat(mask_flatten, 1)   #   (batch_size, sum of num-token in all level)
-        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)   #   (batch_size, sum of num_token in all level, dmodel)
+        src_flatten = torch.cat(src_flatten, 1) #   (batch_size, sum of num_tokens in all level, d_model)
+        mask_flatten = torch.cat(mask_flatten, 1)   #   (batch_size, sum of num_tokens in all level)
+        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)   #   (batch_size, sum of num_token in all level, d_model)
         
         temporal_shapes = torch.as_tensor(temporal_shapes, dtype=torch.long, device=src_flatten.device) #   list of num token at each level
         level_start_index = torch.cat((temporal_shapes.new_zeros((1,)), temporal_shapes.cumsum(0)[:-1]))    #   list to find the start index of each level from flatten tensor 
@@ -133,23 +133,23 @@ class MultimodalDeformableTransformer(nn.Module):
                         video_mask_flatten, audio_src_flatten, audio_temporal_shapes, audio_level_start_index, audio_valid_ratios, audio_lvl_pos_embed_flatten,
                         audio_mask_flatten):
         """
-            :param video_src_flatten (batch_size, sum of num_token in all level, dmodel)
+            :param video_src_flatten (batch_size, sum of num_token in all level, d_model)
             :param video_temporal_shapes: (num_feature_levels)    #   list of num token at each level
             :param video_level_start_index: (num_feature_levels)  #   list to find the start index of each level from flatten tensor
             :param video_valid_ratios: (batch_size, num_feature_levels)
-            :param video_lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, dmodel)
-            :param video_mask_flatten: (batch_size, sum of num-token in all level)
-            :param audio_src_flatten (batch_size, sum of num_token in all level, dmodel)
+            :param video_lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, d_model)
+            :param video_mask_flatten: (batch_size, sum of num_tokens in all level)
+            :param audio_src_flatten (batch_size, sum of num_token in all level, d_model)
             :param audio_temporal_shapes: (num_feature_levels)    #   list of num token at each level
             :param audio_level_start_index: (num_feature_levels)  #   list to find the start index of each level from flatten tensor
             :param audio_valid_ratios: (batch_size, num_feature_levels)
-            :param audio_lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, dmodel)
-            :param audio_mask_flatten: (batch_size, sum of num-token in all level)
+            :param audio_lvl_pos_embed_flatten: (batch_size, sum of num_token in all level, d_model)
+            :param audio_mask_flatten: (batch_size, sum of num_tokens in all level)
 
 
             return: memory -> (audio_attended_visual, visual_attended_audio)
-            audio_attended_visual: (batch_size, sum of num_token in all level, dmodel) 
-            visual_attended_audio: (batch_size, sum of num_token in all level, dmodel)     
+            audio_attended_visual: (batch_size, sum of num_token in all level, d_model) 
+            visual_attended_audio: (batch_size, sum of num_token in all level, d_model)     
         """
         # encoder
         if self.no_encoder:
@@ -163,19 +163,19 @@ class MultimodalDeformableTransformer(nn.Module):
 
     def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
-        param: memory (batch_size, sum of num_token in all level, dmodel)
-        param: query_embed (num_queries, dmodel * 2)
+        param: memory (batch_size, sum of num_token in all level, d_model)
+        param: query_embed (num_queries, d_model * 2)
 
         return: init_reference_out (batch_size, num_queries, 1)
-        return: tgt (batch_size, num_queries, dmodel)
+        return: tgt (batch_size, num_queries, d_model)
         return: reference_points (batch_size, num_queries, 1)
-        return: query_embed (num_queries, dmodel * 2)
+        return: query_embed (num_queries, d_model * 2)
         '''
         
-        query_embed, tgt = torch.chunk(query_embed, 2, dim=1)   #   tgt->(num_queries, dmodel)  query_embed->(num_queries, dmodel)
+        query_embed, tgt = torch.chunk(query_embed, 2, dim=1)   #   tgt->(num_queries, d_model)  query_embed->(num_queries, d_model)
        
-        query_embed = query_embed.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, dmodel)  
-        tgt = tgt.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, dmodel) 
+        query_embed = query_embed.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, d_model)  
+        tgt = tgt.unsqueeze(0).expand(batch_size, -1, -1)   #   (batch_size, num_queries, d_model) 
         reference_points = self.reference_points(query_embed).sigmoid() #   nn.Linear(d_model, 1)  shape-> (batch_size, num_queries, 1)  
         init_reference_out = reference_points   #   (batch_size, num_queries, 1)
         
@@ -235,21 +235,21 @@ class MultimodalDeformableTransformerEncoderLayer(nn.Module):
 
     def forward(self, video_src, video_pos, video_reference_points, video_temporal_shapes, video_level_start_index, video_padding_mask, audio_src, audio_pos, audio_reference_points, audio_temporal_shapes, audio_level_start_index, audio_padding_mask):
         '''
-        param: video_src (batch_size, sum of num_token in all level, dmodel)
-        param: video_pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
+        param: video_src (batch_size, sum of num_token in all level, d_model)
+        param: video_pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
         param: video_reference_points (batch_size, sum of num_token in all level, num_feature_levels, 1)
         param: video_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: video_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
-        param: video_padding_mask (batch_size, sum of num-token in all level)
-        param: audio_src (batch_size, sum of num_token in all level, dmodel)
-        param: audio_pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
+        param: video_padding_mask (batch_size, sum of num_tokens in all level)
+        param: audio_src (batch_size, sum of num_token in all level, d_model)
+        param: audio_pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
         param: audio_reference_points (batch_size, sum of num_token in all level, num_feature_levels, 1)
         param: audio_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: audio_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
-        param: audio_padding_mask (batch_size, sum of num-token in all level)
+        param: audio_padding_mask (batch_size, sum of num_tokens in all level)
         
-        return: audio_attended_visual: (batch_size, sum of num_token in all level, dmodel) 
-        return: visual_attended_audio: (batch_size, sum of num_token in all level, dmodel) 
+        return: audio_attended_visual: (batch_size, sum of num_token in all level, d_model) 
+        return: visual_attended_audio: (batch_size, sum of num_token in all level, d_model) 
         '''
         #   self attention for video
         video_src2 = self.self_attn(self.with_pos_embed(video_src, video_pos), video_reference_points, video_src, video_temporal_shapes, video_level_start_index,
@@ -297,22 +297,22 @@ class MultimodalDeformableTransformerEncoder(nn.Module):
 
     def forward(self, video_src, video_temporal_shapes, video_level_start_index, video_valid_ratios, video_pos, video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_valid_ratios, audio_pos, audio_padding_mask):
         """
-        param: video_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_src (batch_size, sum of num_token in all level, d_model)
         param: video_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: video_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: video_valid_ratios (batch_size, num_feature_levels)
-        param: video_pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
-        param: video_padding_mask (batch_size, sum of num-token in all level)
-        param: audio_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
+        param: video_padding_mask (batch_size, sum of num_tokens in all level)
+        param: audio_src (batch_size, sum of num_token in all level, d_model)
         param: audio_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: audio_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: audio_valid_ratios (batch_size, num_feature_levels)
-        param: audio_pos (batch_size, sum of num_token in all level, dmodel) #  lvl_pos_embed_flatten
-        param: audio_padding_mask (batch_size, sum of num-token in all level)
+        param: audio_pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
+        param: audio_padding_mask (batch_size, sum of num_tokens in all level)
 
         return: memory -> (audio_attended_visual, visual_attended_audio)
-        audio_attended_visual: (batch_size, sum of num_token in all level, dmodel) 
-        visual_attended_audio: (batch_size, sum of num_token in all level, dmodel) 
+        audio_attended_visual: (batch_size, sum of num_token in all level, d_model) 
+        visual_attended_audio: (batch_size, sum of num_token in all level, d_model) 
 
         """
         
@@ -380,22 +380,22 @@ class MultimodalDeformableTransformerDecoderLayer(nn.Module):
                 audio_src_padding_mask):
 
         """
-        param: tgt (batch_size, num_queries, dmodel)
+        param: tgt (batch_size, num_queries, d_model)
         param: query_pos (num_queries, hidden_dim * 2)
         param: reference_points (batch_size, num_queries, 1)
         param: query_mask (batch_size, num_queries)
 
-        param: video_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_src (batch_size, sum of num_token in all level, d_model)
         param: video_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: video_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor    
-        param: video_padding_mask (batch_size, sum of num-token in all level)
-        param: audio_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_padding_mask (batch_size, sum of num_tokens in all level)
+        param: audio_src (batch_size, sum of num_token in all level, d_model)
         param: audio_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: audio_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor    
-        param: audio_padding_mask (batch_size, sum of num-token in all level)
+        param: audio_padding_mask (batch_size, sum of num_tokens in all level)
         
 
-        return: output (batch_size, num_queries, dmodel)
+        return: output (batch_size, num_queries, d_model)
         """
         # self attention
         q = k = self.with_pos_embed(tgt, query_pos)
@@ -419,9 +419,9 @@ class MultimodalDeformableTransformerDecoderLayer(nn.Module):
         tgt_audio = self.norm1(tgt_audio)
 
         # bridge
-        tgt = torch.cat([tgt_video, tgt_audio], dim=-1) #   (batch_size, num_queries, 2*dmodel)
+        tgt = torch.cat([tgt_video, tgt_audio], dim=-1) #   (batch_size, num_queries, 2*d_model)
         tgt = self.norm4(tgt)
-        tgt = self.linear3(tgt) #   (batch_size, num_queries, dmodel)
+        tgt = self.linear3(tgt) #   (batch_size, num_queries, d_model)
         tgt = self.dropout5(tgt)
         tgt = self.activation(tgt)
 
@@ -443,28 +443,28 @@ class MultimodalDeformableTransformerDecoder(nn.Module):
                 video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_valid_ratios,
                 audio_padding_mask,  disable_iterative_refine=False):
         """
-        param: tgt (batch_size, num_queries, dmodel)
+        param: tgt (batch_size, num_queries, d_model)
         param: reference_points (batch_size, num_queries, 1)
         param: query_pos (num_queries, hidden_dim * 2)
         param: query_padding_mask (batch_size, num_queries)
 
-        param: video_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_src (batch_size, sum of num_token in all level, d_model)
         param: video_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: video_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: video_valid_ratios (batch_size, num_feature_levels)
-        param: video_padding_mask (batch_size, sum of num-token in all level)
-        param: audio_src (batch_size, sum of num_token in all level, dmodel)
+        param: video_padding_mask (batch_size, sum of num_tokens in all level)
+        param: audio_src (batch_size, sum of num_token in all level, d_model)
         param: audio_temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: audio_level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: audio_valid_ratios (batch_size, num_feature_levels)
-        param: audio_padding_mask (batch_size, sum of num-token in all level)
+        param: audio_padding_mask (batch_size, sum of num_tokens in all level)
         
         param: disable_iterative_refine bool
         
-        return: output: (number of decoder_layers, batch_size, num_queries, dmodel)
+        return: output: (number of decoder_layers, batch_size, num_queries, d_model)
         return: reference_points: (number of decoder_layers, batch_size, num_queries, 1)
         """
-        output = tgt    #   (batch_size, num_queries, dmodel)
+        output = tgt    #   (batch_size, num_queries, d_model)
 
         intermediate = []
         intermediate_reference_points = []
@@ -476,7 +476,7 @@ class MultimodalDeformableTransformerDecoder(nn.Module):
             else:
                 assert reference_points.shape[-1] == 1
                 reference_points_input = reference_points[:, :, None] * video_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
-            output = layer(output, query_pos, reference_points_input, query_padding_mask, video_src, video_temporal_shapes, video_level_start_index, video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_padding_mask)    #   (batch_size, num_queries, dmodel)
+            output = layer(output, query_pos, reference_points_input, query_padding_mask, video_src, video_temporal_shapes, video_level_start_index, video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_padding_mask)    #   (batch_size, num_queries, d_model)
             
             # hack implementation for iterative bounding box refinement
             if disable_iterative_refine:
@@ -522,7 +522,7 @@ def _get_activation_fn(activation):
 )
 
 
-def build_multimodal_deforamble_transformer(args):
+def build_multimodal_deformable_transformer(args):
     return MultimodalDeformableTransformer(
         d_model=args.hidden_dim,
         nhead=args.nheads,
