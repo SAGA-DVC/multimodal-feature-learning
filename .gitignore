@@ -6,6 +6,7 @@ features
 *.out
 wandb
 tsp-output
+*-output*
 
 # Don't ignore GVF
 !tsp/dataset/val-gvf.h5

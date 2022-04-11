@@ -30,14 +30,12 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter=' ')
-    for g in optimizer.param_groups:
-        metric_logger.add_meter(
-            f'{g["name"]}-lr', utils.SmoothedValue(window_size=1, fmt='{value:.2e}'))
-        metric_logger.add_meter(
-            'clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.2f}'))
+    # for g in optimizer.param_groups:
+    #     metric_logger.add_meter(
+    #         f'{g["name"]}-lr', utils.SmoothedValue(window_size=1, fmt='{value:.2e}'))
+    metric_logger.add_meter(
+        'clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.2f}'))
     header = f'Train Epoch {epoch}:'
-
-    scaler = torch.cuda.amp.GradScaler()
 
     for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
         start_time = time.time()
@@ -55,25 +53,19 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
                    for x in label_columns]  # [(B, 1), (B, 1)]
 
         # Forward pass through TSPModel
-        with torch.cuda.amp.autocast():
-            outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
+        outputs = model(clip, gvf=gvf)  # [(B, 2), (B, c)]
 
-            # compute losses for each label column
-            head_losses, loss = [], 0
-            for output, target, alpha in zip(outputs, targets, loss_alphas):
-                head_loss = criterion(output, target)
-                head_losses.append(head_loss)
-                loss += alpha * head_loss
+        # compute losses for each label column
+        head_losses, loss = [], 0
+        for output, target, alpha in zip(outputs, targets, loss_alphas):
+            head_loss = criterion(output, target)
+            head_losses.append(head_loss)
+            loss += alpha * head_loss
 
         # backprop
         optimizer.zero_grad()
-        for (idx, head_loss) in enumerate(head_losses):
-            if idx == len(head_losses)-1:
-                scaler.scale(head_loss).backward()
-            else:
-                scaler.scale(head_loss).backward(retain_graph=True)
-        scaler.step(optimizer)
-        scaler.update()
+        loss.backward()
+        optimizer.step()
 
         compute_and_log_metrics(
             metric_logger=metric_logger,
@@ -89,8 +81,8 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
             wandb_log=wandb_log
         )
 
-        for g in optimizer.param_groups:
-            metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
+        # for g in optimizer.param_groups:
+        #     metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
         metric_logger.meters['clips/s'].update(
             clip['video'].shape[0] / (time.time() - start_time))
 

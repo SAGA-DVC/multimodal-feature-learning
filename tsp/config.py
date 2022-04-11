@@ -153,10 +153,10 @@ def load_config():
 
     cfg.print_freq = 50  # Print frequency in number of batches
 
-    cfg.debug = False 
+    cfg.debug = False
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
-        cfg.epochs = 2
+        cfg.epochs = 3
         cfg.batch_size=16
         cfg.print_freq = 5
 
@@ -191,6 +191,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Second run of TSP"
+    cfg.wandb.notes = "Third run of TSP"
 
     return cfg
