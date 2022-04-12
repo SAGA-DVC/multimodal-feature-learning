@@ -115,20 +115,20 @@ def load_config():
     cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
     cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
     cfg.tsp.backbones = ['vivit', 'ast']
-    cfg.tsp.backbone_lr = 0.01  # Backbone layers learning rate
+    cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda:0'
+    cfg.device = 'cuda'
     # cfg.device = 'cpu'
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/temp-output'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-4'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
@@ -153,7 +153,7 @@ def load_config():
 
     cfg.print_freq = 50  # Print frequency in number of batches
 
-    cfg.debug = True
+    cfg.debug = False 
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 8
@@ -171,7 +171,7 @@ def load_config():
 
     #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
-    distributed = False
+    distributed = True
     cfg.distributed = ml_collections.ConfigDict()
     if distributed:
         cfg.distributed.on = True
@@ -191,6 +191,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Debug run of TSP, continued"
+    cfg.wandb.notes = "Fourth run of TSP"
 
     return cfg
