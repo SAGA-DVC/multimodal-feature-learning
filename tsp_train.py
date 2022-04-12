@@ -17,7 +17,6 @@ import torchvision
 import wandb
 import timm
 
-sys.path.insert(0, '..')
 
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
