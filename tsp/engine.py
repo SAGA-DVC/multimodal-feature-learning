@@ -52,7 +52,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
         loss.backward()
 
         if utils.is_main_process() and batch_idx % print_freq == 0:
-            plots.plot_grad_flow_line(model.module..named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
+            plots.plot_grad_flow_line(model.module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
             plots.plot_grad_flow_line(model.module.backbones[0].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='vivit', output_dir=output_dir)
             plots.plot_grad_flow_line(model.module.backbones[1].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='ast', output_dir=output_dir)
 
