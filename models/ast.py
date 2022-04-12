@@ -28,7 +28,8 @@ class AudioSpectrogramTransformer(nn.Module):
         self.original_num_patches = model_official.patch_embed.num_patches
         self.original_hw = int(self.original_num_patches ** 0.5)
         self.original_embedding_dim = model_official.pos_embed.shape[2]
-        self.mlp_head = nn.Sequential(nn.LayerNorm(self.original_embedding_dim), nn.Linear(self.original_embedding_dim, label_dim))
+        if not return_preclassifier and not return_prelogits:
+            self.mlp_head = nn.Sequential(nn.LayerNorm(self.original_embedding_dim), nn.Linear(self.original_embedding_dim, label_dim))
 
         # automatically get the intermediate shape
         f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
@@ -101,5 +102,6 @@ class AudioSpectrogramTransformer(nn.Module):
         if self.return_prelogits:
             return x
 
-        x = self.mlp_head(x)    # (batch_size, d_model) -> (batch_size, class)
-        return x
+        if not self.return_preclassifier and not self.return_prelogits:
+            x = self.mlp_head(x)    # (batch_size, d_model) -> (batch_size, class)
+            return x

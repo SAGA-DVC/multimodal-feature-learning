@@ -16,17 +16,17 @@ import torchvision
 import wandb
 import timm
 import numpy as np
-from models.ast import AudioSpectrogramTransformer
 
 from tsp.vivit_wrapper import VivitWrapper
+from models.ast import AudioSpectrogramTransformer
 from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.lr_scheduler import WarmupMultiStepLR
 from tsp.config import load_config
 from tsp import utils
+from utils import plots
 
-
-def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log):
+def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log, output_dir):
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter=' ')
@@ -65,6 +65,12 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
         # backprop
         optimizer.zero_grad()
         loss.backward()
+
+        if batch_idx % 50 == 0:
+            plots.plot_grad_flow_line(model.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
+            plots.plot_grad_flow_line(model.backbones[0].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='vivit', output_dir=output_dir)
+            plots.plot_grad_flow_line(model.backbones[1].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='ast', output_dir=output_dir)
+
         optimizer.step()
 
         compute_and_log_metrics(
@@ -452,6 +458,10 @@ def main(cfg):
             tsp_model, device_ids=[cfg.distributed.rank])
         model_without_ddp = tsp_model.module
 
+    # if cfg.wandb.on:
+        # wandb.watch(model_without_ddp, log_freq=1, log='all')
+        # for (i, backbone) in enumerate(cfg.tsp.backbones):
+        #     wandb.watch(model_without_ddp.backbones[i], log_freq=1, log='all')
 
     if cfg.resume:
         print(f'Resuming from checkpoint {cfg.resume}')
@@ -506,7 +516,8 @@ def main(cfg):
             print_freq=cfg.print_freq,
             label_columns=cfg.dataset.label_columns,
             loss_alphas=cfg.tsp.loss_alphas,
-            wandb_log=cfg.wandb.on
+            wandb_log=cfg.wandb.on,
+            output_dir=cfg.output_dir
         )
 
 
