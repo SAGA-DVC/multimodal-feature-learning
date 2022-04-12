@@ -4,12 +4,15 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 '''
 
 import os
+import sys
 
 import timm
 import torch
 import torchvision
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, '..')
 
 from tsp.config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
