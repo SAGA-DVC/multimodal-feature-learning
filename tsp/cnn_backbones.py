@@ -7,8 +7,12 @@ from torchvision.models.video.resnet import VideoResNet, R2Plus1dStem, BasicBloc
 
 __all__ = ['r2plus1d_34', 'r2plus1d_18', 'r3d_18']
 
-R2PLUS1D_34_MODEL_URL="https://github.com/moabitcoin/ig65m-pytorch/releases/download/v1.0.0/r2plus1d_34_clip8_ft_kinetics_from_ig65m-0aa0550b.pth"
+R2PLUS1D_34_MODEL_URL = "https://github.com/moabitcoin/ig65m-pytorch/releases/download/v1.0.0/r2plus1d_34_clip8_ft_kinetics_from_ig65m-0aa0550b.pth"
 
+I3D_MODEL = "i3d_r50"
+
+def i3d(pretrained=True, progress=False, **kwargs):
+    return torch.hub.load("facebookresearch/pytorchvideo:main", model=I3D_MODEL, pretrained=pretrained, progress=progress, **kwargs)
 
 def r2plus1d_34(pretrained=True, progress=False, **kwargs):
     model = VideoResNet(

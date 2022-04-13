@@ -20,7 +20,7 @@ import timm
 
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
-from tsp.cnn_backbones import r2plus1d_18, r2plus1d_34, r3d_18
+from tsp.cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
 from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.config import load_config
@@ -179,7 +179,6 @@ def main(cfg):
     # Create backbones
     feature_backbones = []
     d_feats = []
-    total_params = 0
     # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
@@ -192,12 +191,6 @@ def main(cfg):
         backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-        n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
-        print(f'Number of trainable params in ViViT: {n_parameters / 1000000} M')
-        total_params += n_parameters
-
-        # if any([backbone in cfg.tsp.backbones for backbone in ['r2plus1d_34', 'r2plus1d_18', 'r3d_18']]):
-        #     raise NotImplementedError
     
     elif 'r2plus1d_34' in cfg.tsp.backbones:
         backbone = r2plus1d_34()
@@ -205,9 +198,6 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
-        print(f'Number of trainable params in r2plus1d_34: {n_parameters/ 1000000} M')
-        total_params += n_parameters
         
     elif 'r2plus1d_18' in cfg.tsp.backbones:
         backbone = r2plus1d_18()
@@ -215,9 +205,6 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
-        print(f'Number of trainable params in r2plus1d_18: {n_parameters/ 1000000} M')
-        total_params += n_parameters
         
     elif 'r3d_18' in cfg.tsp.backbones:
         backbone = r3d_18()
@@ -225,9 +212,13 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
-        print(f'Number of trainable params in r3d_18: {n_parameters/ 1000000} M')
-        total_params += n_parameters
+    
+    elif 'i3d' in cfg.tsp.backbones:
+        backbone = i3d()
+        d_feats.append(backbone.blocks[-1].proj.in_features)
+        backbone.blocks[-1].proj = torch.nn.Identity()
+        backbone.to(device)
+        feature_backbones.append(backbone)
 
 
     # Audio Backbone
@@ -242,8 +233,11 @@ def main(cfg):
         backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
+
+    total_params = 0
+    for (modality, backbone_name, backbone) in zip(cfg.tsp.modalities, cfg.tsp.backbones, feature_backbones):
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
-        print(f'Number of trainable params in AST: {n_parameters / 1000000} M')
+        print(f'Number of trainable params in {modality} backbone {backbone_name}: {n_parameters / 1e6} M')
         total_params += n_parameters
 
     # Model to be trained
