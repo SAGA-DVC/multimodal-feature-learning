@@ -24,10 +24,13 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
 
     for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
         start_time = time.time()
-        clip = {
-            'video': batch['video'].to(device),
-            'audio': batch['audio'].to(device)
-        }
+        clip = {}
+
+        # Modalities
+        if 'video' in batch:
+            clip['video'] = batch['video'].to(device)
+        if 'audio' in batch:
+            clip['audio'] = batch['audio'].to(device)
 
         # Global video feature (video + audio features)
         gvf = batch['gvf'].to(device) if 'gvf' in batch else None
@@ -88,10 +91,13 @@ def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, 
 
     with torch.no_grad():
         for (batch_idx, batch) in enumerate(metric_logger.log_every(dataloader, print_freq, header, device=device)):
-            clip = {
-                'video': batch['video'].to(device, non_blocking=True),
-                'audio': batch['audio'].to(device, non_blocking=True)
-            }
+            clip = {}
+
+            # Modalities
+            if 'video' in batch:
+                clip['video'] = batch['video'].to(device, non_blocking=True)
+            if 'audio' in batch:
+                clip['audio'] = batch['audio'].to(device, non_blocking=True)
 
             # Global video feature (video + audio features)
             gvf = batch['gvf'].to(

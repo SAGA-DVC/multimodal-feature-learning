@@ -114,7 +114,11 @@ def load_config():
     # If None, then model will not use GVF
     cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
     cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
+
+    # One to one matching between modalities and backbones
+    cfg.tsp.modalities = ['video', 'audio']
     cfg.tsp.backbones = ['vivit', 'ast']
+
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss

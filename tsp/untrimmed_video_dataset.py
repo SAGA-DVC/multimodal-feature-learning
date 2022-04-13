@@ -28,7 +28,7 @@ class UntrimmedVideoDataset(Dataset):
     '''
 
     def __init__(self, csv_filename, root_dir, clip_length, frame_rate, clips_per_segment, temporal_jittering,
-            label_columns, label_mappings, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False, unavailable_videos=[]):
+            label_columns, label_mappings, modalities, num_mel_bins, audio_target_length, seed=42, video_transform=None, global_video_features=None, debug=False, unavailable_videos=[]):
         '''
         Args:
             csv_filename (string): Path to the CSV file with temporal segments information and annotations.
@@ -40,6 +40,7 @@ class UntrimmedVideoDataset(Dataset):
             clips_per_segment (int): The number of clips to sample per segment (a row) in the CSV file.
             temporal_jittering (bool): If True, clips are randomly sampled between t-start and t-end of
                 each segment. Otherwise, clips are are sampled uniformly between t-start and t-end.
+            modalities (List[str]): List of input modalities
             num_mel_bins (int) Number of Mel bins
             audio_target_length TODO
             seed (int): Seed of the random number generator used for the temporal jittering.
@@ -68,6 +69,9 @@ class UntrimmedVideoDataset(Dataset):
         self.num_mel_bins = num_mel_bins
 
         self.temporal_jittering = temporal_jittering
+
+        assert ('video' in modalities) or ('audio' in modalities), "Only audio and video modalities supported"
+        self.modalities = modalities
         
         '''Used for temporal jittering, samples a number from [0, 1) uniformly'''
         self.rng = np.random.RandomState(seed=seed)
@@ -107,39 +111,40 @@ class UntrimmedVideoDataset(Dataset):
         # of the video frames between clip_t_start and clip_t_end seconds
         vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
 
-        if aframes.shape[1] == 0:
-            # Known issue, why unkown
-            print(f"Read 0 audio frames for video: {filename}, clip_t_start:{clip_t_start}, clip_t_end:{clip_t_end}")
-            return None
+        if 'video' in self.modalities:
+            # If video has different FPS than self.frame_rate, then change idxs to reflect this
+            # If video fps == self.frame_rate, then idxs is simply [::1]
+            idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
 
-        # If video has different FPS than self.frame_rate, then change idxs to reflect this
-        # If video fps == self.frame_rate, then idxs is simply [::1]
-        idxs = UntrimmedVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
+            vframes = vframes[idxs][:self.clip_length]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
 
-        vframes = vframes[idxs][:self.clip_length]  # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+            if vframes.shape[0] != self.clip_length:
+                # TODO
+                # Sometimes vframes.shape[0] is 15, probably due to precision errors, e.g. 15.9999 -> 15 (int)
+                print(f"[UntrimmedVideoDataset]: got clip of length {vframes.shape[0]} != {self.clip_length}."
+                                f"filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, "
+                                f"fps={fps}, t_start={t_start}, t_end={t_end}\n"
+                                "Padding frames with 0")
+                vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
 
-        if vframes.shape[0] != self.clip_length:
-            # TODO
-            # Sometimes vframes.shape[0] is 15, probably due to precision errors, e.g. 15.9999 -> 15 (int)
-            print(f"[UntrimmedVideoDataset]: got clip of length {vframes.shape[0]} != {self.clip_length}."
-                               f"filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, "
-                               f"fps={fps}, t_start={t_start}, t_end={t_end}\n"
-                               "Padding frames with 0")
-            vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
+            # apply video transforms
+            sample['video'] = self.video_transform(vframes)
 
-        # apply video transforms
-        sample['video'] = self.video_transform(vframes)
+        if 'audio' in self.modalities:
+            try:
+                if aframes.shape[1] == 0:
+                    # Known issue, why unkown
+                    print(f"Read 0 audio frames for video: {filename}, clip_t_start:{clip_t_start}, clip_t_end:{clip_t_end}")
+                    return None
+                # apply audio transforms
+                aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+                # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
+                # TODO: Normalization with dataset mean & stddev?
+            except AssertionError:
+                print(f"aframes_to_fbank failed for video: {filename} clip_t_start: {clip_t_end} clip_t_end: {clip_t_end}")
+                return None
 
-        try:
-            # apply audio transforms
-            aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
-            # TODO: Spectogram Augmentation: Frequency Masking, Time Masking (only for training set)
-            # TODO: Normalization with dataset mean & stddev?
-        except AssertionError:
-            print(f"aframes_to_fbank failed for video: {filename} clip_t_start: {clip_t_end} clip_t_end: {clip_t_end}")
-            return None
-
-        sample['audio'] = aframes
+            sample['audio'] = aframes
 
         # add labels
         for label_column in self.label_columns:
