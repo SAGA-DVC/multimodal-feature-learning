@@ -148,7 +148,7 @@ class DVC(nn.Module):
         memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, video_durations)
 
         memory = memory.to(video.device)
-        memory.requires_grad = True
+        # memory.requires_grad = True
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         memory_mask = memory_mask.to(video.device)

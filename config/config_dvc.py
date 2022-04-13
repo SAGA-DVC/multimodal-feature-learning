@@ -241,12 +241,11 @@ def load_config():
     cfg.dvc.caption.weight_init = True
     cfg.dvc.caption.weight_load = False
 
-    cfg.dvc.caption.emb_weights_req_grad = False
+    cfg.dvc.caption.emb_weights_req_grad = True
     cfg.dvc.caption.return_intermediate = False
 
     cfg.dvc.caption.pretrained_word_embed_dim = 100
     cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.caption.pretrained_word_embed_dim}d.txt'
-    cfg.dvc.caption.emb_weights_req_grad = False
     cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
     
@@ -285,7 +284,7 @@ def load_config():
     cfg.eval = ml_collections.ConfigDict()
     cfg.eval.submission = 'output/test.json'
     # cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = ['./anet_data/val_1.json', '../anet_data/val_2.json']
+    cfg.eval.references = ['./anet_data/val_1.json', './anet_data/val_2.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False
