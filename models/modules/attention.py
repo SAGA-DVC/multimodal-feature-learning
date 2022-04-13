@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self_attention = torch.matmul(query, key.transpose(-2, -1))
 
         if mask is not None:
-            self_attention = self_attention.masked_fill(mask == 0, float("-1e20"))
+            self_attention = self_attention.masked_fill(mask == False, float("-1e20"))
             
         self_attention = (self_attention * self.scale).softmax(dim=-1)
         self_attention = self.attention_dropout(self_attention)
@@ -274,7 +274,7 @@ class CrossAttention(nn.Module):
         cross_attention = torch.matmul(q, k.transpose(-2, -1))
 
         if mask is not None:
-            cross_attention = cross_attention.masked_fill(mask == 0, float("-1e20"))
+            cross_attention = cross_attention.masked_fill(mask == False, float("-1e20"))
 
         cross_attention = (cross_attention * self.scale).softmax(dim=-1)
         cross_attention = self.attention_dropout(cross_attention)
@@ -405,6 +405,7 @@ class MSDeformAttn(nn.Module):
         xavier_uniform_(self.output_proj.weight.data)
         constant_(self.output_proj.bias.data, 0.)
 
+    # TODO - padding mask (True False where?)
     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None):
         """
         :param query                       (N, Length_{query}, C)
@@ -414,6 +415,7 @@ class MSDeformAttn(nn.Module):
         :param input_spatial_shapes        (n_levels ), [T_0, T_1, ..., T_{L-1}]
         :param input_level_start_index     (n_levels ), [0, 1_0, T_0+T_1, ...]
         :param input_padding_mask          (N, \sum_{l=0}^{L-1} H_l \cdot W_l), True for padding elements, False for non-padding elements
+        # TODO - check input_padding_mask ( false for padding, true for non padding)
         :return output                     (N, Length_{query}, C)
         """
         
@@ -424,7 +426,7 @@ class MSDeformAttn(nn.Module):
         value = self.value_proj(input_flatten)  # linear transformation --> nn.Linear(d_model, d_model) shape->(batch_size, sum of num_token in all level, dmodel)
         
         if input_padding_mask is not None:
-            value = value.masked_fill(input_padding_mask[..., None], float(0))
+            value = value.masked_fill(input_padding_mask[..., None] == False, float(0))
         
         value = value.view(N, Len_in, self.n_heads, self.d_model // self.n_heads)   #   (batch_size, sum of num_token in all level, nhead, dmodel/nhead)    
 

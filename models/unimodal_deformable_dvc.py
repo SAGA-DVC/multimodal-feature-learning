@@ -12,7 +12,6 @@ from .unimodal_deformable_transformer import build_unimodal_deformable_transform
 from .base_encoder import build_base_encoder
 from .caption_decoder import build_caption_decoder
 
-from .modules.embedding_layers import PositionalEmbedding
 from .modules.misc_modules import decide_two_stage
 from .modules.layers import FFN
 
@@ -22,7 +21,7 @@ from .load_weights import load_positional_embeddings
 # TODO - src mask
 # TODO - check devices for tensors
 class UnimodalDeformableDVC(nn.Module):
-    def __init__(self, input_modalities,num_queries, d_model, num_classes, aux_loss, matcher, 
+    def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, 
                 vocab_size, seq_len, embedding_matrix, 
                 vivit_args, ast_args, detr_args, caption_args):
         
@@ -43,28 +42,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         self.matcher = matcher
 
-        # for ViViT    
-        # self.positional_embedding_layer = None
-        # self.spatial_positional_embedding_layer = None
-
-        # if vivit_args.model_name == 'spatio temporal attention':
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames * vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout) 
-            
-        # elif vivit_args.model_name == 'factorised encoder':
-        #     self.spatial_positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout)
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames + 1, d_model), vivit_args.positional_embedding_dropout)
-
-        # else:
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames, vivit_args.num_patches, d_model), vivit_args.positional_embedding_dropout)
-
-
         assert 'video' in input_modalities or 'audio' in input_modalities, f'input_modalities should contain one of "video" or "audio". You have {input_modalities}'
-
-        # if 'video' in input_modalities:
-        #     self.vivit = build_vivit(vivit_args)
-
-        # if 'audio' in input_modalities:
-        #     self.ast = build_ast(ast_args)
 
         self.base_encoder = build_base_encoder(detr_args)
 
@@ -131,10 +109,10 @@ class UnimodalDeformableDVC(nn.Module):
 
         # Base Encoder - for multi-scale features
         if 'video' in self.input_modalities: 
-            srcs, masks, pos = self.base_encoder(video, video_mask, durations)
+            srcs, masks, pos = self.base_encoder(video, video_mask, durations, 'video')
 
         else:
-            srcs, masks, pos = self.base_encoder(audio, audio_mask, durations)
+            srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, 'audio')
 
         # Forword Encoder
         src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.unimodal_deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
@@ -196,11 +174,15 @@ class UnimodalDeformableDVC(nn.Module):
         # Caption Decoder
         if is_training:
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
-            tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+            
+            padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
+
+            tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
+
         
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
+            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -210,7 +192,9 @@ class UnimodalDeformableDVC(nn.Module):
 
             return out, indices
 
-        else:   # Inference
+        # TODO - implement changes in caption decoder 
+        # Inference
+        else:
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length-1)
             captions = torch.ones([memory.shape[0], 19], dtype=torch.int32)    # `PAD_TOKEN`
             captions[:, 0] = 2  # `START_TOKEN`
@@ -310,7 +294,8 @@ class UnimodalDeformableDVC(nn.Module):
             tgt_padding_mask (Tensor): Tensor of dimention (batch_size, seq_len)
         """
 
-        tgt_padding_mask = (target != 1)  # 1 is PAD_TOKEN
+        # TODO - 1 is PAD_TOKEN_IDX
+        tgt_padding_mask = (target != 1)
         return tgt_padding_mask
 
 

@@ -360,7 +360,7 @@ def collate_fn(batch, pad_idx):
             _caption_len = len(caption)
             caption_length_all[total_caption_idx + iidx] = _caption_len
             caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.Tensor(caption)
-            caption_mask_all[total_caption_idx + iidx, :_caption_len] = 1
+            caption_mask_all[total_caption_idx + iidx, :_caption_len] = True
         
         # mask = (caption_length_all == self.PAD_IDX)
         # print(mask.shape)

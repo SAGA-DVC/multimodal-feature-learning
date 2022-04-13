@@ -43,25 +43,7 @@ class MultimodalDeformableDVC(nn.Module):
 
         self.matcher = matcher
 
-        # for ViViT    
-        # self.positional_embedding_layer = None
-        # self.spatial_positional_embedding_layer = None
-
-        # if vivit_args.model_name == 'spatio temporal attention':
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames * vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout) 
-            
-        # elif vivit_args.model_name == 'factorised encoder':
-        #     self.spatial_positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_patches + 1, d_model), vivit_args.positional_embedding_dropout)
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames + 1, d_model), vivit_args.positional_embedding_dropout)
-
-        # else:
-        #     self.positional_embedding_layer = PositionalEmbedding((1, vivit_args.num_frames, vivit_args.num_patches, d_model), vivit_args.positional_embedding_dropout)
-
-
         assert 'video' in input_modalities and 'audio' in input_modalities, f'input_modalities should contain both, "video" and "audio". You have {input_modalities}'
-
-        # self.vivit = build_vivit(vivit_args)
-        # self.ast = build_ast(ast_args)
 
         self.base_encoder = build_base_encoder(detr_args)
 
@@ -127,8 +109,8 @@ class MultimodalDeformableDVC(nn.Module):
         batch_size, _, _ = video.shape
 
         # Base Encoder - for multi-scale features
-        video_srcs, video_masks, video_pos = self.base_encoder(video, video_mask, durations)
-        audio_srcs, audio_masks, audio_pos = self.base_encoder(audio, audio_mask, durations)
+        video_srcs, video_masks, video_pos = self.base_encoder(video, video_mask, durations, 'video')
+        audio_srcs, audio_masks, audio_pos = self.base_encoder(audio, audio_mask, durations, 'audio')
 
         # Forword Encoder
         video_src_flatten, video_temporal_shapes, video_level_start_index, video_valid_ratios, video_lvl_pos_embed_flatten, video_mask_flatten = self.multimodal_deformable_transformer.prepare_encoder_inputs(video_srcs, video_masks, video_pos)
@@ -161,7 +143,7 @@ class MultimodalDeformableDVC(nn.Module):
 
         # query_features (depth, batch_size, num_queries, d_model)
         # inter_reference = (depth, batch_size, num_queries, 1)
-        query_features, inter_references = self.multimodal_deformable_transformer.forward_decoder(tgt, reference_points, query_embed, proposals_mask, video_memory, video_temporal_shapes,
+        query_features, inter_references = self.multimodal_deformable_transformer.forward_decoder(tgt, reference_points, query_embedding_weight, proposals_mask, video_memory, video_temporal_shapes,
                                                         video_level_start_index, video_valid_ratios,
                                                         video_mask_flatten, audio_memory, audio_temporal_shapes,
                                                         audio_level_start_index, audio_valid_ratios,
@@ -197,11 +179,14 @@ class MultimodalDeformableDVC(nn.Module):
         # Caption Decoder
         if is_training:
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
-            tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+            
+            padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
+
+            tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
         
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
+            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -414,9 +399,10 @@ class MultimodalDeformableDVC(nn.Module):
         These parameters include positional embeddings.
         """
 
-        trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
-        if self.vivit.model_name == 'factorised encoder':
-            trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
+        # trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
+        # if self.vivit.model_name == 'factorised encoder':
+        #     trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
+        pass
             
 
     def load_weights(self, model_official):
