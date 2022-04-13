@@ -9,7 +9,6 @@ from itertools import chain
 import os
 import time
 import json
-import sys
 
 import torch
 import torch.nn as nn
@@ -17,10 +16,10 @@ import torchvision
 import wandb
 import timm
 
-
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
-from tsp.cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
+from tsp.video_cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
+from tsp.audio_cnn_backbones import vggish
 from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.config import load_config
@@ -193,28 +192,32 @@ def main(cfg):
         d_feats.append(backbone.d_model)
     
     elif 'r2plus1d_34' in cfg.tsp.backbones:
-        backbone = r2plus1d_34()
+        print("Creating R(2+1)D-34 backbone")
+        backbone = r2plus1d_34(pretrained=True)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
         
     elif 'r2plus1d_18' in cfg.tsp.backbones:
-        backbone = r2plus1d_18()
+        print("Creating R(2+1)D-18 backbone")
+        backbone = r2plus1d_18(pretrained=True)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
         
     elif 'r3d_18' in cfg.tsp.backbones:
-        backbone = r3d_18()
+        print("Creating R3D-18 backbone")
+        backbone = r3d_18(pretrained=True)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
     
     elif 'i3d' in cfg.tsp.backbones:
-        backbone = i3d()
+        print("Creating I3D backbone")
+        backbone = i3d(pretrained=True)
         d_feats.append(backbone.blocks[-1].proj.in_features)
         backbone.blocks[-1].proj = torch.nn.Identity()
         backbone.to(device)
@@ -225,14 +228,21 @@ def main(cfg):
     if 'ast' in cfg.tsp.backbones:
         print("Creating AST backbone")
         model_official = timm.create_model(
-            cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
+            cfg.pretrained_models.ast, pretrained=True)
         model_official.eval()
 
         backbone = AudioSpectrogramTransformer(
             model_official=model_official, **cfg.ast)
         backbone.to(device)
-        feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
+        feature_backbones.append(backbone)
+    
+    elif 'vggish' in cfg.tsp.backbones:
+        print("Creating VGGish backbone")
+        backbone = vggish(pretrained=True)
+        backbone.to(device)
+        d_feats.append(backbone.embeddings[-2].out_features)
+        feature_backbones.append(backbone)
 
     total_params = 0
     for (modality, backbone_name, backbone) in zip(cfg.tsp.modalities, cfg.tsp.backbones, feature_backbones):
