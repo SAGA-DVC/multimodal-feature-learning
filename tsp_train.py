@@ -35,6 +35,9 @@ def main(cfg):
 
     assert len(cfg.tsp.backbones) <= 2, "Only two backbones supported yet, one for video and one for audio"
 
+    print(f"Input modalities: {cfg.tsp.modalities}")
+    print(f"Backbones: {cfg.tsp.backbones}")
+
     # Setup distributed processes (if enabled)
     utils.init_distributed_mode(cfg.distributed)
 
@@ -176,7 +179,6 @@ def main(cfg):
     # Create backbones
     feature_backbones = []
     d_feats = []
-    input_modalities = []
     total_params = 0
     # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
@@ -190,7 +192,6 @@ def main(cfg):
         backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-        input_modalities.append('video')
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
         print(f'Number of trainable params in ViViT: {n_parameters / 1000000} M')
         total_params += n_parameters
@@ -204,7 +205,6 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        input_modalities.append('video')
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
         print(f'Number of trainable params in r2plus1d_34: {n_parameters/ 1000000} M')
         total_params += n_parameters
@@ -215,7 +215,6 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        input_modalities.append('video')
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
         print(f'Number of trainable params in r2plus1d_18: {n_parameters/ 1000000} M')
         total_params += n_parameters
@@ -226,7 +225,6 @@ def main(cfg):
         backbone.fc = nn.Sequential()
         backbone.to(device)
         feature_backbones.append(backbone)
-        input_modalities.append('video')
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
         print(f'Number of trainable params in r3d_18: {n_parameters/ 1000000} M')
         total_params += n_parameters
@@ -244,7 +242,6 @@ def main(cfg):
         backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-        input_modalities.append('audio')
         n_parameters = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
         print(f'Number of trainable params in AST: {n_parameters / 1000000} M')
         total_params += n_parameters
@@ -252,7 +249,7 @@ def main(cfg):
     # Model to be trained
     tsp_model = TSPModel(
         backbones=feature_backbones,
-        input_modalities=input_modalities,
+        input_modalities=cfg.tsp.modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
         combiner=add_combiner,

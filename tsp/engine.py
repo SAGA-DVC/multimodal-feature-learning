@@ -55,9 +55,13 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
         loss.backward()
 
         if utils.is_main_process() and batch_idx % print_freq == 0:
-            plots.plot_grad_flow_line(model.module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
-            plots.plot_grad_flow_line(model.module.backbones[0].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='vivit', output_dir=output_dir)
-            plots.plot_grad_flow_line(model.module.backbones[1].named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='ast', output_dir=output_dir)
+            if utils.is_dist_avail_and_initialized():
+                module = model.module
+            else:
+                module = model
+            plots.plot_grad_flow_line(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
+            for (modality, backbone) in zip(module.input_modalities, module.backbones):
+                plots.plot_grad_flow_line(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir)
 
         optimizer.step()
 
@@ -78,7 +82,7 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
         # for g in optimizer.param_groups:
         #     metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
         metric_logger.meters['clips/s'].update(
-            clip['video'].shape[0] / (time.time() - start_time))
+            list(clip.values())[0].shape[0] / (time.time() - start_time))
 
     # lr_scheduler.step()
 
