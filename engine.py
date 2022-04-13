@@ -14,6 +14,65 @@ from utils.misc import MetricLogger, SmoothedValue, reduce_dict
 from utils.preds_postprocess import get_sample_submission, get_src_permutation_idx, denormalize_segments, captions_to_string, pprint_eval_scores, save_submission
 from evaluation.evaluate import run_eval
 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+
+def plot_grad_flow_v1(named_parameters, epoch, batch_idx):
+    ave_grads = []
+    layers = []
+    for n, p in named_parameters:
+        if p.grad == None:
+            print(n, p.requires_grad)
+            print("Grad None!!")
+        if(p.requires_grad) and ("bias" not in n) and (p.grad != None):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean().cpu())
+    plt.plot(ave_grads, alpha=0.3, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical", fontsize=5)
+    plt.xlim(xmin=0, xmax=len(ave_grads))
+    plt.ylim(bottom = -0.001, top=0.005) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.savefig('output/grads/E{}_B{}_line.png'.format(epoch, batch_idx), bbox_inches='tight')
+
+
+def plot_grad_flow_v2(named_parameters, epoch, batch_idx):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+    
+    Usage: Plug this function in Trainer class after loss.backwards() as 
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads= []
+    layers = []
+    for n, p in named_parameters:
+        if p.grad == None:
+            print(n, p.requires_grad)
+            print("Grad None!!")
+        if(p.requires_grad) and ("bias" not in n) and (p.grad != None):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean().cpu())
+            max_grads.append(p.grad.abs().max().cpu())
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical", fontsize=5)
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom = -0.001, top=0.005) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    plt.savefig('output/grads/E{}_B{}_bar.png'.format(epoch, batch_idx), bbox_inches='tight')
+
 
 def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args, wandb_log, wandb):
     
@@ -41,7 +100,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     header = f'Epoch: [{epoch}]'
     print_freq = 1
 
-    for obj in metric_logger.log_every(data_loader, print_freq, wandb_log, wandb, header):
+    for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, wandb, header)):
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
         obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
@@ -72,6 +131,10 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 
         optimizer.zero_grad()
         losses.backward()
+
+        # plot_grad_flow_v1(model.named_parameters(), epoch, batch_idx)
+        # plot_grad_flow_v2(model.named_parameters())
+
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
         optimizer.step()
