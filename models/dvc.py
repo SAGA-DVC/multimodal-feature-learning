@@ -32,7 +32,7 @@ class DVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model)
 
-        self.class_embedding = nn.Linear(d_model, num_classes + 1)
+        self.class_embedding = nn.Linear(d_model, num_classes)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
         self.matcher = matcher
@@ -86,7 +86,7 @@ class DVC(nn.Module):
         Returns:
             out (dictionary) : It returns a dict with the following elements:
                                 - "pred_logits": the classification logits (including no-object) for all queries
-                                                    shape (batch_size, num_queries, num_classes + 1)
+                                                    shape (batch_size, num_queries, num_classes)
                                 - "pred_segments": The normalized segments for all queries, represented as
                                                 (center_offset, length). Shape (batch_size, num_queries, 2)
             ???????
@@ -126,7 +126,7 @@ class DVC(nn.Module):
                         positional_embedding_layer=self.positional_embedding_layer, query_embedding=query_embedding_weight, mask=None)
 
 
-        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
+        # (1, batch_size, num_queries, num_classes) OR (depth, batch_size, num_queries, num_classes)
         outputs_class = self.class_embedding(res).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)

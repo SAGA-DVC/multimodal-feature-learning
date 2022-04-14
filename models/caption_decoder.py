@@ -13,7 +13,6 @@ from .modules.layers import CaptionDecoderLayer
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
-# TODO - add sin/cos pos embed
 # TODO - add pos ebmbed for video features used in cross attention
 # TODO - context features (for vid feats and captions(captions influence each other))
 class CaptionDecoder(nn.Module):

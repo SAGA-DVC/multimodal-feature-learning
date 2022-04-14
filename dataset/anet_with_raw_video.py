@@ -188,7 +188,7 @@ class ActivityNet(DVCdataset):
         captions = self.annotation[key]['sentences'] # [gt_target_segments] -- list of strings
         gt_timestamps = self.annotation[key]['timestamps']  # [gt_target_segments, 2] -- 2d list of floats
 
-        action_labels = self.annotation[key].get('action_labels', [0] * len(gt_timestamps)) # [gt_target_segments] -- default value [0, 0, 0...]
+        action_labels = self.annotation[key].get('classes', [0] * len(gt_timestamps)) # [gt_target_segments] -- default value [0, 0, 0...]
         assert max(action_labels) <= self.args.num_classes, f'action label {max(action_labels)} for video {key} is > total number of classes {self.args.num_classes}.'
 
         gt_target_segments = len(gt_timestamps) if len(gt_timestamps) < self.max_gt_target_segments else self.max_gt_target_segments
@@ -425,8 +425,8 @@ def build_dataset(video_set, args):
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
     PATHS_ANNOTATION = {
-        "train": (root_annotation / 'train.json'),
-        "val": (root_annotation / 'val_1.json'),
+        "train": (root_annotation / 'train_data_with_action_classes.json'),
+        "val": (root_annotation / 'val_data_1_with_action_classes.json'),
     }
     PATHS_VIDEO = {
         "train": (root_video / 'train'),

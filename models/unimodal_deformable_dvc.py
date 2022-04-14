@@ -37,7 +37,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding = nn.Linear(d_model, num_classes + 1)
+        self.class_embedding = nn.Linear(d_model, num_classes)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
         self.matcher = matcher
@@ -79,7 +79,7 @@ class UnimodalDeformableDVC(nn.Module):
         Returns:
             out (dictionary) : It returns a dict with the following elements:
                                 - "pred_logits": the classification logits (including no-object) for all queries
-                                                    shape (batch_size, num_queries, num_classes + 1)
+                                                    shape (batch_size, num_queries, num_classes)
                                 - "pred_segments": The normalized segments for all queries, represented as
                                                 (center_offset, length). Shape (batch_size, num_queries, 2)
             ???????
@@ -96,7 +96,7 @@ class UnimodalDeformableDVC(nn.Module):
                             list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
 
         """
-
+    
         video = obj['video_tensor']    # (batch_size, num_tokens_v, d_model)
         video_mask = obj['video_mask']    # (batch_size, num_tokens_v)
         
@@ -116,7 +116,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         # Forword Encoder
         src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.unimodal_deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
-        
+
         # (batch_size, sum of num_tokens in all levels, d_model) - Multi-scale frame features
         memory = self.unimodal_deformable_transformer.forward_encoder(src_flatten, temporal_shapes, 
                                                             level_start_index, valid_ratios, 
@@ -145,7 +145,7 @@ class UnimodalDeformableDVC(nn.Module):
                                                                 mask_flatten, proposals_mask, disable_iterative_refine)
 
 
-        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
+        # (1, batch_size, num_queries, num_classes) OR (depth, batch_size, num_queries, num_classes)
         outputs_class = self.class_embedding(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)

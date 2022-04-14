@@ -42,8 +42,8 @@ class SetCriterion(nn.Module):
         self.losses = losses
 
         self.eos_coef = eos_coef
-        empty_weight = torch.ones(self.num_classes + 1)
-        empty_weight[-1] = self.eos_coef
+        empty_weight = torch.ones(self.num_classes)    # different from DETR - num_classes + 1
+        empty_weight[0] = self.eos_coef    # different from DETR - empty_weight[-1] = self.eos_coef
         self.register_buffer('empty_weight', empty_weight)
 
         self.focal_alpha = focal_alpha
@@ -74,7 +74,7 @@ class SetCriterion(nn.Module):
         
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
 
-        src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes {+ 1??})
+        src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes)
 
         # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
         # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
@@ -85,11 +85,10 @@ class SetCriterion(nn.Module):
         # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
 
-        # (batch_size, num_queries) where all elements have a value of self.num_classes
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes,
-                                    dtype=torch.int64, device=src_logits.device)
+        # (batch_size, num_queries) where all elements have a value of 0 ('no-action' class has index 0 in our dataset)
+        target_classes = torch.full(src_logits.shape[:2], 0, dtype=torch.int64, device=src_logits.device)
         
-        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
+        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of 0
         target_classes[idx] = target_classes_o
 
         # used in detr
@@ -113,8 +112,8 @@ class SetCriterion(nn.Module):
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             # only takes top-1 accuracy for now
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0] 
-
+            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
         return losses
 
 
@@ -136,14 +135,15 @@ class SetCriterion(nn.Module):
         """
 
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
-        pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes {+ 1??})
+        pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes)
         device = pred_logits.device
 
         tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets['video_target']], device=device) # (batch_size)
 
-        # Count the number of predictions that are NOT "no-object" (which is the last class)
+        # Count the number of predictions that are NOT "no-action" (which is the 0th class)
         # (batch_size, num_queries) --(sum)->  (batch_size)
-        card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1) 
+        # card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)    # used in detr where 'no-object' class is the last class
+        card_pred = (pred_logits.argmax(-1) != 0).sum(1)
 
         card_err = F.l1_loss(card_pred.float(), tgt_lengths.float())
 

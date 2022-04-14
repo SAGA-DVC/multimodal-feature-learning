@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:1'
+    cfg.device = 'cuda:2'
 
     cfg.batch_size = 3
     cfg.num_workers = 0
@@ -58,7 +58,7 @@ def load_config():
     cfg.dataset.activity_net.audio_target_length = 64
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
-    cfg.dataset.activity_net.num_classes = 100
+    cfg.dataset.activity_net.num_classes = 201    # no action class included 
 
 
     # Kinetics 
@@ -75,8 +75,8 @@ def load_config():
     cfg.dvc = ml_collections.ConfigDict()
 
     # cfg.dvc.input_modalities = ['video', 'audio']
-    # cfg.dvc.input_modalities = ['video']
-    cfg.dvc.input_modalities = ['audio']
+    cfg.dvc.input_modalities = ['video']
+    # cfg.dvc.input_modalities = ['audio']
 
     cfg.dvc.num_queries = 100
     cfg.dvc.d_model = 768
