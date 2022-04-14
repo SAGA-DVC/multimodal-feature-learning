@@ -66,6 +66,9 @@ class TSPModel(nn.Module):
             else:
                 raise NotImplementedError
 
+        else:
+            self.num_heads = None
+
 
     def forward(self, x, gvf=None, return_features=False):
         features = []  # List of features extracted by individual backbones
@@ -74,6 +77,9 @@ class TSPModel(nn.Module):
 
         # Combine features from all backbones
         features = self.combiner(*features)
+
+        if self.num_heads is None:
+            return features
 
         if self.num_heads == 1:
             logits = [self.action_fc(features)]
@@ -89,7 +95,8 @@ class TSPModel(nn.Module):
 
             return (logits, features) if return_features else logits
         
-        return features
+        else:
+            raise NotImplementedError
 
 
     @staticmethod

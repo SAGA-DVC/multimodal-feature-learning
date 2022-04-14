@@ -16,9 +16,9 @@ import pandas as pd
 
 sys.path.insert(0, '..')
 
-from tsp.config import load_config
+from tsp.config.extract_features_config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
+from tsp.tsp_model import TSPModel
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -34,13 +34,16 @@ def evaluate(model, dataloader, device):
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(metric_logger.log_every(dataloader, 10, header, device=device)):
-            clip = {
-                "video": batch['clip']['video'].to(device, non_blocking=True),
-                "audio": batch['clip']['audio'].to(device, non_blocking=True)
-            }
+            clip = {}
+
+            # Modalities
+            if 'video' in batch['clip']:
+                clip['video'] = batch['clip']['video'].to(device, non_blocking=True)
+            if 'audio' in batch:
+                clip['audio'] = batch['clip']['audio'].to(device, non_blocking=True)
 
             # Forward pass through the model
-            features = model(clip, return_features=True)
+            features = model(clip)
             # Save features as pkl (if features of all clips of a video have been collected)
             dataloader.dataset.save_features(features, batch)
 
@@ -73,11 +76,11 @@ def main(cfg):
     metadata_df = pd.read_csv(cfg.metadata_csv_filename)
 
     # Shards for parallel processing
-    shards = np.linspace(0,len(metadata_df),cfg.feature_extraction.num_shards+1).astype(int)
+    shards = np.linspace(0,len(metadata_df),cfg.num_shards+1).astype(int)
 
     # Start and end idxs for current process
-    start_idx, end_idx = shards[cfg.feature_extraction.shard_id], shards[cfg.feature_extraction.shard_id+1]
-    print(f'shard-id: {cfg.feature_extraction.shard_id + 1} out of {cfg.feature_extraction.num_shards}, '
+    start_idx, end_idx = shards[cfg.shard_id], shards[cfg.shard_id+1]
+    print(f'shard-id: {cfg.shard_id + 1} out of {cfg.num_shards}, '
         f'total number of videos: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
 
     # Keep current process' shard only
@@ -97,10 +100,10 @@ def main(cfg):
     # Dataset
     dataset = EvalVideoDataset(
         metadata_df=metadata_df,
-        root_dir=f'{cfg.data_dir}/{cfg.feature_extraction.subdir}',
+        root_dir=f'{cfg.data_dir}/{cfg.subdir}',
         clip_length=cfg.video.clip_len,
         frame_rate=cfg.video.frame_rate,
-        stride=cfg.feature_extraction.video_stride,
+        stride=cfg.video.stride,
         output_dir=cfg.output_dir,
         num_mel_bins=cfg.audio.num_mel_bins,
         audio_target_length=cfg.audio.target_length,
@@ -108,7 +111,6 @@ def main(cfg):
         unavailable_videos=unavailable_videos
     )
 
-    print('CREATING DATA LOADER')
     dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=cfg.batch_size, shuffle=False,
         num_workers=cfg.num_workers, pin_memory=True)
@@ -131,13 +133,13 @@ def main(cfg):
     
     elif 'r2plus1d_34' in cfg.tsp.backbones:
         print("Creating R(2+1)D-34 backbone")
-        backbone = r2plus1d_34(pretrained=True)
+        backbone = r2plus1d_34(pretrained=False)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
 
-        if cfg.feature_extraction.r2plus1d_34_weights:
-            print(f"Using TSP pretrained weights for R(2+1)D-34 from {cfg.feature_extraction.r2plus1d_34_weights}")
-            pretrained_weights = torch.load(cfg.feature_extraction.r2plus1d_34_weights)
+        if cfg.r2plus1d_34_weights:
+            print(f"Using TSP pretrained weights for R(2+1)D-34 from {cfg.r2plus1d_34_weights}")
+            pretrained_weights = torch.load(cfg.r2plus1d_34_weights)
             backbone.load_state_dict(pretrained_weights)
 
         backbone.to(device)
@@ -145,13 +147,13 @@ def main(cfg):
         
     elif 'r2plus1d_18' in cfg.tsp.backbones:
         print("Creating R(2+1)D-18 backbone")
-        backbone = r2plus1d_18(pretrained=True)
+        backbone = r2plus1d_18(pretrained=False)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
 
-        if cfg.feature_extraction.r2plus1d_18_weights:
-            print(f"Using TSP pretrained weights for R(2+1)D-18 from {cfg.feature_extraction.r2plus1d_18_weights}")
-            pretrained_weights = torch.load(cfg.feature_extraction.r2plus1d_18_weights)
+        if cfg.r2plus1d_18_weights:
+            print(f"Using TSP pretrained weights for R(2+1)D-18 from {cfg.r2plus1d_18_weights}")
+            pretrained_weights = torch.load(cfg.r2plus1d_18_weights)
             backbone.load_state_dict(pretrained_weights)
 
         backbone.to(device)
@@ -159,13 +161,13 @@ def main(cfg):
         
     elif 'r3d_18' in cfg.tsp.backbones:
         print("Creating R3D-18 backbone")
-        backbone = r3d_18(pretrained=True)
+        backbone = r3d_18(pretrained=False)
         d_feats.append(backbone.fc.in_features)
         backbone.fc = nn.Sequential()
 
-        if cfg.feature_extraction.r3d_18_weights:
-            print(f"Using TSP pretrained weights for R3D-18 from {cfg.feature_extraction.r3d_18_weights}")
-            pretrained_weights = torch.load(cfg.feature_extraction.r3d_18_weights)
+        if cfg.r3d_18_weights:
+            print(f"Using TSP pretrained weights for R3D-18 from {cfg.r3d_18_weights}")
+            pretrained_weights = torch.load(cfg.r3d_18_weights)
             backbone.load_state_dict(pretrained_weights)
 
         backbone.to(device)
@@ -173,13 +175,13 @@ def main(cfg):
     
     elif 'i3d' in cfg.tsp.backbones:
         print("Creating I3D backbone")
-        backbone = i3d(pretrained=True)
+        backbone = i3d(pretrained=False)
         d_feats.append(backbone.blocks[-1].proj.in_features)
         backbone.blocks[-1].proj = torch.nn.Identity()
 
-        if cfg.feature_extraction.i3d_weights:
-            print(f"Using TSP pretrained weights for I3D from {cfg.feature_extraction.i3d_weights}")
-            pretrained_weights = torch.load(cfg.feature_extraction.i3d_weights)
+        if cfg.i3d_weights:
+            print(f"Using TSP pretrained weights for I3D from {cfg.i3d_weights}")
+            pretrained_weights = torch.load(cfg.i3d_weights)
             backbone.load_state_dict(pretrained_weights)
 
         backbone.to(device)
@@ -204,12 +206,12 @@ def main(cfg):
         print("Creating VGGish backbone")
         backbone = nn.Sequential(
             PermuteAudioChannel(),
-            vggish(pretrained=True, device=device)
+            vggish(pretrained=False, device=device)
         )
 
-        if cfg.feature_extraction.vggish_weights:
-            print(f"Using TSP pretrained weights for VGGish from {cfg.feature_extraction.vggish_weights}")
-            pretrained_weights = torch.load(cfg.feature_extraction.vggish_weights)
+        if cfg.vggish_weights:
+            print(f"Using TSP pretrained weights for VGGish from {cfg.vggish_weights}")
+            pretrained_weights = torch.load(cfg.vggish_weights)
             backbone.load_state_dict(pretrained_weights)
 
 
@@ -227,12 +229,11 @@ def main(cfg):
         num_tsp_classes=[],
         num_tsp_heads=0, 
         concat_gvf=False,
-        combiner=concat_combiner    # does not affect single modality
     )
 
     tsp_model.to(device)
 
-    print('START FEATURE EXTRACTION')
+    print('Start feature extraction')
     evaluate(tsp_model, dataloader, device)
 
 
