@@ -28,7 +28,8 @@ class EvalVideoDataset(Dataset):
             - "is-last-clip": a flag to mark the last clip in the video
     '''
 
-    def __init__(self, metadata_df, root_dir, clip_length, frame_rate, stride, output_dir, num_mel_bins, audio_target_length, video_transform=None):
+    def __init__(self, metadata_df, root_dir, clip_length, frame_rate, stride, output_dir, 
+        num_mel_bins, audio_target_length, video_transform=None, unavailable_videos=[]):
         '''
         Args:
             metadata_df (pandas.DataFrame): a DataFrame with the following video metadata columns:
@@ -43,8 +44,12 @@ class EvalVideoDataset(Dataset):
                 and returns a transformed version.
             num_mel_bins (int) TODO
             audio_target_length TODO
+            unavailable_videos: (List[str]): A list of unavailable videos to filter out (with file extension)
         '''
-        metadata_df = EvalVideoDataset._append_root_dir_to_filenames_and_check_files_exist(metadata_df, root_dir)
+        metadata_df = EvalVideoDataset._remove_unavailable_raw_videos_from_df(metadata_df, root_dir, unavailable_videos)
+        metadata_df = EvalVideoDataset._make_filenames_absolute(metadata_df, root_dir)
+        EvalVideoDataset._check_files_exist(metadata_df)
+
         self.clip_metadata_df = EvalVideoDataset._generate_clips_metadata(metadata_df, clip_length, frame_rate, stride)
         self.clip_length = clip_length
         self.frame_rate = frame_rate
@@ -135,30 +140,41 @@ class EvalVideoDataset(Dataset):
                 del self.saved_features[filename]
                 print(f"Video features saved: {filename}")
 
+
     @staticmethod
-    def _append_root_dir_to_filenames_and_check_files_exist(df, root_dir):
+    def _remove_unavailable_raw_videos_from_df(df: pd.DataFrame, root_dir, unavailable_videos):
         # get all available videos from root_dir
-        videos = list(map(lambda video: video, os.listdir(root_dir)))
+        videos = os.listdir(root_dir)
 
         # remove unavailable videos from dataframe
         df = df.loc[df['filename'].isin(videos)].copy()
+        df = df.loc[~df['filename'].isin(unavailable_videos)]
 
+        print(f"Number of available videos: {df.shape[0]}")
 
-        # TODO very temporary! The below videos give an error in aframes_to_fbank
-        # Update: This is because of wrong duration metadata in df
-        # TODO Append these to invalid videos
-        erroneous_vids = ['v_b1RAYvxWawA.mp4', 'v_G4mX4StOvQE.mp4', 'v_YcDlkZkPb6g.mp4', 'v_7rf06_5zNJk.mp4', 'v_z9l32VOM6wY.mp4', 'v_7Iy7Cjv2SAE.mp4', 'v_0gf3AgK1YLY.mp4', 'v_5asz3rt3QyQ.mp4', 'v_QDjaaUtepHo.mp4', 'v_0BXBfSWIR2k.mp4', 'v_D2JvqkKa-qM.mp4', 'v_fmtW5lcdT_0.mp4', 'v_DXu_aHrZaUs.mp4', 'v_vvdmMyyAtN0.mp4', 'v_JQf_oSGY8q4.mp4', 'v_jNGa0jPAMjI.mp4', 'v_BSl22Hx2WGM.mp4', 'v_mFWRIp164r4.mp4', 'v_4BofYu8Soz8.mp4', 'v_Mzojo2EeWu8.mp4', 'v_nHafujMomWg.mp4', 'v_QjaEDlh805g.mp4', 'v_QJfuxpFMn8s.mp4', 'v_u1upxlAgsqM.mp4', 'v_tD30qafrkhM.mp4', 'v_PG0ao4HkF8M.mp4', 'v_8wqlhbw4e30.mp4', 'v_QXN6odBnVmI.mp4', 'v_DwaoxjXwC1M.mp4', 'v_JTGS1YulUQw.mp4', 'v_jto8_gMKUjE.mp4']
-        df = df.loc[~ (df['filename'].isin(erroneous_vids))]
+        return df
 
+    
+    @staticmethod
+    def _make_filenames_absolute(df: pd.DataFrame, root_dir):
+        # Change filenames in df to absolute filenames
         df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
-        print("Number of videos: ", len(df))
 
+        return df
+
+    
+    def _check_files_exist(df: pd.DataFrame):
         filenames = df.drop_duplicates('filename')['filename'].values
         for f in filenames:
-            if not os.path.exists(f):
-                raise ValueError(f'<EvalVideoDataset>: file={f} does not exists. '
-                                 f'Double-check root_dir and metadata_df inputs')
-        return df
+            try:
+                if not os.path.exists(f):
+                    raise ValueError
+            except ValueError:
+                print(f'[EvalVideoDataset]: file {f} does not exist. '
+                            f'Double-check root_dir and csv_filename inputs.')
+                pass
+
+
 
     @staticmethod
     def _generate_clips_metadata(df, clip_length, frame_rate, stride):
@@ -168,7 +184,7 @@ class EvalVideoDataset(Dataset):
             'clip-t-start': [],
             'is-last-clip': [],
         }
-        for i, row in df.iterrows():
+        for _, row in df.iterrows():
             total_frames_after_resampling = int(row['video-frames'] * (float(frame_rate) / row['fps']))
             idxs = EvalVideoDataset._resample_video_idx(total_frames_after_resampling, row['fps'], frame_rate)
             if isinstance(idxs, slice):

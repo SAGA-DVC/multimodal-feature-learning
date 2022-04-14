@@ -52,6 +52,7 @@ class UntrimmedVideoDataset(Dataset):
                 from `label_columns` from a category string to an integer ID value.
             global_video_features (string): Path to h5 file containing global video features (optional)
             debug (bool): If true, create a debug dataset with 100 samples.
+            unavailable_videos: (List[str]): A list of unavailable videos to filter out (with file extension)
         '''
         df = UntrimmedVideoDataset._clean_df_and_remove_short_segments(pd.read_csv(csv_filename), clip_length, frame_rate)
         df = UntrimmedVideoDataset._remove_unavailable_raw_videos_from_df(df, root_dir, unavailable_videos)
@@ -220,22 +221,22 @@ class UntrimmedVideoDataset(Dataset):
 
 
     @staticmethod
-    def _make_filenames_absolute(df, root_dir):
+    def _make_filenames_absolute(df: pd.DataFrame, root_dir):
         # Change filenames in df to absolute filenames
         df['filename']= df['filename'].map(lambda f: os.path.join(root_dir, f))
 
         return df
 
     @staticmethod
-    def _check_files_exist(df):
+    def _check_files_exist(df: pd.DataFrame):
         filenames = df.drop_duplicates('filename')['filename'].values
         for f in filenames:
             try:
                 if not os.path.exists(f):
-                    raise ValueError(f'[UntrimmedVideoDataset]: file={f} does not exist. '
-                                    f'Double-check root_dir and csv_filename inputs.')
+                    raise ValueError
             except ValueError:
-                # print(f"Video {f} not present")
+                print(f'[UntrimmedVideoDataset]: file {f} does not exist. '
+                            f'Double-check root_dir and csv_filename inputs.')
                 pass
 
     @staticmethod

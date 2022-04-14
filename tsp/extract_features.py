@@ -5,6 +5,7 @@ Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretr
 
 import os
 import sys
+import json
 
 import timm
 import torch
@@ -87,6 +88,9 @@ def main(cfg):
     metadata_df = metadata_df[metadata_df['is-computed-already']==False].reset_index(drop=True)
     print(f'Number of videos to process after excluding the ones already computed on disk: {len(metadata_df)}')
 
+    with open(cfg.dataset.unavailable_videos, "r") as f:
+        unavailable_videos = json.load(f)
+
     # Dataset
     dataset = EvalVideoDataset(
         metadata_df=metadata_df,
@@ -97,7 +101,8 @@ def main(cfg):
         output_dir=cfg.output_dir,
         num_mel_bins=cfg.audio.num_mel_bins,
         audio_target_length=cfg.audio.target_length,
-        video_transform=video_transform
+        video_transform=video_transform,
+        unavailable_videos=unavailable_videos
     )
 
     print('CREATING DATA LOADER')
