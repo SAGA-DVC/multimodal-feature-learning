@@ -705,3 +705,41 @@ class FFN(nn.Module):
         for i, layer in enumerate(self.layers):
             x = self.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
+
+
+class ContextMaskModel(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        """
+        Predict mask for context features (0 if num_token not useful, 1 otherwise)
+        Parameters:
+            `in_dim` (int): Input dimension (num_queries*2 + num_queries*d_model)
+            `out_dim` (int): Output dimension (num_queries*num_tokens)
+
+        """
+
+        super(ContextMaskModel, self).__init__()
+
+        self.layer_1 = nn.Linear(in_dim, in_dim // 2)
+        self.batch_norm_1 = nn.BatchNorm1d(in_dim // 2)
+        self.layer_2 = nn.Linear(in_dim // 2, in_dim // 8)
+        self.batch_norm_2 = nn.BatchNorm1d(in_dim // 8)
+        self.layer_3 = nn.Linear(in_dim // 8, out_dim)
+        self.batch_norm_3 = nn.BatchNorm1d(out_dim)
+
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        """
+        Performs a forward pass on the Context Mask Model.
+        Parameters:
+            x (tensor): Tensor of dimension (batch_size, in_dim) = (batch_size, num_queries*2 + num_queries*d_model)
+        
+        Returns:
+            x (tensor): Tensor of dimension (batch_size, out_dim) = (batch_size, num_queries*num_tokens)
+        """
+
+        x = self.relu(self.batch_norm_1(self.layer_1(x)))
+        x = self.relu(self.batch_norm_2(self.layer_2(x)))
+        x = self.layer_3(x)
+
+        return x

@@ -16,7 +16,7 @@ from .caption_decoder import build_caption_decoder
 
 from .modules.embedding_layers import PositionalEmbedding
 from .modules.misc_modules import decide_two_stage
-from .modules.layers import FFN
+from .modules.layers import FFN, ContextMaskModel
 
 from .load_weights import load_positional_embeddings
 
@@ -76,6 +76,8 @@ class UnimodalDeformableDVC(nn.Module):
         
         # Context Module
         self.num_feature_levels = detr_args.num_feature_levels
+        # TODO - num_tokens??
+        self.context_mask_model = ContextMaskModel(in_dim=(num_queries*2), out_dim=(num_queries*2813))
 
         # Captioning module
         self.caption_decoder = build_caption_decoder(caption_args, vocab_size, seq_len, embedding_matrix)
@@ -197,6 +199,21 @@ class UnimodalDeformableDVC(nn.Module):
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         memory_mask = memory_mask.to(video.device)
+
+        # Differentiable Mask
+        # TODO - here we are assuming 1st dim of query features is 1
+        # print(query_features.shape, out['pred_segments'].shape)
+        # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
+        input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
+        pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (batch_size, num_queries*num_tokens)
+        pred_memory_mask = pred_memory_mask.reshape(batch_size, -1, 2813)   # (batch_size, num_queries, num_tokens)
+
+        idx = get_src_permutation_idx(indices)
+        pred_memory_mask = pred_memory_mask[idx]    # (nb_target_segments, num_tokens)
+        
+        out['pred_memory_mask'] = pred_memory_mask
+        
+        assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
         
         # Caption Decoder
         if is_training:
@@ -213,7 +230,7 @@ class UnimodalDeformableDVC(nn.Module):
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
 
-            return out, indices
+            return out, indices, torch.squeeze(memory_mask)
 
         else:   # Inference
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length-1)

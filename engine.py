@@ -107,7 +107,8 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
                                 for vid_info in obj['video_target']]
 
         obj = defaultdict(lambda: None, obj)
-        outputs, indices = model(obj)
+        outputs, indices, target_memory_mask = model(obj)
+        # print(outputs['pred_memory_mask'][:, 100:200])
         
         loss_dict = criterion(outputs, obj, indices)
         weight_dict = criterion.weight_dict
