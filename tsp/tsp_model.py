@@ -37,7 +37,7 @@ class TSPModel(nn.Module):
         super().__init__()
 
         assert len(num_tsp_classes) == num_tsp_heads, f'<TSPModel>: incompatible configuration. len(num_classes) must be equal to num_heads'
-        assert num_tsp_heads == 1 or num_tsp_heads == 2, f'<TSPModel>: num_heads = {num_tsp_heads} must be either 1 or 2'
+        assert (num_tsp_heads is None) or (num_tsp_heads >= 0 and num_tsp_heads <= 2), f'<TSPModel>: num_tsp_heads = {num_tsp_heads} must be either None or 0 <= num_heads <= 2'
         assert isinstance(backbones, list), "<TSPModel>: backbones must be a list of models"
         assert len(backbones) > 0, "<TSPModel>: At least one backbone is required"
 
@@ -49,12 +49,11 @@ class TSPModel(nn.Module):
         # Default combiner is addition
         self.combiner = combiner if combiner is not None else add_combiner
 
-        self.num_classes = num_tsp_classes
-        self.num_heads = num_tsp_heads
+        if num_tsp_heads:
+            self.num_classes = num_tsp_classes
+            self.num_heads = num_tsp_heads
+            self.concat_gvf = concat_gvf
 
-        self.concat_gvf = concat_gvf
-
-        if self.num_heads:
             if self.num_heads == 1:
                 # Linear layer for multiclass classification (action recognition)
                 self.action_fc = TSPModel._build_fc(self.d_tsp_feat, num_tsp_classes[0])

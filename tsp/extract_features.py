@@ -9,6 +9,7 @@ import json
 
 import timm
 import torch
+import torch.nn as nn
 import torchvision
 import numpy as np
 import pandas as pd
@@ -17,10 +18,12 @@ sys.path.insert(0, '..')
 
 from tsp.config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel, add_combiner
+from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
+from tsp.video_cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
+from tsp.audio_cnn_backbones import vggish, PermuteAudioChannel
 
 
 def evaluate(model, dataloader, device):
@@ -37,7 +40,7 @@ def evaluate(model, dataloader, device):
             }
 
             # Forward pass through the model
-            _, features = model(clip, return_features=True)
+            features = model(clip, return_features=True)
             # Save features as pkl (if features of all clips of a video have been collected)
             dataloader.dataset.save_features(features, batch)
 
@@ -113,56 +116,124 @@ def main(cfg):
     # Create backbones
     feature_backbones = []
     d_feats = []
-    input_modalities = []
+
+    # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
         model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
-        model_official.to(device).eval()
+        model_official.eval()
 
         # Use return_preclassifier=True for VideoVisionTransformer
-        backbone = VivitWrapper(model_official=model_official, **cfg.vivit).to(device)
+        backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+        backbone = backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-        input_modalities.append('video')
     
+    elif 'r2plus1d_34' in cfg.tsp.backbones:
+        print("Creating R(2+1)D-34 backbone")
+        backbone = r2plus1d_34(pretrained=True)
+        d_feats.append(backbone.fc.in_features)
+        backbone.fc = nn.Sequential()
+
+        if cfg.feature_extraction.r2plus1d_34_weights:
+            print(f"Using TSP pretrained weights for R(2+1)D-34 from {cfg.feature_extraction.r2plus1d_34_weights}")
+            pretrained_weights = torch.load(cfg.feature_extraction.r2plus1d_34_weights)
+            backbone.load_state_dict(pretrained_weights)
+
+        backbone.to(device)
+        feature_backbones.append(backbone)
+        
+    elif 'r2plus1d_18' in cfg.tsp.backbones:
+        print("Creating R(2+1)D-18 backbone")
+        backbone = r2plus1d_18(pretrained=True)
+        d_feats.append(backbone.fc.in_features)
+        backbone.fc = nn.Sequential()
+
+        if cfg.feature_extraction.r2plus1d_18_weights:
+            print(f"Using TSP pretrained weights for R(2+1)D-18 from {cfg.feature_extraction.r2plus1d_18_weights}")
+            pretrained_weights = torch.load(cfg.feature_extraction.r2plus1d_18_weights)
+            backbone.load_state_dict(pretrained_weights)
+
+        backbone.to(device)
+        feature_backbones.append(backbone)
+        
+    elif 'r3d_18' in cfg.tsp.backbones:
+        print("Creating R3D-18 backbone")
+        backbone = r3d_18(pretrained=True)
+        d_feats.append(backbone.fc.in_features)
+        backbone.fc = nn.Sequential()
+
+        if cfg.feature_extraction.r3d_18_weights:
+            print(f"Using TSP pretrained weights for R3D-18 from {cfg.feature_extraction.r3d_18_weights}")
+            pretrained_weights = torch.load(cfg.feature_extraction.r3d_18_weights)
+            backbone.load_state_dict(pretrained_weights)
+
+        backbone.to(device)
+        feature_backbones.append(backbone)
+    
+    elif 'i3d' in cfg.tsp.backbones:
+        print("Creating I3D backbone")
+        backbone = i3d(pretrained=True)
+        d_feats.append(backbone.blocks[-1].proj.in_features)
+        backbone.blocks[-1].proj = torch.nn.Identity()
+
+        if cfg.feature_extraction.i3d_weights:
+            print(f"Using TSP pretrained weights for I3D from {cfg.feature_extraction.i3d_weights}")
+            pretrained_weights = torch.load(cfg.feature_extraction.i3d_weights)
+            backbone.load_state_dict(pretrained_weights)
+
+        backbone.to(device)
+        feature_backbones.append(backbone)
+    
+    
+    # Audio Backbone
     if 'ast' in cfg.tsp.backbones:
         print("Creating AST backbone")
         model_official = timm.create_model(cfg.pretrained_models.ast, pretrained=cfg.ast.imagenet_pretrained)
-        model_official.to(device).eval()
+        model_official.eval()
 
-        backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast).to(device)
+        backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast)
+        backbone = backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
-        input_modalities.append('audio')
+
+    elif 'vggish' in cfg.tsp.backbones:
+        # Requires:
+        # cfg.audio.num_mel_bins = 64
+        # cfg.audio.target_length = 96
+        print("Creating VGGish backbone")
+        backbone = nn.Sequential(
+            PermuteAudioChannel(),
+            vggish(pretrained=True, device=device)
+        )
+
+        if cfg.feature_extraction.vggish_weights:
+            print(f"Using TSP pretrained weights for VGGish from {cfg.feature_extraction.vggish_weights}")
+            pretrained_weights = torch.load(cfg.feature_extraction.vggish_weights)
+            backbone.load_state_dict(pretrained_weights)
+
+
+        backbone.to(device)
+        d_feats.append(backbone[1].embeddings[-2].out_features)
+        feature_backbones.append(backbone)
 
 
     # model with a dummy classifier layer
-    model = TSPModel(
+    tsp_model = TSPModel(
         backbones=feature_backbones,
-        input_modalities=input_modalities,
+        input_modalities=cfg.tsp.modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
-        num_tsp_classes=[1],
-        num_tsp_heads=1, 
+        num_tsp_classes=[],
+        num_tsp_heads=0, 
         concat_gvf=False,
-        combiner=add_combiner
+        combiner=concat_combiner    # does not affect single modality
     )
 
-    # Resume from local checkpoint
-    if cfg.feature_extraction.local_checkpoint:
-        print(f'Resuming from the local checkpoint: {cfg.feature_extraction.local_checkpoint}')
-        pretrained_state_dict = torch.load(cfg.feature_extraction.local_checkpoint, map_location='cpu')['model']
-        # remove the classifier layers from the pretrained model and load the backbone weights
-        pretrained_state_dict = {k: v for k,v in pretrained_state_dict.items() if 'fc' not in k}
-        state_dict = model.state_dict()
-        pretrained_state_dict['fc.weight'] = state_dict['fc.weight']
-        pretrained_state_dict['fc.bias'] = state_dict['fc.bias']
-        model.load_state_dict(pretrained_state_dict)
-
-    model.to(device)
+    tsp_model.to(device)
 
     print('START FEATURE EXTRACTION')
-    evaluate(model, dataloader, device)
+    evaluate(tsp_model, dataloader, device)
 
 
 if __name__ == '__main__':

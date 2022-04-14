@@ -178,6 +178,7 @@ def main(cfg):
     # Create backbones
     feature_backbones = []
     d_feats = []
+
     # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
@@ -185,7 +186,7 @@ def main(cfg):
             cfg.pretrained_models.vit, pretrained=True)
         model_official.eval()
 
-        # Use return_preclassifier=True for VideoVisionTransformer
+        # Use return_prelogits=True for VideoVisionTransformer
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
         backbone.to(device)
         feature_backbones.append(backbone)
@@ -238,7 +239,9 @@ def main(cfg):
         feature_backbones.append(backbone)
 
     elif 'vggish' in cfg.tsp.backbones:
-        # raise NotImplementedError
+        # Requires:
+        # cfg.audio.num_mel_bins = 64
+        # cfg.audio.target_length = 96
         print("Creating VGGish backbone")
         backbone = nn.Sequential(
             PermuteAudioChannel(),
