@@ -2,7 +2,7 @@
 DVC model for event segmentation and captioning
 """
 
-from math import floor
+from math import floor, ceil
 
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ from utils.preds_postprocess import get_src_permutation_idx, denormalize_segment
 class UnimodalDeformableDVC(nn.Module):
     def __init__(self, input_modalities,num_queries, d_model, num_classes, aux_loss, matcher, 
                 vocab_size, seq_len, embedding_matrix, 
-                vivit_args, ast_args, detr_args, caption_args):
+                vivit_args, ast_args, detr_args, caption_args, use_differentiable_mask=False):
         
         """
         UnimodalDeformableDVC model
@@ -76,8 +76,11 @@ class UnimodalDeformableDVC(nn.Module):
         
         # Context Module
         self.num_feature_levels = detr_args.num_feature_levels
-        # TODO - num_tokens??
-        self.context_mask_model = ContextMaskModel(in_dim=(num_queries*2), out_dim=(num_queries*2813))
+        self.video_rescale_len = detr_args.video_rescale_len
+        self.num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
+        
+        if use_differentiable_mask:
+            self.context_mask_model = ContextMaskModel(in_dim=(num_queries*2), out_dim=(num_queries*self.num_tokens))
 
         # Captioning module
         self.caption_decoder = build_caption_decoder(caption_args, vocab_size, seq_len, embedding_matrix)
@@ -95,7 +98,7 @@ class UnimodalDeformableDVC(nn.Module):
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - add position embedding in caption decoder
     # TODO - check all pos embed
-    def forward(self, obj, is_training=True, faster_eval=False):
+    def forward(self, obj, use_differentiable_mask=False, is_training=True, faster_eval=False):
 
         """
         Performs a forward pass on the UnimodalDeformableDVC model which consists of the encoders, proposal decoder and caption decoder
@@ -201,19 +204,19 @@ class UnimodalDeformableDVC(nn.Module):
         memory_mask = memory_mask.to(video.device)
 
         # Differentiable Mask
-        # TODO - here we are assuming 1st dim of query features is 1
-        # print(query_features.shape, out['pred_segments'].shape)
-        # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
-        input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
-        pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (batch_size, num_queries*num_tokens)
-        pred_memory_mask = pred_memory_mask.reshape(batch_size, -1, 2813)   # (batch_size, num_queries, num_tokens)
+        if use_differentiable_mask:
+            # TODO - use outputs_segment and use [-1] for pred_memory_mask
+            # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
+            input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
+            pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (batch_size, num_queries*num_tokens)
+            pred_memory_mask = pred_memory_mask.reshape(batch_size, -1, self.num_tokens)   # (batch_size, num_queries, num_tokens)
 
-        idx = get_src_permutation_idx(indices)
-        pred_memory_mask = pred_memory_mask[idx]    # (nb_target_segments, num_tokens)
-        
-        out['pred_memory_mask'] = pred_memory_mask
-        
-        assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
+            idx = get_src_permutation_idx(indices)
+            pred_memory_mask = pred_memory_mask[idx]    # (nb_target_segments, num_tokens)
+            
+            out['pred_memory_mask'] = pred_memory_mask
+            
+            assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
         
         # Caption Decoder
         if is_training:
@@ -230,7 +233,10 @@ class UnimodalDeformableDVC(nn.Module):
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
 
-            return out, indices, torch.squeeze(memory_mask)
+            if use_differentiable_mask:
+                return out, indices, torch.squeeze(memory_mask)
+            else:
+                return out, indices
 
         else:   # Inference
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length-1)
@@ -381,11 +387,11 @@ class UnimodalDeformableDVC(nn.Module):
         pred_features = torch.zeros([denormalized_segments.shape[0], num_tokens, d_model])
         pred_features_src_padding_mask = torch.zeros([denormalized_segments.shape[0], num_tokens])
 
-        video_rescale_len = floor((2**(self.num_feature_levels - 1) / (2**self.num_feature_levels - 1)) * num_tokens)
+        # video_rescale_len = floor((2**(self.num_feature_levels - 1) / (2**self.num_feature_levels - 1)) * num_tokens)
 
         for n in range(self.num_feature_levels):
-            lower_limit = floor(video_rescale_len * ((2**n - 1) / 2**(n - 1)))
-            upper_limit = floor(video_rescale_len * ((2**(n + 1) - 1) / 2**n))
+            lower_limit = floor(self.video_rescale_len * ((2**n - 1) / 2**(n - 1)))
+            upper_limit = floor(self.video_rescale_len * ((2**(n + 1) - 1) / 2**n))
             diff = upper_limit - lower_limit
 
             start_token = torch.clamp((lower_limit + (diff * denormalized_segments[:, 0] / durations_per_proposal)).round().long(), min=lower_limit, max=upper_limit-1)

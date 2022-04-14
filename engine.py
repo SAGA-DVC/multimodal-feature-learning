@@ -107,10 +107,15 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
                                 for vid_info in obj['video_target']]
 
         obj = defaultdict(lambda: None, obj)
-        outputs, indices, target_memory_mask = model(obj)
-        # print(outputs['pred_memory_mask'][:, 100:200])
+
+        if args.use_differentiable_mask:
+            outputs, indices, target_memory_mask = model(obj, args.use_differentiable_mask)
+            # print(outputs['pred_memory_mask'][:, 100:200])
+        else:
+            outputs, indices = model(obj, args.use_differentiable_mask)
+            target_memory_mask = None
         
-        loss_dict = criterion(outputs, obj, indices)
+        loss_dict = criterion(outputs, obj, indices, target_memory_mask)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
