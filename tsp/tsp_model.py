@@ -9,6 +9,13 @@ import torch
 import torch.nn as nn
 
 class TSPModel(nn.Module):
+    '''
+    Model for Temporally Sensitive Pretraining of backbone architectures. Backbone models are passed in as a list.
+    If `num_tsp_heads` is `None` or 0, then combined features from backbone(s) are returned, irrespective of `return_features` parameter of the forward method
+    If `num_tsp_heads` is 1, then only the action classification head is created.
+    If `num_tsp_heads` is 2, then the action classification head as well as the temporal region classification head is created.
+    For 1 <= `num_tsp_heads` <= 2, the parameter `return_features` of the `forward` method determines whether features are returned along with logits or not
+    '''
 
     def __init__(self, backbones, input_modalities, d_feats, d_tsp_feat,  num_tsp_classes, num_tsp_heads=1, concat_gvf=False, combiner=None):
         '''
@@ -16,7 +23,7 @@ class TSPModel(nn.Module):
             backbone (List[torch.nn.Module]): One or more backbone architectures
             d_feats (List[int]): The dimension of features extracted by backbones
             d_tsp_feat (int): The dimension for input to TSP layers (output dimension of combiner function)
-            num_tsp_heads (int): The number of output heads
+            num_tsp_heads (int or None): The number of output heads. If `None` or 0, then combined features from backbones are returned. Must be <= 2
             num_tsp_classes (list of int): The number of labels per head
             concat_gvf (bool): If True and num_heads == 2, then concat global video features (GVF) to clip
                 features before applying the second head FC layer.
@@ -47,15 +54,18 @@ class TSPModel(nn.Module):
 
         self.concat_gvf = concat_gvf
 
-        if self.num_heads == 1:
-            # Linear layer for multiclass classification (action recognition)
-            self.action_fc = TSPModel._build_fc(self.d_tsp_feat, num_tsp_classes[0])
-        else:
-            # Linear layer for multiclass classification (action recognition)
-            self.action_fc = TSPModel._build_fc(self.d_tsp_feat, num_tsp_classes[0])
+        if self.num_heads:
+            if self.num_heads == 1:
+                # Linear layer for multiclass classification (action recognition)
+                self.action_fc = TSPModel._build_fc(self.d_tsp_feat, num_tsp_classes[0])
+            elif self.num_heads == 2:
+                # Linear layer for multiclass classification (action recognition)
+                self.action_fc = TSPModel._build_fc(self.d_tsp_feat, num_tsp_classes[0])
 
-            # Linear layer for binary classification (temporal region classification: foreground / background)
-            self.region_fc = TSPModel._build_fc(2 * self.d_tsp_feat if self.concat_gvf else self.d_tsp_feat, num_tsp_classes[1])
+                # Linear layer for binary classification (temporal region classification: foreground / background)
+                self.region_fc = TSPModel._build_fc(2 * self.d_tsp_feat if self.concat_gvf else self.d_tsp_feat, num_tsp_classes[1])
+            else:
+                raise NotImplementedError
 
 
     def forward(self, x, gvf=None, return_features=False):
@@ -68,7 +78,9 @@ class TSPModel(nn.Module):
 
         if self.num_heads == 1:
             logits = [self.action_fc(features)]
-        else:
+            return (logits, features) if return_features else logits
+
+        elif self.num_heads == 2:
             logits = [self.action_fc(features)]
             if self.concat_gvf:
                 assert gvf is not None, "Forward pass expects a global video feature input but got None"
@@ -76,7 +88,9 @@ class TSPModel(nn.Module):
             else:
                 logits.append(self.region_fc(features))
 
-        return (logits, features) if return_features else logits
+            return (logits, features) if return_features else logits
+        
+        return features
 
 
     @staticmethod
