@@ -720,11 +720,11 @@ class ContextMaskModel(nn.Module):
         super(ContextMaskModel, self).__init__()
 
         self.layer_1 = nn.Linear(in_dim, in_dim // 2)
-        self.batch_norm_1 = nn.BatchNorm1d(in_dim // 2)
-        self.layer_2 = nn.Linear(in_dim // 2, in_dim // 8)
-        self.batch_norm_2 = nn.BatchNorm1d(in_dim // 8)
-        self.layer_3 = nn.Linear(in_dim // 8, out_dim)
-        self.batch_norm_3 = nn.BatchNorm1d(out_dim)
+        # self.batch_norm_1 = nn.BatchNorm1d(in_dim // 2)
+        self.layer_2 = nn.Linear(in_dim // 2, in_dim // 2)
+        # self.batch_norm_2 = nn.BatchNorm1d(in_dim // 2)
+        self.layer_3 = nn.Linear(in_dim // 2, out_dim)
+        # self.batch_norm_3 = nn.BatchNorm1d(out_dim)
 
         self.relu = nn.ReLU()
 
@@ -738,8 +738,8 @@ class ContextMaskModel(nn.Module):
             x (tensor): Tensor of dimension (batch_size, out_dim) = (batch_size, num_queries*num_tokens)
         """
 
-        x = self.relu(self.batch_norm_1(self.layer_1(x)))
-        x = self.relu(self.batch_norm_2(self.layer_2(x)))
+        x = self.relu(self.layer_1(x))
+        x = self.relu(self.layer_2(x))
         x = self.layer_3(x)
 
         return x

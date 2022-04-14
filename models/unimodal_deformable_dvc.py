@@ -80,7 +80,7 @@ class UnimodalDeformableDVC(nn.Module):
         self.num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
         
         if use_differentiable_mask:
-            self.context_mask_model = ContextMaskModel(in_dim=(num_queries*2), out_dim=(num_queries*self.num_tokens))
+            self.context_mask_model = ContextMaskModel(in_dim=(2 + d_model), out_dim=(self.num_tokens))
 
         # Captioning module
         self.caption_decoder = build_caption_decoder(caption_args, vocab_size, seq_len, embedding_matrix)
@@ -193,9 +193,11 @@ class UnimodalDeformableDVC(nn.Module):
 
         # Context Features
         video_durations = list(obj['video_length'][:, 1])
+        idx = get_src_permutation_idx(indices)
+        denormalized_segments = denormalize_segments(out['pred_segments'][idx], video_durations, idx[0])
 
         # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-        memory, memory_mask = self.get_segment_features(memory, out['pred_segments'], indices, video_durations)
+        memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
         # print(memory.shape, (memory_mask==1).sum())
 
         memory = memory.to(video.device)
@@ -207,12 +209,12 @@ class UnimodalDeformableDVC(nn.Module):
         if use_differentiable_mask:
             # TODO - use outputs_segment and use [-1] for pred_memory_mask
             # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
-            input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
-            pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (batch_size, num_queries*num_tokens)
-            pred_memory_mask = pred_memory_mask.reshape(batch_size, -1, self.num_tokens)   # (batch_size, num_queries, num_tokens)
+            # input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
 
-            idx = get_src_permutation_idx(indices)
-            pred_memory_mask = pred_memory_mask[idx]    # (nb_target_segments, num_tokens)
+            query_features_selected_segments = query_features[-1][idx]  # (nb_target_segments, d_model)
+
+            input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
+            pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens)
             
             out['pred_memory_mask'] = pred_memory_mask
             
@@ -223,9 +225,14 @@ class UnimodalDeformableDVC(nn.Module):
             captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
             tgt_mask = self.make_tgt_mask(captions, obj['cap_mask'][:, :-1])    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
-        
-            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
+
+            if use_differentiable_mask:
+                pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5).int()
+                pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)
+                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+                outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, pred_memory_mask)
+            else:
+                outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -342,7 +349,7 @@ class UnimodalDeformableDVC(nn.Module):
         return tgt_padding_mask
 
 
-    def get_segment_features(self, features, pred_segments, indices, video_durations):
+    def get_segment_features(self, features, denormalized_segments, idx, video_durations):
         """
         Gets features within a specific boundary (based on selected bipartite matching indices) from pre-computed video features
         Parameters:
@@ -357,8 +364,8 @@ class UnimodalDeformableDVC(nn.Module):
             pred_features_src_padding_mask : Tensor of dimension (nb_target_segments, num_tokens)
         """
         
-        idx = get_src_permutation_idx(indices)
-        denormalized_segments = denormalize_segments(pred_segments[idx], video_durations, idx[0])
+        # idx = get_src_permutation_idx(indices)
+        # denormalized_segments = denormalize_segments(pred_segments[idx], video_durations, idx[0])
 
         pred_features, pred_features_src_padding_mask = self.crop_segments(features, denormalized_segments, idx[0], video_durations)
 
