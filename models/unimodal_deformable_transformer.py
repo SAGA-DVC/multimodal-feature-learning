@@ -82,7 +82,8 @@ class DeformableTransformer(nn.Module):
         return pos
 
     def get_valid_ratio(self, mask):
-        valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
+        # valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
+        valid_ratio_L = torch.sum(mask, 1).float() / mask.shape[1]    # changed
         return valid_ratio_L
       
     def prepare_encoder_inputs(self, srcs, masks, pos_embeds):
@@ -234,6 +235,7 @@ class DeformableTransformerEncoderLayer(nn.Module):
         
         return: output: (batch_size, sum of num_token in all level, d_model) 
         '''
+
         # self attention
         src2 = self.self_attn(self.with_pos_embed(src, pos), reference_points, src, temporal_shapes, level_start_index,
                               padding_mask)
@@ -255,9 +257,16 @@ class DeformableTransformerEncoder(nn.Module):
 
     @staticmethod
     def get_reference_points(temporal_shapes, valid_ratios, device):
+        '''
+        :param temporal_shapes (num_feature_levels)    #   list of num token at each level [1500,  750,  375,  188]
+        :param valid_ratios (batch_size, num_feature_levels)
+        :param device - string
+
+        :return reference_points (batch_size, sum of num_token in all level, num_feature_levels, 1)
+        '''
         reference_points_list = []
         for lvl, (L_) in enumerate(temporal_shapes):
-            ref = torch.linspace(0.5, L_ - 0.5, L_, dtype=torch.float32, device=device) #   Creates a one-dimensional tensor of size 3rd param whose values are evenly spaced from 1st param to 2nd param
+            ref = torch.linspace(0.5, L_ - 0.5, L_, dtype=torch.float32, device=device)    # Creates a one-dimensional tensor of size 3rd param whose values are evenly spaced from 1st param to 2nd param
             ref = ref.reshape(-1)[None] / (valid_ratios[:, None, lvl] * L_)
             reference_points_list.append(ref)
         reference_points = torch.cat(reference_points_list, 1)

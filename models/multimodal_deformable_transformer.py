@@ -80,7 +80,8 @@ class MultimodalDeformableTransformer(nn.Module):
         return pos
 
     def get_valid_ratio(self, mask):
-        valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
+        # valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
+        valid_ratio_L = torch.sum(mask, 1).float() / mask.shape[1]    # changed
         return valid_ratio_L
       
     def prepare_encoder_inputs(self, srcs, masks, pos_embeds):
