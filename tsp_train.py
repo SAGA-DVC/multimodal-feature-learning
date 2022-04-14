@@ -19,7 +19,7 @@ import timm
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
 from tsp.video_cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
-from tsp.audio_cnn_backbones import vggish
+from tsp.audio_cnn_backbones import vggish, PermuteAudioChannel
 from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
 from tsp.config import load_config
@@ -236,12 +236,16 @@ def main(cfg):
         backbone.to(device)
         d_feats.append(backbone.d_model)
         feature_backbones.append(backbone)
-    
+
     elif 'vggish' in cfg.tsp.backbones:
+        # raise NotImplementedError
         print("Creating VGGish backbone")
-        backbone = vggish(pretrained=True)
+        backbone = nn.Sequential(
+            PermuteAudioChannel(),
+            vggish(pretrained=True, device=device)
+        )
         backbone.to(device)
-        d_feats.append(backbone.embeddings[-2].out_features)
+        d_feats.append(backbone[1].embeddings[-2].out_features)
         feature_backbones.append(backbone)
 
     total_params = 0
@@ -256,7 +260,7 @@ def main(cfg):
         input_modalities=cfg.tsp.modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
-        combiner=add_combiner,
+        combiner=concat_combiner,
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.train_global_video_features is not None,

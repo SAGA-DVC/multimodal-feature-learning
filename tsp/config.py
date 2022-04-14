@@ -29,8 +29,15 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Audio
     cfg.audio = ml_collections.ConfigDict()
-    cfg.audio.num_mel_bins = 128
-    cfg.audio.target_length = 64
+
+
+    # AST
+    # cfg.audio.num_mel_bins = 128
+    # cfg.audio.target_length = 64
+
+    # VGGish
+    cfg.audio.num_mel_bins = 64
+    cfg.audio.target_length = 96
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -112,12 +119,14 @@ def load_config():
 
     # Paths to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
-    cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
+    # cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
+    # cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
+    cfg.tsp.train_global_video_features = None
+    cfg.tsp.val_global_video_features = None
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video', 'audio']
-    cfg.tsp.backbones = ['vivit', 'ast']
+    cfg.tsp.modalities = ['video']
+    cfg.tsp.backbones = ['vivit']
 
     cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.001
@@ -132,7 +141,7 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-4'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
@@ -192,9 +201,9 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = True 
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Fourth run of TSP"
+    cfg.wandb.notes = "TSP with VIVIT only (no audio)"
 
     return cfg
