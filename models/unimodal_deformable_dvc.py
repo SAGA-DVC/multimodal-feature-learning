@@ -123,6 +123,7 @@ class UnimodalDeformableDVC(nn.Module):
                                                             lvl_pos_embed_flatten, mask_flatten)    
 
         # Forword Decoder
+        # TODO - check proposals_mask (key_padding_mask in deformable_transformer (~mask??))
         # TODO - see transformer_input_type = "gt_proposals"
         transformer_input_type = "queries"
         gt_boxes = None
@@ -265,8 +266,12 @@ class UnimodalDeformableDVC(nn.Module):
         """
 
         batch_size, seq_len = target.shape
-        look_ahead_mask = torch.tril(torch.ones((seq_len, seq_len))).to(tgt_padding_mask.device)
-        tgt_mask = torch.minimum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask)
+
+        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len)))
+        look_ahead_mask = look_ahead_mask.to(tgt_padding_mask.device)
+
+        tgt_mask = torch.maximum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask).bool()
+
         return tgt_mask    # (batch_size, 1, seq_len, seq_len)
 
 
@@ -331,8 +336,8 @@ class UnimodalDeformableDVC(nn.Module):
         pred_segments_padding_mask = pred_segments_padding_mask.reshape(-1)
         
         # removes extra captions (padding) added to satisfy dimension constraints of tensors
-        pred_features = pred_features[pred_segments_padding_mask == True]    # (nb_target_segments, num_tokens, d_model)
-        pred_features_src_padding_mask = pred_features_src_padding_mask[pred_segments_padding_mask == True]    # (nb_target_segments, num_tokens)
+        pred_features = pred_features[~pred_segments_padding_mask]    # (nb_target_segments, num_tokens, d_model)
+        pred_features_src_padding_mask = pred_features_src_padding_mask[~pred_segments_padding_mask]    # (nb_target_segments, num_tokens)
         
         return pred_features, pred_features_src_padding_mask
 
@@ -379,15 +384,15 @@ class UnimodalDeformableDVC(nn.Module):
         end_idx = end_idx.reshape(batch_size, max_gt_target_segments)
             
         pred_features = torch.zeros(batch_size, max_gt_target_segments, num_tokens, d_model)
-        pred_features_src_padding_mask = torch.zeros(batch_size, max_gt_target_segments, num_tokens)
-        pred_segments_padding_mask = torch.zeros(batch_size, max_gt_target_segments, dtype=torch.bool)
+        pred_features_src_padding_mask = torch.ones(batch_size, max_gt_target_segments, num_tokens, dtype=torch.bool)
+        pred_segments_padding_mask = torch.ones(batch_size, max_gt_target_segments, dtype=torch.bool)
 
         for i in range(batch_size):
             gt_target_segments = len(indices[i][0])
             for j in range(gt_target_segments):
                 pred_features[i, j, start_idx[i, j]:end_idx[i, j]] = features[i, start_idx[i, j]:end_idx[i, j], :]
-                pred_features_src_padding_mask[i, j, start_idx[i, j]:end_idx[i, j]] = 1
-                pred_segments_padding_mask[i, j] = True
+                pred_features_src_padding_mask[i, j, start_idx[i, j]:end_idx[i, j]] = False
+                pred_segments_padding_mask[i, j] = False
 
         return pred_features, pred_features_src_padding_mask, pred_segments_padding_mask 
 

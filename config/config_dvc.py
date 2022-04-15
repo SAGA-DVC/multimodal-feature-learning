@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:3'
+    cfg.device = 'cuda:0'
 
     cfg.batch_size = 3
     cfg.num_workers = 0
@@ -74,8 +74,8 @@ def load_config():
     # DVC model
     cfg.dvc = ml_collections.ConfigDict()
 
-    cfg.dvc.input_modalities = ['video', 'audio']
-    # cfg.dvc.input_modalities = ['video']
+    # cfg.dvc.input_modalities = ['video', 'audio']
+    cfg.dvc.input_modalities = ['video']
     # cfg.dvc.input_modalities = ['audio']
 
     cfg.dvc.num_queries = 20

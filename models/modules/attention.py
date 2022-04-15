@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self_attention = torch.matmul(query, key.transpose(-2, -1))
 
         if mask is not None:
-            self_attention = self_attention.masked_fill(mask == False, float("-1e20"))
+            self_attention = self_attention.masked_fill(mask, float("-1e20"))
             
         self_attention = (self_attention * self.scale).softmax(dim=-1)
         self_attention = self.attention_dropout(self_attention)
@@ -274,7 +274,7 @@ class CrossAttention(nn.Module):
         cross_attention = torch.matmul(q, k.transpose(-2, -1))
 
         if mask is not None:
-            cross_attention = cross_attention.masked_fill(mask == False, float("-1e20"))
+            cross_attention = cross_attention.masked_fill(mask, float("-1e20"))
 
         cross_attention = (cross_attention * self.scale).softmax(dim=-1)
         cross_attention = self.attention_dropout(cross_attention)
@@ -426,7 +426,8 @@ class MSDeformAttn(nn.Module):
         value = self.value_proj(input_flatten)  # linear transformation --> nn.Linear(d_model, d_model) shape->(batch_size, sum of num_token in all level, dmodel)
         
         if input_padding_mask is not None:
-            value = value.masked_fill(input_padding_mask[..., None] == False, float(0))     # changed
+            value = value.masked_fill(input_padding_mask[..., None], float(0))
+            # value = value.masked_fill(input_padding_mask[..., None] == False, float(0))     # changed (for inverted mask)
         
         value = value.view(N, Len_in, self.n_heads, self.d_model // self.n_heads)   #   (batch_size, sum of num_token in all level, nhead, dmodel/nhead)    
 

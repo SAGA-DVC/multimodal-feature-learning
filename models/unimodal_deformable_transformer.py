@@ -82,8 +82,8 @@ class DeformableTransformer(nn.Module):
         return pos
 
     def get_valid_ratio(self, mask):
-        # valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
-        valid_ratio_L = torch.sum(mask, 1).float() / mask.shape[1]    # changed
+        valid_ratio_L = torch.sum(~mask, 1).float() / mask.shape[1]
+        # valid_ratio_L = torch.sum(mask, 1).float() / mask.shape[1]    # changed (for inverted masks used in PDVC)
         return valid_ratio_L
       
     def prepare_encoder_inputs(self, srcs, masks, pos_embeds):
@@ -337,6 +337,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
         tgt = self.norm3(tgt)
         return tgt
 
+    # TODO - check key_padding_mask (~mask??)
     def forward(self, tgt, query_pos, reference_points, src, src_temporal_shapes, level_start_index,
                 src_padding_mask=None, query_mask=None):
 

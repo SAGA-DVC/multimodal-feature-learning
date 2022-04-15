@@ -315,15 +315,15 @@ def collate_fn(batch, pad_idx):
 
     video_tensor = torch.FloatTensor(batch_size, max_video_length, d_model).zero_()
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
-    video_mask = torch.BoolTensor(batch_size, max_video_length).zero_()
+    video_mask = torch.BoolTensor(batch_size, max_video_length).fill_(1)
 
     audio_tensor = torch.FloatTensor(batch_size, max_audio_length, d_model).zero_()
     audio_length = torch.FloatTensor(batch_size, 3).zero_()  # time_frame_num, duration, gt_target_segments
-    audio_mask = torch.BoolTensor(batch_size, max_audio_length).zero_()
+    audio_mask = torch.BoolTensor(batch_size, max_audio_length).fill_(1)
 
     caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(pad_idx)
     caption_length_all = torch.LongTensor(total_caption_num).zero_()
-    caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_len).zero_()
+    caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_len).fill_(1)
     caption_gather_idx = torch.LongTensor(total_caption_num).zero_()
 
     max_gt_target_segments = max(len(x) for x in caption_list)
@@ -342,13 +342,13 @@ def collate_fn(batch, pad_idx):
         video_length[idx, 0] = float(video_len)
         video_length[idx, 1] = raw_duration[idx]
         video_length[idx, 2] = gt_segment_length
-        video_mask[idx, :video_len] = True
+        video_mask[idx, :video_len] = False
 
         audio_tensor[idx, :audio_len] = audio_feature_list[idx]
         audio_length[idx, 0] = float(audio_len)
         audio_length[idx, 1] = raw_duration[idx]
         audio_length[idx, 2] = gt_segment_length
-        audio_mask[idx, :audio_len] = True
+        audio_mask[idx, :audio_len] = False
 
         caption_gather_idx[total_caption_idx:total_caption_idx + gt_segment_length] = idx
 
@@ -360,7 +360,7 @@ def collate_fn(batch, pad_idx):
             _caption_len = len(caption)
             caption_length_all[total_caption_idx + iidx] = _caption_len
             caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.Tensor(caption)
-            caption_mask_all[total_caption_idx + iidx, :_caption_len] = True
+            caption_mask_all[total_caption_idx + iidx, :_caption_len] = False
         
         # mask = (caption_length_all == self.PAD_IDX)
         # print(mask.shape)
