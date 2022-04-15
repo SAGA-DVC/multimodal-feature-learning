@@ -97,6 +97,9 @@ def main(cfg):
     with open(cfg.dataset.unavailable_videos, "r") as f:
         unavailable_videos = json.load(f)
 
+    print(f"Using modalities: {cfg.tsp.modalities}")
+    print(f"Using backbones: {cfg.tsp.backbones}")
+
     # Dataset
     dataset = EvalVideoDataset(
         metadata_df=metadata_df,
@@ -107,6 +110,7 @@ def main(cfg):
         output_dir=cfg.output_dir,
         num_mel_bins=cfg.audio.num_mel_bins,
         audio_target_length=cfg.audio.target_length,
+        modalities=cfg.tsp.modalities,
         video_transform=video_transform,
         unavailable_videos=unavailable_videos
     )

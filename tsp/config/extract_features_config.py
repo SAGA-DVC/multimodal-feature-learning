@@ -120,9 +120,9 @@ def load_config():
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-r2plus1d-34'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-r2plus1d-34/train'  # Path for saving checkpoints and results output
 
-    cfg.batch_size = 16  # Batch size per GPU
+    cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
 

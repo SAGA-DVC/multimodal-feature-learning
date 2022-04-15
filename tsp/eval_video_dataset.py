@@ -29,7 +29,7 @@ class EvalVideoDataset(Dataset):
     '''
 
     def __init__(self, metadata_df, root_dir, clip_length, frame_rate, stride, output_dir, 
-        num_mel_bins, audio_target_length, video_transform=None, unavailable_videos=[]):
+        num_mel_bins, audio_target_length, modalities, video_transform=None, unavailable_videos=[]):
         '''
         Args:
             metadata_df (pandas.DataFrame): a DataFrame with the following video metadata columns:
@@ -40,6 +40,7 @@ class EvalVideoDataset(Dataset):
             stride (int): The number of frames (after resampling with frame_rate) between consecutive clips.
                 For example, `stride`=1 will generate dense clips, while `stride`=`clip_length` will generate non-overlapping clips
             output_dir (string): Path to the directory where video features will be saved
+            modalities (List[str]): List of input modalities
             video_transform (callable): A function/transform that takes in a TxHxWxC video
                 and returns a transformed version.
             num_mel_bins (int) TODO
@@ -55,6 +56,10 @@ class EvalVideoDataset(Dataset):
         self.frame_rate = frame_rate
         self.stride = stride
         self.output_dir = output_dir
+        
+        assert ('video' in modalities) or ('audio' in modalities), "Only audio and video modalities supported"
+        self.modalities = modalities
+
         self.video_transform = video_transform
 
         self.audio_target_length = audio_target_length
@@ -69,6 +74,8 @@ class EvalVideoDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = {}
+        sample['clip'] = {}
+
         row = self.clip_metadata_df.iloc[idx]
         filename, fps = row['filename'], row['fps']
 
@@ -79,25 +86,43 @@ class EvalVideoDataset(Dataset):
         clip_t_end = clip_t_start + clip_length_in_sec
         # get a tensor [clip_length, H, W, C] of the video frames between clip_t_start and clip_t_end seconds
         vframes, aframes, info = read_video(filename=filename, start_pts=clip_t_start, end_pts=clip_t_end, pts_unit='sec')
-        idxs = EvalVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
-        vframes = vframes[idxs][:self.clip_length] # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
-        if vframes.shape[0] != self.clip_length:
-            # TODO
-            # Temp fix, not sure whether this is the right way
-            vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
 
-        try:
-            aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
-        except AssertionError:
-            print(f"aframes_to_fbank failed for video: {filename}")
-            print(info)
-            print(aframes.shape)
-            print(f"{clip_t_start}, {clip_t_end}")
-        # TODO: Normalization with dataset mean & stddev?
-        sample['clip'] = {
-          "video": self.video_transform(vframes),
-          "audio": aframes
-        }
+        if 'video' in self.modalities:
+            # If video has different FPS than self.frame_rate, then change idxs to reflect this
+            # If video fps == self.frame_rate, then idxs is simply [::1]
+            idxs = EvalVideoDataset._resample_video_idx(self.clip_length, fps, self.frame_rate)
+
+            vframes = vframes[idxs][:self.clip_length] # [:self.clip_length] for removing extra frames if isinstance(idxs, slice)
+
+            if vframes.shape[0] != self.clip_length:
+                # TODO
+                # Sometimes vframes.shape[0] is 15, probably due to precision errors, e.g. 15.9999 -> 15 (int)
+                print(f"[EvalVideoDataset]: got clip of length {vframes.shape[0]} != {self.clip_length}."
+                                f"filename={filename}, clip_t_start={clip_t_start}, clip_t_end={clip_t_end}, "
+                                f"fps={fps}\n"
+                                "Padding frames with 0")
+
+                vframes = torch.cat((vframes, torch.zeros(self.clip_length - vframes.shape[0], *vframes.shape[1:])), dim=0)
+            
+            sample['clip']['video'] = self.video_transform(vframes)
+
+        if 'audio' in self.modalities:
+            try:
+                if aframes.shape[1] == 0:
+                    # Known issue, why unkown
+                    print(f"Read 0 audio frames for video: {filename}, clip_t_start:{clip_t_start}, clip_t_end:{clip_t_end}")
+                    return None
+                
+                # apply audio transforms
+                # TODO: Normalization with dataset mean & stddev?
+                aframes = aframes_to_fbank(aframes, info['audio_fps'], self.num_mel_bins, self.audio_target_length)
+
+            except AssertionError:
+                print(f"aframes_to_fbank failed for video: {filename} clip_t_start: {clip_t_end} clip_t_end: {clip_t_end}")
+                return None
+        
+            sample['clip']['audio'] = aframes
+
         sample['filename'] = filename
         sample['is-last-clip'] = is_last_clip
 
