@@ -539,7 +539,7 @@ class CaptionDecoderLayer(nn.Module):
                        dropout_1=dropout_1, dropout_2=dropout_2)
 
     
-    def forward(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -557,12 +557,12 @@ class CaptionDecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, memory, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, memory, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward_pre(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -580,11 +580,13 @@ class CaptionDecoderLayer(nn.Module):
         """
 
         target_after_norm = self.layer_norm_1(target) 
-        q = k = word_positional_embedding_layer(target_after_norm)
+        # q = k = word_positional_embedding_layer(target_after_norm)
+        q = k = target_after_norm
         target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
-        q = word_positional_embedding_layer(target_after_norm)
+        # q = word_positional_embedding_layer(target_after_norm)
+        q = target_after_norm
         k = positional_embedding_layer(memory)
         target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
         
@@ -594,7 +596,7 @@ class CaptionDecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward_post(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -611,10 +613,12 @@ class CaptionDecoderLayer(nn.Module):
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
        
-        q = k = word_positional_embedding_layer(target)
+        # q = k = word_positional_embedding_layer(target)
+        q = k = target
         target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=matgt_masksk)) # (batch_size, num_queries, d_model)
 
-        q = word_positional_embedding_layer(target)
+        # q = word_positional_embedding_layer(target)
+        q = target
         k = positional_embedding_layer(memory)
         target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 

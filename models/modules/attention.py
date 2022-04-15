@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self_attention = torch.matmul(query, key.transpose(-2, -1))
 
         if mask is not None:
-            self_attention = self_attention.masked_fill(mask == 0, float("-1e20"))
+            self_attention = self_attention.masked_fill(mask == False, float("-1e20"))
             
         self_attention = (self_attention * self.scale).softmax(dim=-1)
         self_attention = self.attention_dropout(self_attention)
@@ -274,7 +274,7 @@ class CrossAttention(nn.Module):
         cross_attention = torch.matmul(q, k.transpose(-2, -1))
 
         if mask is not None:
-            cross_attention = cross_attention.masked_fill(mask == 0, float("-1e20"))
+            cross_attention = cross_attention.masked_fill(mask == False, float("-1e20"))
 
         cross_attention = (cross_attention * self.scale).softmax(dim=-1)
         cross_attention = self.attention_dropout(cross_attention)
@@ -398,13 +398,15 @@ class MSDeformAttn(nn.Module):
             grid_init[:, :, i] *= i + 1
         with torch.no_grad():
             self.sampling_offsets.bias = nn.Parameter(grid_init.view(-1))
-        constant_(self.attention_weights.weight.data, 0.)
+        # constant_(self.attention_weights.weight.data, 0.)
+        xavier_uniform_(self.attention_weights.weight.data)    # changed
         constant_(self.attention_weights.bias.data, 0.)
         xavier_uniform_(self.value_proj.weight.data)
         constant_(self.value_proj.bias.data, 0.)
         xavier_uniform_(self.output_proj.weight.data)
         constant_(self.output_proj.bias.data, 0.)
 
+    # TODO - check input_padding_mask ( false for padding, true for non padding)
     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None):
         """
         :param query                       (N, Length_{query}, C)
@@ -416,7 +418,7 @@ class MSDeformAttn(nn.Module):
         :param input_padding_mask          (N, \sum_{l=0}^{L-1} H_l \cdot W_l), True for padding elements, False for non-padding elements
         :return output                     (N, Length_{query}, C)
         """
-        
+
         N, Len_q, _ = query.shape   #   (batch_size, sum of num_token in all level, dmodel)
         N, Len_in, _ = input_flatten.shape  #   (batch_size, sum of num_token in all level, dmodel)
         assert input_spatial_shapes.sum() == Len_in
@@ -424,7 +426,7 @@ class MSDeformAttn(nn.Module):
         value = self.value_proj(input_flatten)  # linear transformation --> nn.Linear(d_model, d_model) shape->(batch_size, sum of num_token in all level, dmodel)
         
         if input_padding_mask is not None:
-            value = value.masked_fill(input_padding_mask[..., None], float(0))
+            value = value.masked_fill(input_padding_mask[..., None] == False, float(0))     # changed
         
         value = value.view(N, Len_in, self.n_heads, self.d_model // self.n_heads)   #   (batch_size, sum of num_token in all level, nhead, dmodel/nhead)    
 
@@ -432,12 +434,12 @@ class MSDeformAttn(nn.Module):
         attention_weights = self.attention_weights(query).view(N, Len_q, self.n_heads, self.n_levels * self.n_points)   #   linear transformation --> nn.Linear(d_model, n_heads * n_levels * n_points) shape->(batch_size, sum of num_token in all level, n_heads, n_levels*n_points)
         attention_weights = F.softmax(attention_weights, -1).view(N, Len_q, self.n_heads, self.n_levels, self.n_points) #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points)
 
-
         # N, Len_q, n_heads, n_levels, n_points, 2
         if reference_points.shape[-1] == 1:
             offset_normalizer = input_spatial_shapes
             sampling_locations = reference_points[:, :, None, :, None, 0] \
-                                 + sampling_offsets / offset_normalizer[None, None, None, :, None]  #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points)                   
+                                 + sampling_offsets / offset_normalizer[None, None, None, :, None]  #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points)
+
         elif reference_points.shape[-1] == 2:
             sampling_locations = reference_points[:, :, None, :, None, 0] \
                                  + sampling_offsets / self.n_points * reference_points[:, :, None, :, None, 1] * 0.5
@@ -448,12 +450,13 @@ class MSDeformAttn(nn.Module):
         if True:
             sampling_locations = torch.stack((sampling_locations, 0.5 * sampling_locations.new_ones(sampling_locations.shape)), -1)  #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points, 2) 
             input_spatial_shapes = torch.stack([input_spatial_shapes.new_ones(input_spatial_shapes.shape), input_spatial_shapes], -1)   # (num_feature_levels, 2)
-            
-        if query.device.type == 'cuda':
-            output = MSDeformAttnFunction.apply(
-                value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights,
-                self.im2col_step)
-        else:
+
+        # if query.device.type == 'cuda':
+        #     output = MSDeformAttnFunction.apply(
+        #         value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights,
+        #         self.im2col_step)
+        # else:
+
             output = ms_deform_attn_core_pytorch(value, input_spatial_shapes, sampling_locations, attention_weights)
 
         output = self.output_proj(output)

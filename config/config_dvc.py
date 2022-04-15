@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:1'
+    cfg.device = 'cuda:2'
 
     cfg.batch_size = 3
     cfg.num_workers = 0
@@ -26,7 +26,7 @@ def load_config():
     cfg.epochs = 1
     cfg.clip_max_norm = 0.1
 
-    cfg.use_raw_videos = True    # Switch DVC
+    cfg.use_raw_videos = False    # Switch DVC
 
 
     #-------------------------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ def load_config():
     data_rescale = ['interpolate', 'uniform']
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.video_feature_sample_rate = 2
-    cfg.dataset.activity_net.video_rescale_len = 30    # Switch DVC
+    cfg.dataset.activity_net.video_rescale_len = 1500    # Switch DVC
     cfg.dataset.activity_net.audio_feature_sample_rate = 2
     cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
 
@@ -58,7 +58,7 @@ def load_config():
     cfg.dataset.activity_net.audio_target_length = 64
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
-    cfg.dataset.activity_net.num_classes = 100
+    cfg.dataset.activity_net.num_classes = 201    # no action class included 
 
 
     # Kinetics 
@@ -76,13 +76,14 @@ def load_config():
 
     # cfg.dvc.input_modalities = ['video', 'audio']
     cfg.dvc.input_modalities = ['video']
+    # cfg.dvc.input_modalities = ['audio']
 
     cfg.dvc.num_queries = 100
     cfg.dvc.d_model = 768
     cfg.dvc.aux_loss = False
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
 
-    cfg.dvc.use_deformable_detr = False    # Switch DVC
+    cfg.dvc.use_deformable_detr = True    # Switch DVC
 
     cfg.dvc.smoothing = 0.1
 

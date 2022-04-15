@@ -7,13 +7,12 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.embedding_layers import PositionalEmbedding, VocabularyEmbedder
+from .modules.embedding_layers import PositionEmbeddingSine, VocabularyEmbedder
 from .modules.layers import CaptionDecoderLayer
 
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
 
-# TODO - add sin/cos pos embed
 # TODO - add pos ebmbed for video features used in cross attention
 # TODO - context features (for vid feats and captions(captions influence each other))
 class CaptionDecoder(nn.Module):
@@ -30,7 +29,7 @@ class CaptionDecoder(nn.Module):
         
         self.vocab_size = vocab_size
         self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
-        self.word_positional_embedding_layer = PositionalEmbedding((1, seq_len-1, d_model), positional_embedding_dropout) 
+        self.word_positional_embedding_layer = PositionEmbeddingSine(d_model, normalize=True)
         
         self.d_model = d_model
         self.depth = depth
@@ -67,7 +66,7 @@ class CaptionDecoder(nn.Module):
     # TODO - change ordering of pos embed and query embed parameters 
     # TODO - check if pos embed should be given at every decoder layer to word
     # TODO - use log softmax?
-    def forward(self, captions, memory, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward(self, captions, memory, positional_embedding_layer, tgt_mask, padding_mask, memory_mask):
 
         """
         Performs a forward pass on the Transformer model
@@ -77,7 +76,8 @@ class CaptionDecoder(nn.Module):
             memory (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
             positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
             tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Combination of the lookahead mask and padding mask for the target/captions
-            memory_masl (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block of the decoder.
+            padding_mask (Tensor): Tensor of dimension (batch_size, seq_len). Used for position embeddings
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block of the decoder.
         
         Returns:
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
@@ -85,10 +85,12 @@ class CaptionDecoder(nn.Module):
 
         target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
 
+        target = target + self.word_positional_embedding_layer(target, padding_mask).transpose(1, 2)
+
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, memory, self.word_positional_embedding_layer, positional_embedding_layer, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
+            target = layer(target, memory, positional_embedding_layer, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(target))
@@ -112,7 +114,7 @@ class CaptionDecoder(nn.Module):
         """
 
         self.target_embedding.init_word_embeddings(embedding_matrix, emb_weights_req_grad)
-        trunc_normal_(self.word_positional_embedding_layer.positional_embedding, std=.02)
+        # trunc_normal_(self.word_positional_embedding_layer.positional_embedding, std=.02)
         self.decoder.apply(init_encoder_block_weights)
             
 
