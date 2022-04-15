@@ -38,7 +38,7 @@ class MultimodalDeformableDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding = nn.Linear(d_model, num_classes)
+        self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
 
         self.matcher = matcher
@@ -80,7 +80,7 @@ class MultimodalDeformableDVC(nn.Module):
         Returns:
             out (dictionary) : It returns a dict with the following elements:
                                 - "pred_logits": the classification logits (including no-object) for all queries
-                                                    shape (batch_size, num_queries, num_classes)
+                                                    shape (batch_size, num_queries, num_classes+ 1)
                                 - "pred_segments": The normalized segments for all queries, represented as
                                                 (center_offset, length). Shape (batch_size, num_queries, 2)
             ???????
@@ -150,7 +150,7 @@ class MultimodalDeformableDVC(nn.Module):
                                                         audio_mask_flatten,  disable_iterative_refine)
 
 
-        # (1, batch_size, num_queries, num_classes) OR (depth, batch_size, num_queries, num_classes)
+        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
         outputs_class = self.class_embedding(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)

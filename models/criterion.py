@@ -23,10 +23,10 @@ class SetCriterion(nn.Module):
         """ 
         Create the criterion.
         Parameters:
-            `num_classes` : number of object categories, omitting the special no-object category
+            `num_classes` : number of object categories, omitting the special no-action category
             `matcher` : module to compute a bipartite matching between targets and proposals
             `weight_dict` : dict containing as key the names of the losses and as values their relative weight.
-            `eos_coef` : relative classification weight applied to the no-object category
+            `eos_coef` : relative classification weight applied to the no-action category
             `losses` : list of all the losses to be applied. See get_loss for list of available losses.
             `pad_idx` (int): index of the padding token '<pad>' in the vocabulary
             `smoothing` (float): smoothing coefficient (epsilon) for the LabelSmoother (default 0.7)
@@ -42,8 +42,8 @@ class SetCriterion(nn.Module):
         self.losses = losses
 
         self.eos_coef = eos_coef
-        empty_weight = torch.ones(self.num_classes)    # different from DETR - num_classes + 1
-        empty_weight[0] = self.eos_coef    # different from DETR - empty_weight[-1] = self.eos_coef
+        empty_weight = torch.ones(self.num_classes + 1) 
+        empty_weight[-1] = self.eos_coef
         self.register_buffer('empty_weight', empty_weight)
 
         self.focal_alpha = focal_alpha
@@ -74,7 +74,7 @@ class SetCriterion(nn.Module):
         
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
 
-        src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes)
+        src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
 
         # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
         # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
@@ -85,19 +85,19 @@ class SetCriterion(nn.Module):
         # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
 
-        # (batch_size, num_queries) where all elements have a value of 0 ('no-action' class has index 0 in our dataset)
-        target_classes = torch.full(src_logits.shape[:2], 0, dtype=torch.int64, device=src_logits.device)
+        # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
         
-        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of 0
+        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
         target_classes[idx] = target_classes_o
 
         # used in detr
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
         losses = {'loss_ce': loss_ce}
 
-        # # used in pdvc
-        # # (batch_size, num_queries, num_classes {+ 1??})
-        # target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2] + 1],
+        # used in pdvc
+        # (batch_size, num_queries, num_classes + 1)
+        # target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2]],
         #                                     dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         
         # # 1 for positive class, 0 for negative class
@@ -112,8 +112,8 @@ class SetCriterion(nn.Module):
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             # only takes top-1 accuracy for now
-            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            # losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
         return losses
 
 
@@ -135,15 +135,14 @@ class SetCriterion(nn.Module):
         """
 
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
-        pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes)
+        pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
         device = pred_logits.device
 
         tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets['video_target']], device=device) # (batch_size)
 
-        # Count the number of predictions that are NOT "no-action" (which is the 0th class)
+        # Count the number of predictions that are NOT "no-action" (which is the last class)
         # (batch_size, num_queries) --(sum)->  (batch_size)
-        # card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)    # used in detr where 'no-object' class is the last class
-        card_pred = (pred_logits.argmax(-1) != 0).sum(1)
+        card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)
 
         card_err = F.l1_loss(card_pred.float(), tgt_lengths.float())
 
@@ -277,7 +276,7 @@ class SetCriterion(nn.Module):
         This performs the loss computation.
         Parameters:
             `outputs` (dict): dict of tensors
-                    - "pred_logits": the classification logits (including no-object) for all queries
+                    - "pred_logits": the classification logits (including no-action) for all queries
                                     shape (batch_size, num_queries, num_classes + 1)
                     - "pred_segments": The normalized segments for all queries, represented as
                                     (center_offset, length). Shape (batch_size, num_queries, 2)
