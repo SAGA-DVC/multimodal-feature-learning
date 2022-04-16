@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.nn.init import trunc_normal_, zeros_, ones_
+from torch.nn.init import trunc_normal_, zeros_, ones_, xavier_uniform_, constant_
 import numpy as np
 
 def assert_tensors_equal(t1, t2):
@@ -17,12 +17,18 @@ def init_encoder_block_weights(module):
         """
 
         if isinstance(module, nn.Linear):
-            trunc_normal_(module.weight, std=.02)
-            zeros_(module.bias)
-        elif isinstance(module, nn.LayerNorm):
-            ones_(module.weight)
-            zeros_(module.bias)
+            xavier_uniform_(module.weight)
+            constant_(module.bias, 0.)
+            # trunc_normal_(module.weight, std=.02)
+            # zeros_(module.bias)
 
+        elif isinstance(module, nn.LayerNorm):
+            constant_(module.weight, 1.)
+            constant_(module.bias, 0.)
+            # ones_(module.weight)
+            # zeros_(module.bias)
+
+        
 
 def load_token_embeddings(model_custom, model_official):
 

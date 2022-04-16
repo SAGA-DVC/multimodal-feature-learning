@@ -7,8 +7,9 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.embedding_layers import PositionEmbeddingSine, VocabularyEmbedder
+from .modules.embedding_layers import PositionEmbeddingCaptionSine, VocabularyEmbedder
 from .modules.layers import CaptionDecoderLayer
+from .modules.misc_modules import NestedTensor
 
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
 
@@ -29,7 +30,7 @@ class CaptionDecoder(nn.Module):
         
         self.vocab_size = vocab_size
         self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
-        self.word_positional_embedding_layer = PositionEmbeddingSine(d_model, normalize=True)
+        self.word_positional_embedding_layer = PositionEmbeddingCaptionSine(d_model, normalize=True)
         
         self.d_model = d_model
         self.depth = depth
@@ -64,9 +65,9 @@ class CaptionDecoder(nn.Module):
         
     # TODO - add <start> and <end> token
     # TODO - change ordering of pos embed and query embed parameters 
-    # TODO - check if pos embed should be given at every decoder layer to word
+    # TODO - check if pos embed should be given at every decoder layer to word and video
     # TODO - use log softmax?
-    def forward(self, captions, memory, positional_embedding_layer, tgt_mask, padding_mask, memory_mask):
+    def forward(self, captions, memory, tgt_mask, padding_mask, memory_mask):
 
         """
         Performs a forward pass on the Transformer model
@@ -74,23 +75,24 @@ class CaptionDecoder(nn.Module):
         Parameters:
             captions (Tensor): Tensor of dimension (batch_size, seq_len)
             memory (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
-            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            **memory_positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
             tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Combination of the lookahead mask and padding mask for the target/captions
             padding_mask (Tensor): Tensor of dimension (batch_size, seq_len). Used for position embeddings
             memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block of the decoder.
-        
+            durations (Tensor): Tensor of dimension (batch_size) representing the duration of each video in the batch in seconds
         Returns:
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
         """
 
         target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
 
-        target = target + self.word_positional_embedding_layer(target, padding_mask).transpose(1, 2)
+        target = target + self.word_positional_embedding_layer(NestedTensor(target, padding_mask)).transpose(1, 2)
+        # memory = memory + memory_positional_embedding_layer(NestedTensor(memory, memory_mask.squeeze(1).squeeze(1), durations)).transpose(1,2)
 
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, memory, positional_embedding_layer, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
+            target = layer(target, memory, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(target))

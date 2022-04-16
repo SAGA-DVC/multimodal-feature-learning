@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:0'
+    cfg.device = 'cuda:2'
 
     cfg.batch_size = 3
     cfg.num_workers = 0

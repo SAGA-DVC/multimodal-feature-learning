@@ -494,13 +494,8 @@ class DecoderLayer(nn.Module):
 
 
 
-# --------------------------------------------------------------
-# Taken from https://github.com/v-iashin/BMT/blob/master/model/blocks.py
-
-
 # TODO - dropout before/after each layer_norm?
 # TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
-# TODO - check pos embed for encoder -- how??
 class CaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
@@ -539,7 +534,7 @@ class CaptionDecoderLayer(nn.Module):
                        dropout_1=dropout_1, dropout_2=dropout_2)
 
     
-    def forward(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward(self, target, memory, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -547,8 +542,8 @@ class CaptionDecoderLayer(nn.Module):
         Parameters:
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
             memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
-            word_positional_embedding_layer (nn.Module): position embedding layer for captions
-            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            **word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            **positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
             tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
             memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
         
@@ -557,12 +552,12 @@ class CaptionDecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, memory, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, positional_embedding_layer, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, memory, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward_pre(self, target, memory, tgt_mask, memory_mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -587,7 +582,8 @@ class CaptionDecoderLayer(nn.Module):
         target_after_norm = self.layer_norm_2(target)
         # q = word_positional_embedding_layer(target_after_norm)
         q = target_after_norm
-        k = positional_embedding_layer(memory)
+        # k = positional_embedding_layer(memory)
+        k = memory
         target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
@@ -596,7 +592,7 @@ class CaptionDecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, positional_embedding_layer, tgt_mask, memory_mask):
+    def forward_post(self, target, memory, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -619,7 +615,8 @@ class CaptionDecoderLayer(nn.Module):
 
         # q = word_positional_embedding_layer(target)
         q = target
-        k = positional_embedding_layer(memory)
+        # k = positional_embedding_layer(memory)
+        k = memory
         target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)

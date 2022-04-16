@@ -166,7 +166,7 @@ class PositionalEmbedding(nn.Module):
 
 
 # TODO - check permute
-class PositionEmbeddingSine(nn.Module):
+class PositionEmbeddingCaptionSine(nn.Module):
     """
     This is a more standard version of the position embedding, very similar to the one
     used by the Attention is all you need paper, generalized to work on images.
@@ -182,7 +182,9 @@ class PositionEmbeddingSine(nn.Module):
             scale = 2 * math.pi
         self.scale = scale
 
-    def forward(self, x, mask):
+    def forward(self, tensor_list: NestedTensor):
+        x = tensor_list.tensors
+        mask = tensor_list.mask
         assert mask is not None
         not_mask = ~mask
         x_embed = not_mask.cumsum(1, dtype=torch.float32)
@@ -196,6 +198,7 @@ class PositionEmbeddingSine(nn.Module):
         pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
         pos = pos_x.permute(0, 2, 1)
         return pos
+
 
 
 class PositionEmbeddingVideoSine(nn.Module):

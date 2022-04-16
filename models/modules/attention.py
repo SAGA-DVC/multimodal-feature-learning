@@ -233,8 +233,7 @@ class CrossAttention(nn.Module):
         self.projection_layer = nn.Linear(d_model, d_model)
         self.projection_dropout = nn.Dropout(projection_dropout)
 
-    # TODO - check if 1,0 or True False in memory mask
-    # TODO - add src mask
+
     def forward(self, q, k, v, mask=None):
 
         """
@@ -406,7 +405,6 @@ class MSDeformAttn(nn.Module):
         xavier_uniform_(self.output_proj.weight.data)
         constant_(self.output_proj.bias.data, 0.)
 
-    # TODO - check input_padding_mask ( false for padding, true for non padding)
     def forward(self, query, reference_points, input_flatten, input_spatial_shapes, input_level_start_index, input_padding_mask=None):
         """
         :param query                       (N, Length_{query}, C)
