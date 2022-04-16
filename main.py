@@ -61,7 +61,7 @@ def main(args):
     output_dir = Path(args.output_dir)
 
     # TODO - pass dataset or specific params?
-    model, criterion = build_model_and_criterion(args.dvc, dataset_train)
+    model, criterion = build_model_and_criterion(args.dvc, dataset_train, args.use_differentiable_mask)
     model.to(device)
     criterion.to(device)
 

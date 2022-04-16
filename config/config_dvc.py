@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:2'
+    cfg.device = 'cuda:3'
 
     cfg.batch_size = 3
     cfg.num_workers = 0
@@ -27,6 +27,7 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.use_raw_videos = False    # Switch DVC
+    cfg.use_differentiable_mask = True
 
 
     #-------------------------------------------------------------------------------------------------
@@ -91,9 +92,12 @@ def load_config():
     cfg.dvc.bbox_loss_coef = 1
     cfg.dvc.giou_loss_coef = 1
     cfg.dvc.captions_loss_coef = 1
+    cfg.dvc.context_loss_coef = 1
     cfg.dvc.eos_coef = 1
 
     cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
+    if cfg.use_differentiable_mask:
+        cfg.dvc.losses.append('contexts')
 
 
     # Matcher args
@@ -190,6 +194,7 @@ def load_config():
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048
+    cfg.dvc.detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
 
     # Decoder
@@ -242,12 +247,11 @@ def load_config():
     cfg.dvc.caption.weight_init = True
     cfg.dvc.caption.weight_load = False
 
-    cfg.dvc.caption.emb_weights_req_grad = False
+    cfg.dvc.caption.emb_weights_req_grad = True
     cfg.dvc.caption.return_intermediate = False
 
     cfg.dvc.caption.pretrained_word_embed_dim = 100
     cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.caption.pretrained_word_embed_dim}d.txt'
-    cfg.dvc.caption.emb_weights_req_grad = False
     cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
     
@@ -286,7 +290,7 @@ def load_config():
     cfg.eval = ml_collections.ConfigDict()
     cfg.eval.submission = 'output/test.json'
     # cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = ['./anet_data/val_1.json', '../anet_data/val_2.json']
+    cfg.eval.references = ['./anet_data/val_1.json', './anet_data/val_2.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False

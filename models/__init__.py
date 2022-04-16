@@ -12,7 +12,7 @@ from .criterion import SetCriterion
 from config.config_dvc import load_config
 
 # TODO - file.close()?
-def build_model_and_criterion(args, dataset):
+def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
 
     # device = torch.device(args.device)
     
@@ -47,7 +47,8 @@ def build_model_and_criterion(args, dataset):
                         vivit_args=args.vivit, 
                         ast_args=args.ast, 
                         detr_args=args.detr, 
-                        caption_args=args.caption
+                        caption_args=args.caption,
+                        use_differentiable_mask=use_differentiable_mask
                     )
         else:
             model = MultimodalDeformableDVC(input_modalities=args.input_modalities,
@@ -84,7 +85,11 @@ def build_model_and_criterion(args, dataset):
     weight_dict = {'loss_ce': args.cls_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
-                'loss_caption': args.captions_loss_coef}
+                'loss_caption': args.captions_loss_coef
+                }
+
+    if use_differentiable_mask:
+        weight_dict['loss_context'] = args.context_loss_coef
 
     # TODO this is a hack
     if args.aux_loss:

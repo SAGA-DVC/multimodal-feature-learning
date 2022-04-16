@@ -54,23 +54,28 @@ def denormalize_segments(segments, video_durations):
 def denormalize_segments(segments, video_durations, segment_batch_id):
     '''
     Parameters:
-    `segments` (tensor): (batch_size, num_proposals, 2), representing center offset and length offset
+    `segments` (tensor): (batch_size * num_proposals, 2), representing center offset and length offset
     `video_durations` (tensor, float): (batch_size,), representing duration of videos
     `segment_batch_id` (tensor, int): (num_proposals,), representing batch id of corresponding segment
 
     Returns:
-    `denormalized_segments` (tensor):  (batch_size, num_proposals, 2), representing start_time and end_time
+    `denormalized_segments` (tensor):  (batch_size * num_proposals, 2), representing start_time and end_time
     '''
     
     # batch_size = segments.shape[0]
     denormalized_segments = torch.zeros(list(segments.shape), dtype=torch.float32)
-    # print("Segments Shapes: ", segments.shape, denormalized_segments.shape)
+    # print("Segments Shapes: ", segments.shape, denormalized_segments.shape, video_durations, segment_batch_id)
 
     for i, idx in enumerate(segment_batch_id):
         d = video_durations[idx]
         denormalized_segments[i] = torch.tensor(
-            [max((d/2 * (2*segments[i][0] - segments[i][1])), 0), min((d/2 * (2*segments[i][0] + segments[i][1])), d)]
+            [min(max((d/2 * (2*segments[i][0] - segments[i][1])), 0), d), max(min((d/2 * (2*segments[i][0] + segments[i][1])), d), 0)]
         ).float()
+
+    # Interchange if start > end
+    denormalized_segments = torch.tensor(list(map(
+        lambda p: p.tolist() if p[0] < p[1] else p.tolist()[::-1], denormalized_segments
+    )))
 
     return denormalized_segments
 
