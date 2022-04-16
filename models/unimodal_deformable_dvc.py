@@ -12,13 +12,13 @@ from .unimodal_deformable_transformer import build_unimodal_deformable_transform
 from .base_encoder import build_base_encoder
 from .caption_decoder import build_caption_decoder
 
-from .modules.misc_modules import decide_two_stage
+from .modules.embedding_layers import PositionEmbeddingVideoSine
 from .modules.layers import FFN
+from .modules.misc_modules import decide_two_stage
 
 from .load_weights import load_positional_embeddings
 
 
-# TODO - src mask
 # TODO - check devices for tensors
 class UnimodalDeformableDVC(nn.Module):
     def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, 
@@ -44,6 +44,8 @@ class UnimodalDeformableDVC(nn.Module):
 
         assert 'video' in input_modalities or 'audio' in input_modalities, f'input_modalities should contain one of "video" or "audio". You have {input_modalities}'
 
+        self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
+
         self.base_encoder = build_base_encoder(detr_args)
 
         # Unimodal Deformable DETR
@@ -62,9 +64,7 @@ class UnimodalDeformableDVC(nn.Module):
 
 
     # TODO - use log softmax?
-    # TODO - padding and src_mask for vid features as input to caption decoder  
-    # TODO - add position embedding in caption decoder
-    # TODO - check all pos embed
+    # TODO - check (learned & static) pos embed
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
@@ -109,10 +109,9 @@ class UnimodalDeformableDVC(nn.Module):
 
         # Base Encoder - for multi-scale features
         if 'video' in self.input_modalities: 
-            srcs, masks, pos = self.base_encoder(video, video_mask, durations, 'video')
-
+            srcs, masks, pos = self.base_encoder(video, video_mask, durations, self.pos_embed)
         else:
-            srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, 'audio')
+            srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, self.pos_embed)
 
         # Forword Encoder
         src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.unimodal_deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
@@ -160,12 +159,12 @@ class UnimodalDeformableDVC(nn.Module):
         indices = self.matcher(out, obj['video_target']) 
 
         # Context Features
-        # with torch.no_grad():
-        max_gt_target_segments = obj['gt_segments'].shape[1]
+        with torch.no_grad():
+            max_gt_target_segments = obj['gt_segments'].shape[1]
 
-        # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-        memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
-
+            # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
+            memory, memory_mask = self.get_segment_features(video, out['pred_segments'], indices, max_gt_target_segments)
+ 
         memory = memory.to(video.device)
         memory.requires_grad = True
 
@@ -183,7 +182,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, padding_mask, memory_mask)
+            outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 

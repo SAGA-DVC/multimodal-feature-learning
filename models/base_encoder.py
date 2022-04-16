@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .modules.misc_modules import NestedTensor
-from .modules.embedding_layers import PositionEmbeddingSine, PositionEmbeddingVideoSine
+from .modules.embedding_layers import PositionEmbeddingVideoSine
 
 
 class BaseEncoder(nn.Module):
@@ -18,10 +18,6 @@ class BaseEncoder(nn.Module):
     '''
     def __init__(self, num_feature_levels, vf_dim, d_model):
         super(BaseEncoder, self).__init__()
-
-        # TODO - check pos_embed
-        self.pos_embed_video = PositionEmbeddingVideoSine(d_model//2, normalize=True)
-        self.pos_embed_audio = PositionEmbeddingSine(d_model, normalize=True)
 
         self.num_feature_levels = num_feature_levels
         self.d_model = d_model
@@ -52,11 +48,12 @@ class BaseEncoder(nn.Module):
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
             nn.init.constant_(proj[0].bias, 0)
 
-    def forward(self, vf, mask, duration, modality):
+    def forward(self, vf, mask, duration, pos_embed):
         """
         :param vf: video tensor, expected shape: (batch_size, num_tokens, d_model)
         :param mask: video mask, expected shape: (batch_size, num_tokens)
         :param duration: video length, expected shape: (batch_size)
+        :param pos_embed: nn.Module for positional embeddings
         :return: srcs - list (len=num_feature_levels) - [(batch_size, d_model, num_tokens*)]
                         where num_tokens* depends on num_feature_levels (essentially gets halved for each level)
         :return: masks - list (len=num_feature_levels - [(batch_size, num_tokens)]
@@ -64,11 +61,7 @@ class BaseEncoder(nn.Module):
         """
         vf = vf.transpose(1, 2)  # (batch_size, num_tokens, d_model) --> (batch_size, d_model, num_tokens)
         vf_nt = NestedTensor(vf, mask, duration)
-
-        if modality == 'video':
-            pos0 = self.pos_embed_video(vf_nt) 
-        else:
-            pos0 = self.pos_embed_audio(vf, mask) 
+        pos0 = pos_embed(vf_nt)
         
         srcs = []
         masks = []
@@ -87,15 +80,12 @@ class BaseEncoder(nn.Module):
                 src = self.input_proj[l](srcs[-1])
             m = vf_nt.mask
             mask = F.interpolate(m[None].float(), size=src.shape[-1:]).to(torch.bool)[0] #  upsample the mask to given shape
-
-            if modality == 'video':
-                pos_l = self.pos_embed_video(NestedTensor(src, mask, duration)).to(src.dtype)
-            else:
-                pos_l = self.pos_embed_audio(src, mask).to(src.dtype)
+            pos_l = pos_embed(NestedTensor(src, mask, duration)).to(src.dtype)
 
             srcs.append(src)
             masks.append(mask)
             poses.append(pos_l)
+
         return srcs, masks, poses
 
 def build_base_encoder(args):

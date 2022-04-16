@@ -12,9 +12,9 @@ from .multimodal_deformable_transformer import build_multimodal_deformable_trans
 from .base_encoder import build_base_encoder
 from .caption_decoder import build_caption_decoder
 
-from .modules.embedding_layers import PositionalEmbedding
-from .modules.misc_modules import decide_two_stage
+from .modules.embedding_layers import PositionEmbeddingVideoSine
 from .modules.layers import FFN
+from .modules.misc_modules import decide_two_stage
 
 from .load_weights import load_positional_embeddings
 
@@ -45,6 +45,8 @@ class MultimodalDeformableDVC(nn.Module):
 
         assert 'video' in input_modalities and 'audio' in input_modalities, f'input_modalities should contain both, "video" and "audio". You have {input_modalities}'
 
+        self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
+
         self.base_encoder = build_base_encoder(detr_args)
 
         # Multimodal Deformable DETR
@@ -63,9 +65,7 @@ class MultimodalDeformableDVC(nn.Module):
 
 
     # TODO - use log softmax?
-    # TODO - padding and src_mask for vid features as input to caption decoder  
-    # TODO - add position embedding in caption decoder
-    # TODO - check all pos embed
+    # TODO - check (learned & static) pos embed
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
@@ -109,8 +109,8 @@ class MultimodalDeformableDVC(nn.Module):
         batch_size, _, _ = video.shape
 
         # Base Encoder - for multi-scale features
-        video_srcs, video_masks, video_pos = self.base_encoder(video, video_mask, durations, 'video')
-        audio_srcs, audio_masks, audio_pos = self.base_encoder(audio, audio_mask, durations, 'audio')
+        video_srcs, video_masks, video_pos = self.base_encoder(video, video_mask, durations, self.pos_embed)
+        audio_srcs, audio_masks, audio_pos = self.base_encoder(audio, audio_mask, durations, self.pos_embed)
 
         # Forword Encoder
         video_src_flatten, video_temporal_shapes, video_level_start_index, video_valid_ratios, video_lvl_pos_embed_flatten, video_mask_flatten = self.multimodal_deformable_transformer.prepare_encoder_inputs(video_srcs, video_masks, video_pos)
@@ -187,7 +187,7 @@ class MultimodalDeformableDVC(nn.Module):
             tgt_mask = tgt_mask.to(captions.device)
         
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-            outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, padding_mask, memory_mask)
+            outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
