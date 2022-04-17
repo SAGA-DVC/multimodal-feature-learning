@@ -48,14 +48,14 @@ def main(args):
         collate_fn = collate_fn_without_raw_videos
     
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
-    # dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='train', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
-        # sampler_val = DistributedSampler(dataset_val, shuffle=False)
+        sampler_val = DistributedSampler(dataset_val, shuffle=False)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        # sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
@@ -63,10 +63,9 @@ def main(args):
                                    collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
                                    num_workers=args.num_workers)
 
-    # data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-    #                             drop_last=False, 
-    #                             collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
-    #                             num_workers=args.num_workers)
+    data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val, drop_last=False, 
+                                collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
+                                num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
 
@@ -138,11 +137,14 @@ def main(args):
 
 
         # Validation
-        # evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
+        eval_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, epoch, args, args.wandb.on)
 
-        log_stats = {'epoch': epoch,
-                    **{f'train_{k}': v for k, v in train_stats.items()},
-                     'n_parameters': n_parameters}
+        log_stats = {'train':{'epoch': epoch,
+                            **{f'train_{k}': v for k, v in train_stats.items()},
+                            'n_parameters': n_parameters},
+                            
+                     'val':{**{f'val_{k}': v for k, v in eval_stats.items()}}
+                    }
         
         # if args.wandb.on:
         #     wandb.log({'log_stats': log_stats})

@@ -72,7 +72,7 @@ def denormalize_segments(segments, video_durations, segment_batch_id):
             [min(max((d/2 * (2*segments[i][0] - segments[i][1])), 0), d), max(min((d/2 * (2*segments[i][0] + segments[i][1])), d), 0)]
         ).float()
 
-    # Interchange if start > end
+    # TODO - Interchange if start > end
     denormalized_segments = torch.tensor(list(map(
         lambda p: p.tolist() if p[0] < p[1] else p.tolist()[::-1], denormalized_segments
     )))
@@ -107,11 +107,19 @@ def save_submission(json_data, json_file_path):
         json.dump(json_data, f, indent=4)
 
     
-def pprint_eval_scores(scores):
+def pprint_eval_scores(scores, debug=False):
     # Print the averages
-    print ('-' * 80)
-    print ("Average across all tIoUs")
-    print ('-' * 80)
+    if debug:
+        print ('-' * 80)
+        print ("Average across all tIoUs")
+        print ('-' * 80)
+    
+    avg_scores = {}
     for metric in scores:
         score = scores[metric]
-        print ('| %s: %2.4f'%(metric, 100 * sum(score) / float(len(score))))
+        avg_scores[metric] = 100 * sum(score) / float(len(score))
+        
+        if debug:
+            print ('| %s: %2.4f'%(metric, avg_scores[metric]))
+    
+    return avg_scores

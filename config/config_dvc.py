@@ -13,7 +13,7 @@ def load_config():
     cfg.seed = 0
     cfg.device = 'cuda:2'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 16
+    cfg.batch_size = 3
     cfg.num_workers = 2
 
     cfg.lr = 1e-4
@@ -22,10 +22,10 @@ def load_config():
     cfg.clip_max_norm = 0.1
         
     cfg.output_dir = 'output'
-    cfg.resume = 'output/checkpoint.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output/checkpoint.pth'
+    cfg.resume = None
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 10
+    cfg.epochs = 2
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -47,7 +47,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Testing the flow of the DVC model"
@@ -299,5 +299,6 @@ def load_config():
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False
+    cfg.eval.is_submission_json = True
 
     return cfg

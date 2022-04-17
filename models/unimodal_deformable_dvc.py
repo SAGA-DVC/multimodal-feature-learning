@@ -23,9 +23,10 @@ from .load_weights import load_positional_embeddings
 from utils.preds_postprocess import get_src_permutation_idx, denormalize_segments
 
 # TODO - check devices for tensors
+# TODO - vanishing gradients
 class UnimodalDeformableDVC(nn.Module):
     def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, 
-                vocab_size, seq_len, embedding_matrix, 
+                vocab, seq_len, embedding_matrix, 
                 vivit_args, ast_args, detr_args, caption_args, use_differentiable_mask=False):
         
         """
@@ -60,11 +61,14 @@ class UnimodalDeformableDVC(nn.Module):
         self.video_rescale_len = detr_args.video_rescale_len
         self.num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
         
+        self.use_differentiable_mask = use_differentiable_mask
         if use_differentiable_mask:
             self.context_mask_model = ContextMaskModel(in_dim=(2 + d_model), out_dim=(self.num_tokens))
 
         # Captioning module
-        self.caption_decoder = build_caption_decoder(caption_args, vocab_size, seq_len, embedding_matrix)
+        self.seq_len = seq_len
+        self.vocab = vocab
+        self.caption_decoder = build_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
         
 
         # if weight_load and model_official is not None:
@@ -77,9 +81,9 @@ class UnimodalDeformableDVC(nn.Module):
 
     # TODO - use log softmax?
     # TODO - padding and src_mask for vid features as input to caption decoder  
-    # TODO - add position embedding in caption decoder
-    # TODO - check all pos embed
-    def forward(self, obj, use_differentiable_mask=False, is_training=True, faster_eval=False):
+    # TODO - pos embed (static, learned)
+    # TODO - check pos embed for all layers
+    def forward(self, obj, is_training=True, faster_eval=False):
 
         """
         Performs a forward pass on the UnimodalDeformableDVC model which consists of the encoders, proposal decoder and caption decoder
@@ -186,7 +190,7 @@ class UnimodalDeformableDVC(nn.Module):
         memory_mask = memory_mask.to(video.device)
 
         # Differentiable Mask
-        if use_differentiable_mask:
+        if self.use_differentiable_mask:
             # TODO - use outputs_segment and use [-1] for pred_memory_mask
             # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
             # input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
@@ -195,10 +199,17 @@ class UnimodalDeformableDVC(nn.Module):
 
             input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
             pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens)
-            
+
+            # Gating mechanism for memory_mask TODO: scores
+            seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
+            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
+                        
             out['pred_memory_mask'] = pred_memory_mask
             
             assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
+
+            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
+            pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         
         # Caption Decoder
         if is_training:
@@ -209,10 +220,8 @@ class UnimodalDeformableDVC(nn.Module):
             tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
 
-            if use_differentiable_mask:
-                pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
-                pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)
-                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            if self.use_differentiable_mask:
                 outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
             else:
                 outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
@@ -223,7 +232,7 @@ class UnimodalDeformableDVC(nn.Module):
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
 
-            if use_differentiable_mask:
+            if self.use_differentiable_mask:
                 return out, indices, torch.squeeze(memory_mask).float()
             else:
                 return out, indices, None
@@ -231,28 +240,34 @@ class UnimodalDeformableDVC(nn.Module):
         # TODO - implement changes in caption decoder 
         # Inference
         else:
-            # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length-1)
-            captions = torch.ones([memory.shape[0], 19], dtype=torch.int32)    # `PAD_TOKEN`
-            captions[:, 0] = 2  # `START_TOKEN`
-            captions = captions.to(memory_mask.device)  # TODO Temporary
+            # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
+            captions = torch.ones([memory.shape[0], self.seq_len - 1], dtype=torch.int32)    # PAD_TOKEN
+            captions[:, 0] = self.vocab['<bos>']    # START_TOKEN
+            captions = captions.to(memory_mask.device)
 
             # Loop control Variables
             total_caption_num = memory.shape[0]
             total_caption_done = 0
             caption_done_indices = []
 
-            # Since END_TOKEN can be predicted even if the caption not reaches max_caption_length
-            # range(1, max_caption_length-1)
-            for word_index in range(1, 19):
-                captions_padding_mask = self.make_padding_mask(captions)
-                captions_padding_mask = captions_padding_mask.to(memory_mask.device)    # TODO Temporary
+            # Since END_TOKEN can be predicted even if the caption does not reach max_caption_length
+            # range(1, max_caption_length - 1)
+            for word_index in range(1, self.seq_len - 1):
+                captions_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
+                captions_padding_mask = captions_padding_mask.to(memory_mask.device)
                 
                 tgt_mask = self.make_tgt_mask(captions, captions_padding_mask)  # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-                tgt_mask = tgt_mask.to(captions.device)  # TODO Temporary
+                tgt_mask = tgt_mask.to(captions.device)
 
-                # (1, total_caption_num, max_caption_length - 1, vocab_size)
-                outputs_captions = self.caption_decoder(captions, memory, nn.Identity(), tgt_mask, memory_mask)
-                outputs_captions = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length-1)
+                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+                if self.use_differentiable_mask:
+                    outputs_captions = self.caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
+                else:
+                    outputs_captions = self.caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
+
+                out['pred_captions'] = outputs_captions[-1]
+
+                outputs_captions = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
 
                 # Update predicted word in captions
                 if faster_eval:
@@ -263,7 +278,7 @@ class UnimodalDeformableDVC(nn.Module):
                         if caption_index not in caption_done_indices:
                             captions[caption_index, word_index] = outputs_captions[caption_index, word_index]
 
-                            if outputs_captions[caption_index, word_index] == 3:    # if END_TOKEN predicted
+                            if outputs_captions[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
                                 caption_done_indices.append(caption_index)
                                 total_caption_done += 1
 
@@ -272,14 +287,18 @@ class UnimodalDeformableDVC(nn.Module):
 
             if faster_eval:
                 # For adding END_TOKEN at the end irrespective of whether it already exists in caption
-                end_token = torch.full([captions.shape[0], 1], 3, dtype=torch.int32).to(captions.device)    # `END_TOKEN` (3) column, (total_caption_num, 1)
-                captions = torch.cat((captions, end_token), 1)  # (total_caption_num, max_caption_length)
+                end_token = torch.full([captions.shape[0], 1], self.vocab['<eos>'], dtype=torch.int32).to(captions.device)    # `END_TOKEN` (3) column, (total_caption_num, 1)
+                captions_with_eos = torch.cat((captions, end_token), 1)  # (total_caption_num, max_caption_length)
             else:
                 # Add END_TOKEN or PAD_TOKEN as the last token
-                last_token = torch.tensor([1 if 3 in c else 3 for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
-                captions = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
+                last_token = torch.tensor([self.vocab['<pad>'] if self.vocab['<eos>'] in c else self.vocab['<eos>'] for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
+                captions_with_eos = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
 
-            return out['pred_segments'], captions, out['pred_logits'], indices
+            if self.use_differentiable_mask:
+                return out, captions_with_eos, indices, torch.squeeze(memory_mask).float()
+            else:
+                return out, captions_with_eos, indices, None
+            
 
 
     @torch.jit.unused
@@ -334,8 +353,7 @@ class UnimodalDeformableDVC(nn.Module):
             tgt_padding_mask (Tensor): Tensor of dimention (batch_size, seq_len)
         """
 
-        # TODO - 1 is PAD_TOKEN_IDX
-        tgt_padding_mask = (target != 1)
+        tgt_padding_mask = (target == self.vocab['<pad>'])
         return tgt_padding_mask
 
 
