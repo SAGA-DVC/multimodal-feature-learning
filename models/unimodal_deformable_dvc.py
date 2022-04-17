@@ -51,6 +51,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         self.base_encoder = build_base_encoder(detr_args)
 
+        # TODO - return intermediate=False deos not output depth dimesntion (dim 0)
         # Unimodal Deformable DETR
         self.unimodal_deformable_transformer = build_unimodal_deformable_transformer(detr_args)
         
@@ -109,7 +110,7 @@ class UnimodalDeformableDVC(nn.Module):
                             list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
 
         """
-    
+
         video = obj['video_tensor']    # (batch_size, num_tokens_v, d_model)
         video_mask = obj['video_mask']    # (batch_size, num_tokens_v)
         

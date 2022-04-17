@@ -11,23 +11,47 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:3'
+    cfg.device = 'cuda:2'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 3
-    cfg.num_workers = 0
+    cfg.batch_size = 16
+    cfg.num_workers = 2
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
     cfg.weight_decay = 1e-4
+    cfg.clip_max_norm = 0.1
         
     cfg.output_dir = 'output'
-    cfg.resume = None
-    cfg.start_epoch = 0
-    cfg.epochs = 1
-    cfg.clip_max_norm = 0.1
+    cfg.resume = 'output/checkpoint.pth'
+    # cfg.resume = None
+    cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
+    cfg.epochs = 10
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
+
+
+    #-------------------------------------------------------------------------------------------------
+    # Distributed training
+    # is_distributed, rank, world_size, gpu - doesn't matter what it is in cfg. It is set in init_distributed_mode() in utils/misc.py
+    cfg.distributed = ml_collections.ConfigDict()
+    cfg.distributed.is_distributed = True    
+    cfg.distributed.rank = 0
+    cfg.distributed.world_size = 1
+    cfg.distributed.gpu = 0
+    # cfg.distributed.device = 'cuda'
+    cfg.distributed.dist_backend = 'nccl'
+    cfg.distributed.dist_url = 'env://'
+
+
+    #-------------------------------------------------------------------------------------------------
+    # Wandb (Weights and Biases)
+    cfg.wandb = ml_collections.ConfigDict()
+    cfg.wandb.on = True
+    cfg.wandb.project = "simple-end-to-end"
+    cfg.wandb.entity = "saga-dvc"
+    cfg.wandb.notes = "Testing the flow of the DVC model"
+    cfg.wandb.run_name = 'dvc-testing'
 
 
     #-------------------------------------------------------------------------------------------------
@@ -39,19 +63,18 @@ def load_config():
 
     cfg.dataset.activity_net.anet_path = './anet_data'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
-    cfg.dataset.activity_net.video_features_folder = './data_features'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
 
     cfg.dataset.activity_net.max_caption_len_all = 20
-    cfg.dataset.activity_net.vocab_size = 5747
     
-    data_rescale = ['interpolate', 'uniform']
+    data_rescale = ['interpolate', 'uniform']    # do not use uniform for now - TODO - determine rescale length
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.video_feature_sample_rate = 2
-    cfg.dataset.activity_net.video_rescale_len = 1500    # Switch DVC
+    cfg.dataset.activity_net.video_rescale_len = 300    # Switch DVC
     cfg.dataset.activity_net.audio_feature_sample_rate = 2
     cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
 
@@ -80,7 +103,7 @@ def load_config():
     # cfg.dvc.input_modalities = ['audio']
 
     cfg.dvc.num_queries = 20
-    cfg.dvc.d_model = 768
+    cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = False
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
 
@@ -183,18 +206,20 @@ def load_config():
     cfg.dvc.detr.hidden_dropout_prob = 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.detr.num_heads = 12 
+    cfg.dvc.detr.num_heads = 8 
 
     cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
     cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
     cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
 
-    cfg.dvc.detr.enc_layers = 2
-    cfg.dvc.detr.dec_layers = 2
+    cfg.dvc.detr.enc_layers = 12    # depth
+    cfg.dvc.detr.dec_layers = 12    # depth
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048
     cfg.dvc.detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
+
+    cfg.dvc.detr.return_intermediate = True    # TODO - check use
 
 
     # Decoder
@@ -204,7 +229,7 @@ def load_config():
 
     cfg.dvc.decoder.depth = 2
 
-    cfg.dvc.decoder.num_heads = 12
+    cfg.dvc.decoder.num_heads = 8
     cfg.dvc.decoder.mlp_ratio = 4
     cfg.dvc.decoder.qkv_bias = True
 
@@ -229,9 +254,9 @@ def load_config():
 
     cfg.dvc.caption.d_model = cfg.dvc.d_model
 
-    cfg.dvc.caption.depth = 2
+    cfg.dvc.caption.depth = 12
 
-    cfg.dvc.caption.num_heads = 12
+    cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4
     cfg.dvc.caption.qkv_bias = True
 
@@ -250,8 +275,10 @@ def load_config():
     cfg.dvc.caption.emb_weights_req_grad = True
     cfg.dvc.caption.return_intermediate = False
 
-    cfg.dvc.caption.pretrained_word_embed_dim = 100
+    # TODO - handle embedding matrix loading better
+    cfg.dvc.caption.pretrained_word_embed_dim = 300
     cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.caption.pretrained_word_embed_dim}d.txt'
+    # cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.840B.300d.txt'
     cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
     
@@ -261,28 +288,6 @@ def load_config():
     cfg.pretrained_models = ml_collections.ConfigDict()
     cfg.pretrained_models.vit = 'vit_base_patch16_224'
     cfg.pretrained_models.deit = 'deit_base_patch16_224'
-    
-
-    #-------------------------------------------------------------------------------------------------
-    # Distributed training
-    # is_distributed, rank, world_size, gpu - doesn't matter what it is during init. It is set in init_distributed_mode() in utils/misc.py
-    cfg.distributed = ml_collections.ConfigDict()
-    cfg.distributed.is_distributed = True    
-    cfg.distributed.rank = 0
-    cfg.distributed.world_size = 1
-    cfg.distributed.gpu = 0
-    # cfg.distributed.device = 'cuda'
-    cfg.distributed.dist_backend = 'nccl'
-    cfg.distributed.dist_url = 'env://'
-
-
-    #-------------------------------------------------------------------------------------------------
-    # Wandb (Weights and Biases)
-    cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = False
-    cfg.wandb.project = "simple-end-to-end"
-    cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Testing the flow of the DVC model"
 
 
     #-------------------------------------------------------------------------------------------------

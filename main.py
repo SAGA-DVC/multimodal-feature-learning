@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 import random, time, datetime, json
 from functools import partial
@@ -21,8 +22,13 @@ from dataset.anet_with_raw_video_audio import build_dataset as build_dataset_wit
 def main(args):
     init_distributed_mode(args.distributed)
 
-    if args.wandb.on:
-        wandb.init(project=args.wandb.project, entity=args.wandb.entity, config=args.to_dict(), notes=args.wandb.notes)
+    # wandb logging is in main.py, engine.py and utils.plots.py
+    if args.wandb.on and is_main_process():
+        wandb.init(project=args.wandb.project, 
+                entity=args.wandb.entity, 
+                config=args.to_dict(), 
+                notes=args.wandb.notes)
+        # wandb.run.name = args.wandb.run_name
 
     device = torch.device(args.device)
 
@@ -42,21 +48,25 @@ def main(args):
         collate_fn = collate_fn_without_raw_videos
     
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
-    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
+    # dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
-        sampler_val = DistributedSampler(dataset_val, shuffle=False)
+        # sampler_val = DistributedSampler(dataset_val, shuffle=False)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        # sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
-    data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                 drop_last=False, collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX), num_workers=args.num_workers)
+                                   collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
+                                   num_workers=args.num_workers)
+
+    # data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
+    #                             drop_last=False, 
+    #                             collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
+    #                             num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
 
@@ -78,7 +88,7 @@ def main(args):
         print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'number of params: {n_parameters / 1000000} M', )
+    print(f'number of params: {n_parameters / 1000000} M')
 
     param_dicts = [
         {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
@@ -96,20 +106,20 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
-    print("Start training")
+    print(f"Start training from epoch {args.start_epoch}")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args, args.wandb.on, wandb)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args, args.wandb.on)
         
         lr_scheduler.step()
 
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs
-            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 100 == 0:
+            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 10 == 0:
                 checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
                 save_on_master({
@@ -120,6 +130,13 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
+                if args.wandb.on and is_main_process():
+                    # versioning on wandb
+                    artifact = wandb.Artifact("simple-end-to-end", type="model", description="Unimodal-DVC checkpoint")
+                    artifact.add_file(checkpoint_path)
+                    wandb.log_artifact(artifact)
+
+
         # Validation
         # evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, args.eval)
 
@@ -127,18 +144,21 @@ def main(args):
                     **{f'train_{k}': v for k, v in train_stats.items()},
                      'n_parameters': n_parameters}
         
-        if args.wandb.on:
-            wandb.log(log_stats)
+        # if args.wandb.on:
+        #     wandb.log({'log_stats': log_stats})
 
         if args.output_dir and is_main_process():
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+            if args.wandb.on:
+                wandb.save(os.path.join(output_dir, "log.txt"))
+
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f'Training time {total_time_str}')
 
-    if args.wandb.on:
+    if args.wandb.on and is_main_process():
             wandb.log({f"Total training time for {args.epochs - args.start_epoch} epochs": total_time_str})
 
     

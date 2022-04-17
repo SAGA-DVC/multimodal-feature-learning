@@ -533,7 +533,7 @@ def build_multimodal_deformable_transformer(args):
         dim_feedforward=args.transformer_ff_dim,
         dropout=args.transformer_dropout_prob,
         activation="relu",
-        return_intermediate_dec=True,
+        return_intermediate_dec=args.return_intermediate,
         num_feature_levels=args.num_feature_levels,
         dec_n_points=args.dec_n_points,
         enc_n_points=args.enc_n_points)
