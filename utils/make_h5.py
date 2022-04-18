@@ -4,7 +4,7 @@ import torch
 import json
 
 hf = h5py.File('audio_features_512.h5', 'a')
-annotation = json.load(open('../activity-net/captions/train.json', 'r'))
+annotation = json.load(open('../activity-net/captions/val_1.json', 'r'))
 
 keys = list(annotation.keys())
 

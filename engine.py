@@ -20,7 +20,7 @@ from evaluation.evaluate import run_eval
 
 
 
-def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args, wandb_log):
+def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device, epoch, args, wandb_log):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -45,7 +45,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
-    print_freq = 1
+    print_freq = args.print_freq
 
     for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
 
@@ -107,10 +107,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print(f"\nAveraged stats for epoch [{epoch}]: ", metric_logger, "\n")
-
-    # if wandb_log and is_main_process():
-        # wandb.log({f"Averaged stats for epoch [{epoch}]": str(metric_logger)})
+    print(f"\nAveraged train stats for epoch [{epoch}]: ", metric_logger, "\n")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -118,7 +115,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 # TODO: Pass json instead of creating file and passing file path
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, device, epoch, args, wandb_log):
+def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):
     
     """
     Inference on given data and save the results.
@@ -137,9 +134,16 @@ def evaluate(model, criterion, data_loader, vocab, device, epoch, args, wandb_lo
     model.eval()
     criterion.eval()
 
-    submission_json = get_sample_submission()
+    submission_json_epoch = get_sample_submission()
 
-    for i, obj in enumerate(data_loader):
+    metric_logger = MetricLogger(delimiter="\t")
+    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    header = f'Epoch: [{epoch}]'
+    print_freq = args.print_freq
+
+    for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
+        
+        submission_json_batch = get_sample_submission()
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
         obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
@@ -180,40 +184,64 @@ def evaluate(model, criterion, data_loader, vocab, device, epoch, args, wandb_lo
 
         for i, batch_id in enumerate(idx[0]):
             video_id = obj['video_key'][batch_id]
+            append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
-            if video_id not in submission_json['results']:
-                submission_json['results'][video_id] = []
+        scores = run_eval(args.eval, submission_json_batch)
+        avg_scores = pprint_eval_scores(scores, debug=False)
 
-            submission_json['results'][video_id].append({
-                'sentence': captions_string[i],
-                'timestamp': [denormalized_segments[i][0].item(), denormalized_segments[i][1].item()]
-            })
+        metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(**avg_scores)
+
+        if wandb_log and is_main_process():
+            loss_dict_reduced_scaled.update(avg_scores)
+            wandb_log_metrics(
+                phase="val",
+                loss=loss_value,
+                loss_dict=loss_dict_reduced_scaled,
+                epoch=epoch,
+                batch_idx=batch_idx
+            )
     
-    scores = run_eval(args.eval, submission_json)
-    avg_scores = pprint_eval_scores(scores, debug=False)
+    # gather the stats from all processes
+    metric_logger.synchronize_between_processes()
+    print(f"\nAveraged val stats for epoch [{epoch}]: ", metric_logger, "\n")
 
-    if wandb_log and is_main_process():
-        loss_dict = loss_dict_reduced_scaled.update(avg_scores)
-        wandb_log_metrics(
-            phase="val",
-            loss=loss_value,
-            loss_dict=loss_dict,
-            epoch=epoch,
-        )
+    # TODO - check if run_eval can be removed and we can instead avg scores in above loop
+    scores = run_eval(args.eval, submission_json_epoch)
+    return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return_dict.update(scores)
+    return return_dict
+     
 
-    return scores
+    # return scores
 
 
 # TODO - no grad reqd??
 @torch.no_grad()
-def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx=None):
+def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx):
     log = {
         "epoch": epoch,
         "batch": batch_idx,
         "loss": loss,
     }
     for key, value in loss_dict.items():
-        log[key] = value.item()
+        if isinstance(value, float):
+            log[key] = value
+        else:
+            log[key] = value.item()
 
     log_dict = {f"{phase}-{key}": value for key, value in log.items()}
+    # print(log_dict)
     wandb.log(log_dict)
+
+
+def append_result_to_json_submission_file(video_id, submission_json_batch, captions_string, denormalized_segments):
+    if video_id not in submission_json_batch['results']:
+        submission_json_batch['results'][video_id] = []
+
+    submission_json_batch['results'][video_id].append({
+        'sentence': captions_string,
+        'timestamp': [denormalized_segments[0].item(), denormalized_segments[1].item()]
+    })

@@ -18,7 +18,7 @@ def plot_grad_flow_line_plot(named_parameters, epoch, batch_idx, output_dir='out
             layers.append(n)
             ave_grads.append(p.grad.abs().mean().cpu())
 
-    plt.figure(figsize=(30, 30), dpi=80)
+    plt.figure(figsize=(20, 20), dpi=80)
 
     plt.plot(ave_grads, alpha=0.3, color="b")
 
@@ -57,7 +57,7 @@ def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, output_dir='outp
             ave_grads.append(p.grad.abs().mean().cpu())
             max_grads.append(p.grad.abs().max().cpu())
     
-    plt.figure(figsize=(30, 30), dpi=80)
+    plt.figure(figsize=(20, 20), dpi=80)
 
     plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
     plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
@@ -71,9 +71,9 @@ def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, output_dir='outp
     plt.ylabel("Average Gradient")
     plt.title(f"Gradient flow for epoch {epoch}, batch {batch_idx}")
     # plt.grid(True)
-    plt.legend([Line2D([0], [0], color="r", lw=4),
-                Line2D([0], [0], color="g", lw=4),
-                Line2D([0], [0], color="b", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
 
     plt.savefig(os.path.join(output_dir, f"grads/E{epoch}_B{batch_idx}_bar.png"), bbox_inches='tight')
 

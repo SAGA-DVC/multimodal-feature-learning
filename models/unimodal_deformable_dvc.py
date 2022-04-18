@@ -120,16 +120,16 @@ class UnimodalDeformableDVC(nn.Module):
         
         durations = obj['video_length'][:, 1]   # (batch_size)
 
-        audio = obj['audio_tensor']    # (batch_size, num_tokens_a, d_model)
-        audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
+        # audio = obj['audio_tensor']    # (batch_size, num_tokens_a, d_model)
+        # audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
         
         batch_size, _, _ = video.shape
 
         # Base Encoder - for multi-scale features
         if 'video' in self.input_modalities: 
             srcs, masks, pos = self.base_encoder(video, video_mask, durations, self.pos_embed)
-        else:
-            srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, self.pos_embed)
+        # else:
+        #     srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, self.pos_embed)
 
         # Forword Encoder
         src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.unimodal_deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)

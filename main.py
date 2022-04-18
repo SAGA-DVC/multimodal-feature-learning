@@ -14,7 +14,9 @@ from config.config_dvc import load_config
 from utils.misc import *
 from engine import train_one_epoch, evaluate
 
-from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
+# from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
+from dataset.anet_video import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
+
 # from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 from dataset.anet_with_raw_video_audio import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 
@@ -48,7 +50,7 @@ def main(args):
         collate_fn = collate_fn_without_raw_videos
     
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
-    dataset_val = build_dataset(video_set='train', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
@@ -111,14 +113,14 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, args, args.wandb.on)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
         
         lr_scheduler.step()
 
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs
-            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 10 == 0:
+            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 5 == 0:
                 checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
                 save_on_master({
@@ -137,34 +139,36 @@ def main(args):
 
 
         # Validation
-        eval_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, device, epoch, args, args.wandb.on)
+        val_stats = {}
+        if (epoch + 1) % 5 == 0:
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
 
-        log_stats = {'train':{'epoch': epoch,
+
+        train_log_stats = {'epoch': epoch,
                             **{f'train_{k}': v for k, v in train_stats.items()},
-                            'n_parameters': n_parameters},
-                            
-                     'val':{**{f'val_{k}': v for k, v in eval_stats.items()}}
-                    }
-        
-        # if args.wandb.on:
-        #     wandb.log({'log_stats': log_stats})
+                            'n_parameters': n_parameters}
+
+        val_log_stats = {'epoch': epoch,
+                        **{f'val_{k}': v for k, v in val_stats.items()}}
+                        
 
         if args.output_dir and is_main_process():
-            with (output_dir / "log.txt").open("a") as f:
-                f.write(json.dumps(log_stats) + "\n")
+            with (output_dir / "train_log.txt").open("a") as f:
+                f.write(json.dumps(train_log_stats) + "\n")
+            
+            with (output_dir / "val_log.txt").open("a") as f:
+                f.write(json.dumps(val_log_stats) + "\n")
 
             if args.wandb.on:
-                wandb.save(os.path.join(output_dir, "log.txt"))
+                wandb.save(os.path.join(output_dir, "train_log.txt"))
+                wandb.save(os.path.join(output_dir, "val_log.txt"))
+
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f'Training time {total_time_str}')
-
-    if args.wandb.on and is_main_process():
-            wandb.log({f"Total training time for {args.epochs - args.start_epoch} epochs": total_time_str})
+    print(f"Total training time for {args.epochs - args.start_epoch} epochs:", total_time_str)
 
     
-
 
 if __name__ == '__main__':
     args = load_config()
