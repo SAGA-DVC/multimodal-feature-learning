@@ -55,7 +55,7 @@ class SetCriterion(nn.Module):
 
 
 
-    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, log=True):
+    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, log=True):
 
         """
         Classification loss (Negative Log Likelihood)
@@ -67,6 +67,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
             `log` (boolean) : If True, 'class_error' is also calculated and returned.
         
         Returns: dict {loss : value} where loss can be 'labels' and/or 'class_error'.
@@ -112,13 +113,13 @@ class SetCriterion(nn.Module):
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             # only takes top-1 accuracy for now
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-            # losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
         return losses
 
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
+    def loss_cardinality(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
 
         """ 
         Compute the cardinality error, ie the absolute error in the number of predicted non-empty segments
@@ -130,6 +131,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss is 'cardinality_error'.
         """
@@ -150,7 +152,7 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_segments(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
+    def loss_segments(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
 
         """
         Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss.
@@ -163,6 +165,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss can be 'loss_bbox' or 'loss_giou'.
         """
@@ -209,7 +212,7 @@ class SetCriterion(nn.Module):
 
         return losses
 
-    def loss_captions(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
+    def loss_captions(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
 
         """
         Compute the losses related to the captions, KL Divergence using Label Smoothing.
@@ -221,6 +224,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss is 'loss_caption'.
         """
@@ -228,6 +232,29 @@ class SetCriterion(nn.Module):
         losses = {}
         loss_caption = self.labelSmoothing(outputs['pred_captions'], targets['cap_tensor'][:, 1:])
         losses['loss_caption'] = loss_caption / num_tokens_without_pad
+        return losses
+
+
+    def loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+
+        """
+        Compute the losses related to the context_mask using BCE.
+        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
+        
+        Parameters:
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
+        
+        Returns: dict {loss : value} where loss is 'loss_context'.
+        """
+
+        losses = {}
+        loss_context = F.binary_cross_entropy_with_logits(outputs['pred_memory_mask'], memory_mask)
+        losses['loss_context'] = loss_context
         return losses
 
 
@@ -244,7 +271,7 @@ class SetCriterion(nn.Module):
         return batch_idx, tgt_idx
 
 
-    def get_loss(self, loss, outputs, targets, indices, num_segments, num_tokens_without_pad, **kwargs):
+    def get_loss(self, loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs):
 
         """
         Calculates a specific loss of the outputs w.r.t. the targets. 
@@ -257,6 +284,7 @@ class SetCriterion(nn.Module):
             `indices` (list): Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int): Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss is the one of 'labels', 'cardinality' or 'segments'.
         """
@@ -265,12 +293,13 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
             'segments': self.loss_segments,
-            'captions': self.loss_captions
+            'captions': self.loss_captions,
+            'contexts': self.loss_contexts
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
-        return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, **kwargs)
+        return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
 
-    def forward(self, outputs, targets, indices):
+    def forward(self, outputs, targets, indices, memory_mask):
 
         """ 
         This performs the loss computation.
@@ -288,6 +317,7 @@ class SetCriterion(nn.Module):
             
             `indices` (list): matching between the outputs of the last layer and the targets
                             list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns:
             `losses`: dict consisting of the following items
@@ -323,7 +353,7 @@ class SetCriterion(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask))
 
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.

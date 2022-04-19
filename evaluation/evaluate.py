@@ -33,7 +33,7 @@ class ANETcaptions(object):
 
     def __init__(self, ground_truth_filenames=None, prediction_filename=None,
                  tious=None, max_proposals=1000,
-                 prediction_fields=PREDICTION_FIELDS, verbose=False, only_proposals=False):
+                 prediction_fields=PREDICTION_FIELDS, verbose=False, only_proposals=False, is_submission_json=False, submission_json=None):
         # Check that the gt and submission files exist and load them
         if len(tious) == 0:
             raise IOError('Please input a valid tIoU.')
@@ -48,7 +48,7 @@ class ANETcaptions(object):
         self.max_proposals = max_proposals
         self.pred_fields = prediction_fields
         self.ground_truths = self.import_ground_truths(ground_truth_filenames)
-        self.prediction = self.import_prediction(prediction_filename)
+        self.prediction = self.import_prediction(prediction_filename, is_submission_json, submission_json)
         self.tokenizer = PTBTokenizer()
 
         # Set up scorers, if not verbose, we only use the one we're
@@ -63,10 +63,13 @@ class ANETcaptions(object):
                 (Cider(), "CIDEr")
             ]
 
-    def import_prediction(self, prediction_filename):
+    def import_prediction(self, prediction_filename, is_submission_json=False, submission_json=None):
         if self.verbose:
             print("| Loading submission...")
-        submission = json.load(open(prediction_filename))
+        if is_submission_json:
+            submission = submission_json
+        else:
+            submission = json.load(open(prediction_filename))
         if not all([field in submission.keys() for field in self.pred_fields]):
             raise IOError('Please input a valid ground truth file.')
         # Ensure that every video is limited to the correct maximum number of proposals.
@@ -262,13 +265,15 @@ class ANETcaptions(object):
         return output
 
 
-def run_eval(args):
+def run_eval(args, submission_json=None):
     # Call coco eval
     evaluator = ANETcaptions(ground_truth_filenames=args.references,
                              prediction_filename=args.submission,
                              tious=args.tious,
                              max_proposals=args.max_proposals_per_video,
-                             verbose=args.verbose)
+                             verbose=args.verbose,
+                             is_submission_json=args.is_submission_json, 
+                             submission_json=submission_json)
     evaluator.evaluate()
 
     return evaluator.scores

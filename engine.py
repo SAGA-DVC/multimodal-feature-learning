@@ -7,15 +7,20 @@ import os
 import sys
 from typing import Iterable
 from collections import defaultdict
+import wandb
+import numpy as np
 
 import torch
 from torch.nn.utils import clip_grad_norm_
-from utils.misc import MetricLogger, SmoothedValue, reduce_dict
+from utils.misc import MetricLogger, SmoothedValue, reduce_dict, is_main_process
 from utils.preds_postprocess import get_sample_submission, get_src_permutation_idx, denormalize_segments, captions_to_string, pprint_eval_scores, save_submission
+from utils.plots import plot_grad_flow_line_plot, plot_grad_flow_bar_plot
 from evaluation.evaluate import run_eval
 
 
-def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, args, wandb_log, wandb):
+
+
+def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device, epoch, args, wandb_log):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -28,6 +33,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
         `epoch` (int) : Epoch number
         `args` (ml_collections.ConfigDict) : config parameters
+        `wandb_log` (boolean) : If True, log metrics in wandb
     
     Returns: dictionary with keys as all the losses calculated by the criterion and values as their corresponding global average across all devices.
     """
@@ -39,18 +45,22 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
-    print_freq = 1
+    print_freq = args.print_freq
 
-    for obj in metric_logger.log_every(data_loader, print_freq, wandb_log, wandb, header):
+    for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
         obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
                                 for vid_info in obj['video_target']]
 
         obj = defaultdict(lambda: None, obj)
-        outputs, indices = model(obj)
+
+        outputs, indices, target_memory_mask = model(obj, is_training=True)
         
-        loss_dict = criterion(outputs, obj, indices)
+        context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
+        assert context_flag, 'mis-match in context loss and differentiable mask. Check config.'
+
+        loss_dict = criterion(outputs, obj, indices, target_memory_mask)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -72,6 +82,11 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 
         optimizer.zero_grad()
         losses.backward()
+
+        if batch_idx % 100 == 0:
+            # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+            plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
         optimizer.step()
@@ -79,12 +94,20 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+
+        if wandb_log and is_main_process():
+            wandb_log_metrics(
+                phase="train",
+                loss=loss_value,
+                loss_dict=loss_dict_reduced_scaled,
+                epoch=epoch,
+                batch_idx=batch_idx
+            )
+
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print(f"\nAveraged stats for epoch [{epoch}]: ", metric_logger, "\n")
-
-    if wandb_log:
-        wandb.log({f"Averaged stats for epoch [{epoch}]": str(metric_logger)})
+    print(f"\nAveraged train stats for epoch [{epoch}]: ", metric_logger, "\n")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -92,7 +115,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, device, epoch, arg
 # TODO: Pass json instead of creating file and passing file path
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, device, eval_args):
+def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):
     
     """
     Inference on given data and save the results.
@@ -111,9 +134,16 @@ def evaluate(model, criterion, data_loader, vocab, device, eval_args):
     model.eval()
     criterion.eval()
 
-    submission_json = get_sample_submission()
+    submission_json_epoch = get_sample_submission()
 
-    for i, obj in enumerate(data_loader):
+    metric_logger = MetricLogger(delimiter="\t")
+    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    header = f'Epoch: [{epoch}]'
+    print_freq = args.print_freq
+
+    for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
+        
+        submission_json_batch = get_sample_submission()
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
         obj['video_target'] = [{key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in vid_info.items()} 
@@ -121,34 +151,97 @@ def evaluate(model, criterion, data_loader, vocab, device, eval_args):
 
         obj = defaultdict(lambda: None, obj)
 
-        pred_segments, pred_captions, pred_logits, indices = model(obj, is_training=False, faster_eval=False)
-        # print("Pred Shapes Eval: ", pred_segments.shape, pred_captions.shape, pred_logits.shape, indices)
+        outputs, captions_with_eos, indices, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+
+        context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
+        assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
+        
+        loss_dict = criterion(outputs, obj, indices, target_memory_mask)
+        weight_dict = criterion.weight_dict
+
+        losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+
+        # reduce losses over all GPUs for logging purposes
+        loss_dict_reduced = reduce_dict(loss_dict)
+        loss_dict_reduced_unscaled = {f'{k}_unscaled': v
+                                      for k, v in loss_dict_reduced.items()}
+        loss_dict_reduced_scaled = {k: v * weight_dict[k]
+                                    for k, v in loss_dict_reduced.items() if k in weight_dict}
+        losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
+
+        loss_value = losses_reduced_scaled.item()
 
         # EVALUATION SCORES
         # segments
         idx = get_src_permutation_idx(indices)
-        # print("IDX: ", idx)
 
         video_durations = list(obj['video_length'][:, 1])
-        denormalized_segments = denormalize_segments(pred_segments[idx], video_durations, idx[0])
-        # print("Video_DUR: ",video_durations, pred_segments[idx], denormalized_segments, denormalized_segments.shape)
+        denormalized_segments = denormalize_segments(outputs['pred_segments'][idx], video_durations, idx[0])
+        # print("Video_DUR: ",video_durations, outputs['pred_segments'][idx], denormalized_segments, denormalized_segments.shape)
 
         # captions
-        captions_string = captions_to_string(pred_captions, vocab)
-        # print("Captions: ", pred_captions[0], captions_string[0])
+        captions_string = captions_to_string(captions_with_eos, vocab)
 
         for i, batch_id in enumerate(idx[0]):
             video_id = obj['video_key'][batch_id]
+            append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
-            if video_id not in submission_json['results']:
-                submission_json['results'][video_id] = []
+        scores = run_eval(args.eval, submission_json_batch)
+        avg_scores = pprint_eval_scores(scores, debug=False)
 
-            submission_json['results'][video_id].append({
-                'sentence': captions_string[i],
-                'timestamp': [denormalized_segments[i][0].item(), denormalized_segments[i][1].item()]
-            })
+        metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(**avg_scores)
 
-    save_submission(submission_json, eval_args.submission)
+        if wandb_log and is_main_process():
+            loss_dict_reduced_scaled.update(avg_scores)
+            wandb_log_metrics(
+                phase="val",
+                loss=loss_value,
+                loss_dict=loss_dict_reduced_scaled,
+                epoch=epoch,
+                batch_idx=batch_idx
+            )
     
-    scores = run_eval(eval_args)
-    pprint_eval_scores(scores)
+    # gather the stats from all processes
+    metric_logger.synchronize_between_processes()
+    print(f"\nAveraged val stats for epoch [{epoch}]: ", metric_logger, "\n")
+
+    # TODO - check if run_eval can be removed and we can instead avg scores in above loop
+    scores = run_eval(args.eval, submission_json_epoch)
+    return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return_dict.update(scores)
+    return return_dict
+     
+
+    # return scores
+
+
+# TODO - no grad reqd??
+@torch.no_grad()
+def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx):
+    log = {
+        "epoch": epoch,
+        "batch": batch_idx,
+        "loss": loss,
+    }
+    for key, value in loss_dict.items():
+        if isinstance(value, float):
+            log[key] = value
+        else:
+            log[key] = value.item()
+
+    log_dict = {f"{phase}-{key}": value for key, value in log.items()}
+    # print(log_dict)
+    wandb.log(log_dict)
+
+
+def append_result_to_json_submission_file(video_id, submission_json_batch, captions_string, denormalized_segments):
+    if video_id not in submission_json_batch['results']:
+        submission_json_batch['results'][video_id] = []
+
+    submission_json_batch['results'][video_id].append({
+        'sentence': captions_string,
+        'timestamp': [denormalized_segments[0].item(), denormalized_segments[1].item()]
+    })

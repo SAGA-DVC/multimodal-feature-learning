@@ -3,7 +3,7 @@ import h5py
 import torch
 import json
 
-hf = h5py.File('audio_features.h5', 'a')
+hf = h5py.File('audio_features_512.h5', 'a')
 annotation = json.load(open('../activity-net/captions/val_1.json', 'r'))
 
 keys = list(annotation.keys())
@@ -14,7 +14,7 @@ keys = [k for k in keys if k not in invalid_videos]
 
 for i, key in enumerate(keys):
     print(i)
-    hf.create_dataset(key, data=torch.rand(64, 768))
+    hf.create_dataset(key, data=torch.rand(64, 512))
 
 
 # # sample for train dataset

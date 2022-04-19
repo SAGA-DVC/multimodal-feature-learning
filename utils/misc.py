@@ -13,6 +13,7 @@ import datetime
 import pickle
 from packaging import version
 from typing import Optional, List
+import wandb
 
 import torch
 import torch.distributed as dist
@@ -32,7 +33,8 @@ class SmoothedValue(object):
 
     def __init__(self, window_size=20, fmt=None):
         if fmt is None:
-            fmt = "{value:.4f} ({global_avg:.4f})"
+            # fmt = "{value:.4f} ({global_avg:.4f})"
+            fmt = "{global_avg:.4f}"
         self.deque = deque(maxlen=window_size)
         self.total = 0.0
         self.count = 0
@@ -93,7 +95,7 @@ def get_gpu_memory():
     command = "nvidia-smi --query-gpu=memory.free --format=csv"
     memory_free_info = sp.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
-    print(memory_free_values)
+    # print(memory_free_values)
 
 
 
@@ -132,7 +134,7 @@ class MetricLogger(object):
     def add_meter(self, name, meter):
         self.meters[name] = meter
 
-    def log_every(self, iterable, print_freq, wandb_log, wandb, header=None):
+    def log_every(self, iterable, print_freq, wandb_log, header=None):
         i = 0
         if not header:
             header = ''
@@ -182,11 +184,11 @@ class MetricLogger(object):
                         meters=str(self),
                         time=str(iter_time), data=str(data_time))
                 
-                get_gpu_memory()
+                # get_gpu_memory()
                 print(log)
                 
-                if wandb_log:
-                    wandb.log({f"Epoch stats": log})
+                # if wandb_log and is_main_process():
+                #     wandb.log({f"Epoch stats": log})
 
             i += 1
             end = time.time()
@@ -197,8 +199,8 @@ class MetricLogger(object):
         time_per_epoch = f'{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / batch)'
         print(time_per_epoch)
         
-        if wandb_log:
-            wandb.log({"Time per epoch": time_per_epoch})
+        # if wandb_log and is_main_process():
+        #     wandb.log({"Time per epoch": time_per_epoch})
 
 
 def all_gather(data):

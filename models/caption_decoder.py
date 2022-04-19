@@ -87,7 +87,7 @@ class CaptionDecoder(nn.Module):
         target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
 
         target = target + self.word_positional_embedding_layer(NestedTensor(target, padding_mask)).transpose(1, 2)
-        # memory = memory + memory_positional_embedding_layer(NestedTensor(memory, memory_mask.squeeze(1).squeeze(1), durations)).transpose(1,2)
+        # memory = memory + memory_positional_embedding_layer(NestedTensor(memory, torch.squeeze(memory_mask), durations)).transpose(1,2)
 
         intermediate = []
         

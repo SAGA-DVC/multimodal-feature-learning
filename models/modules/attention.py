@@ -432,7 +432,7 @@ class MSDeformAttn(nn.Module):
         sampling_offsets = self.sampling_offsets(query).view(N, Len_q, self.n_heads, self.n_levels, self.n_points)  # linear transformation --> nn.Linear(d_model, n_heads * n_levels * n_points ) shape->(batch_size, sum of num_token in all level, n_heads, n_levels, n_points)
         attention_weights = self.attention_weights(query).view(N, Len_q, self.n_heads, self.n_levels * self.n_points)   #   linear transformation --> nn.Linear(d_model, n_heads * n_levels * n_points) shape->(batch_size, sum of num_token in all level, n_heads, n_levels*n_points)
         attention_weights = F.softmax(attention_weights, -1).view(N, Len_q, self.n_heads, self.n_levels, self.n_points) #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points)
-
+        
         # N, Len_q, n_heads, n_levels, n_points, 2
         if reference_points.shape[-1] == 1:
             offset_normalizer = input_spatial_shapes
@@ -455,8 +455,7 @@ class MSDeformAttn(nn.Module):
         #         value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights,
         #         self.im2col_step)
         # else:
-
-            output = ms_deform_attn_core_pytorch(value, input_spatial_shapes, sampling_locations, attention_weights)
+        output = ms_deform_attn_core_pytorch(value, input_spatial_shapes, sampling_locations, attention_weights)
 
         output = self.output_proj(output)
         return output
