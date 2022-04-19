@@ -17,7 +17,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and segments)
     """
     # TODO - check __init__() attributes
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
+    def __init__(self, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
                 focal_alpha=0.25, focal_gamma=2):
 
         """ 
@@ -36,6 +36,7 @@ class SetCriterion(nn.Module):
         """
 
         super().__init__()
+        self.is_multimodal = is_multimodal
         self.num_classes = num_classes
         self.matcher = matcher
         self.weight_dict = weight_dict
@@ -109,6 +110,18 @@ class SetCriterion(nn.Module):
         # loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
         
         # losses = {'loss_ce': loss_ce}
+
+        # used in pdvc (event counter)
+        # pred_count = outputs['pred_count']
+        # max_length = pred_count.shape[1] - 1
+        # counter_target = [len(target['boxes']) if len(target['boxes']) < max_length  else max_length for target in targets]
+        # counter_target = torch.tensor(counter_target, device=src_logits.device, dtype=torch.long)
+        # counter_target_onehot = torch.zeros_like(pred_count)
+        # counter_target_onehot.scatter_(1, counter_target.unsqueeze(-1), 1)
+        # weight = self.counter_class_rate[:max_length + 1].to(src_logits.device)
+
+        # counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, self.opt, weight)
+        # losses['loss_counter'] = counter_loss
 
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
@@ -235,7 +248,7 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def unimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
 
         """
         Compute the losses related to the context_mask using BCE.
@@ -255,6 +268,33 @@ class SetCriterion(nn.Module):
         losses = {}
         loss_context = F.binary_cross_entropy_with_logits(outputs['pred_memory_mask'], memory_mask)
         losses['loss_context'] = loss_context
+        return losses
+
+    # TODO - check avg or sum of video/audio contexts
+    def multimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+
+        """
+        Compute the losses related to the context_mask using BCE.
+        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
+        
+        Parameters:
+            `outputs` (dict) : Output of the model. See forward() for the format.
+            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
+            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
+            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
+            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
+        
+        Returns: dict {loss : value} where loss is 'loss_context'.
+        """
+
+        losses = {}
+        video_memory_mask, audio_memory_mask = memory_mask
+
+        video_loss_context = F.binary_cross_entropy_with_logits(outputs['video_pred_memory_mask'], video_memory_mask)
+        audio_loss_context = F.binary_cross_entropy_with_logits(outputs['audio_pred_memory_mask'], audio_memory_mask)
+
+        losses['loss_context'] = (video_loss_context + audio_loss_context) / 2
         return losses
 
 
@@ -294,7 +334,7 @@ class SetCriterion(nn.Module):
             'cardinality': self.loss_cardinality,
             'segments': self.loss_segments,
             'captions': self.loss_captions,
-            'contexts': self.loss_contexts
+            'contexts': self.multimodal_loss_contexts if self.is_multimdoal else self.unimodal_loss_contexts
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
@@ -344,6 +384,7 @@ class SetCriterion(nn.Module):
         num_segments = torch.clamp(num_segments / get_world_size(), min=1).item()
 
         # Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+        # ignore <bos> token as it is not predicted as part of the output
         num_tokens_without_pad = (targets['cap_tensor'][:, 1:] != self.pad_idx).sum()
         num_tokens_without_pad = torch.as_tensor([num_tokens_without_pad], dtype=torch.float, device=next(iter(outputs.values())).device)
         if is_dist_avail_and_initialized():

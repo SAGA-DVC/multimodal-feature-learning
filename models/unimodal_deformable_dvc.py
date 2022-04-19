@@ -8,11 +8,9 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .vivit import build_vivit
-from .ast import build_ast
 from .unimodal_deformable_transformer import build_unimodal_deformable_transformer
 from .base_encoder import build_base_encoder
-from .caption_decoder import build_caption_decoder
+from .unimodal_caption_decoder import build_unimodal_caption_decoder
 
 from .modules.embedding_layers import PositionEmbeddingVideoSine
 from .modules.layers import FFN, ContextMaskModel
@@ -68,7 +66,7 @@ class UnimodalDeformableDVC(nn.Module):
         # Captioning module
         self.seq_len = seq_len
         self.vocab = vocab
-        self.caption_decoder = build_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
+        self.unimodal_caption_decoder = build_unimodal_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
         
 
         # if weight_load and model_official is not None:
@@ -222,9 +220,9 @@ class UnimodalDeformableDVC(nn.Module):
 
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
-                outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
+                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
             else:
-                outputs_captions = self.caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
+                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -261,9 +259,9 @@ class UnimodalDeformableDVC(nn.Module):
 
                 # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
                 if self.use_differentiable_mask:
-                    outputs_captions = self.caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
+                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
                 else:
-                    outputs_captions = self.caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
+                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
 
                 out['pred_captions'] = outputs_captions[-1]
 

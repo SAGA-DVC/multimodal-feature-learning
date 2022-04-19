@@ -140,6 +140,65 @@ def load_config():
     cfg.dvc.matcher.cost_gamma = 2.0
 
 
+    # Deformable DETR
+    cfg.dvc.detr = ml_collections.ConfigDict()
+
+    cfg.dvc.detr.feature_dim = cfg.dvc.d_model    # dim of frame-level feature vector
+    cfg.dvc.detr.d_model = cfg.dvc.d_model 
+    
+    cfg.dvc.detr.hidden_dropout_prob = 0.5
+    cfg.dvc.detr.layer_norm_eps = 1e-12 
+
+    cfg.dvc.detr.num_heads = 8 
+
+    cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
+    cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
+    cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
+
+    cfg.dvc.detr.enc_layers = 12    # depth
+    cfg.dvc.detr.dec_layers = 12    # depth
+
+    cfg.dvc.detr.transformer_dropout_prob = 0.1
+    cfg.dvc.detr.transformer_ff_dim = 2048
+    cfg.dvc.detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
+
+    cfg.dvc.detr.return_intermediate = True    # TODO - check use
+    
+
+    # Caption Decoder
+    # vocab_size, seq_len, embedding_matrix - these parameters are set in /models/__init__.py
+    cfg.dvc.caption = ml_collections.ConfigDict()
+
+    cfg.dvc.caption.d_model = cfg.dvc.d_model
+
+    cfg.dvc.caption.depth = 12
+
+    cfg.dvc.caption.num_heads = 8
+    cfg.dvc.caption.mlp_ratio = 4
+    cfg.dvc.caption.qkv_bias = True
+
+    cfg.dvc.caption.positional_embedding_dropout = 0.
+    cfg.dvc.caption.attention_dropout = 0.
+    cfg.dvc.caption.projection_dropout = 0.
+    cfg.dvc.caption.dropout_1 = 0.2
+    cfg.dvc.caption.dropout_2 = 0.2
+
+    cfg.dvc.caption.pre_norm = True
+
+    cfg.dvc.caption.model_official = None
+    cfg.dvc.caption.weight_init = True
+    cfg.dvc.caption.weight_load = False
+
+    cfg.dvc.caption.emb_weights_req_grad = True
+    cfg.dvc.caption.return_intermediate = False
+
+    # TODO - handle embedding matrix loading better
+    cfg.dvc.caption.pretrained_word_embed_dim = 300
+    cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.caption.pretrained_word_embed_dim}d.txt'
+    # cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.840B.300d.txt'
+    cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
+
+
     # ViViT
     cfg.dvc.vivit = ml_collections.ConfigDict()
 
@@ -203,32 +262,6 @@ def load_config():
     cfg.dvc.ast.return_preclassifier = True  # Set True for Feature extraction
     cfg.dvc.ast.return_prelogits = False  # Set True for TSP & GVF extraction
 
-
-    # Deformable DETR
-    cfg.dvc.detr = ml_collections.ConfigDict()
-
-    cfg.dvc.detr.feature_dim = cfg.dvc.d_model    # dim of frame-level feature vector
-    cfg.dvc.detr.d_model = cfg.dvc.d_model 
-    
-    cfg.dvc.detr.hidden_dropout_prob = 0.5
-    cfg.dvc.detr.layer_norm_eps = 1e-12 
-
-    cfg.dvc.detr.num_heads = 8 
-
-    cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
-    cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
-    cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
-
-    cfg.dvc.detr.enc_layers = 12    # depth
-    cfg.dvc.detr.dec_layers = 12    # depth
-
-    cfg.dvc.detr.transformer_dropout_prob = 0.1
-    cfg.dvc.detr.transformer_ff_dim = 2048
-    cfg.dvc.detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
-
-    cfg.dvc.detr.return_intermediate = True    # TODO - check use
-
-
     # Decoder
     cfg.dvc.decoder = ml_collections.ConfigDict()
 
@@ -254,41 +287,6 @@ def load_config():
 
     cfg.dvc.decoder.return_intermediate = False
 
-
-    # Caption Decoder
-    # vocab_size, seq_len, embedding_matrix - these parameters are set in /models/__init__.py
-    cfg.dvc.caption = ml_collections.ConfigDict()
-
-    cfg.dvc.caption.d_model = cfg.dvc.d_model
-
-    cfg.dvc.caption.depth = 12
-
-    cfg.dvc.caption.num_heads = 8
-    cfg.dvc.caption.mlp_ratio = 4
-    cfg.dvc.caption.qkv_bias = True
-
-    cfg.dvc.caption.positional_embedding_dropout = 0.
-    cfg.dvc.caption.attention_dropout = 0.
-    cfg.dvc.caption.projection_dropout = 0.
-    cfg.dvc.caption.dropout_1 = 0.2
-    cfg.dvc.caption.dropout_2 = 0.2
-
-    cfg.dvc.caption.pre_norm = True
-
-    cfg.dvc.caption.model_official = None
-    cfg.dvc.caption.weight_init = True
-    cfg.dvc.caption.weight_load = False
-
-    cfg.dvc.caption.emb_weights_req_grad = True
-    cfg.dvc.caption.return_intermediate = False
-
-    # TODO - handle embedding matrix loading better
-    cfg.dvc.caption.pretrained_word_embed_dim = 300
-    cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.6B.{cfg.dvc.caption.pretrained_word_embed_dim}d.txt'
-    # cfg.dvc.caption.glove_file_path = f'../dvc/data/glove.840B.300d.txt'
-    cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
-
-    
     
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models

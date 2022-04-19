@@ -55,10 +55,24 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
 
         obj = defaultdict(lambda: None, obj)
 
-        outputs, indices, target_memory_mask = model(obj, is_training=True)
+        if len(args.dvc.input_modalities) == 1:
+            outputs, indices, target_memory_mask = model(obj, is_training=True)
         
-        context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-        assert context_flag, 'mis-match in context loss and differentiable mask. Check config.'
+            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
+            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
+
+        elif len(args.dvc.input_modalities) == 2:
+            outputs, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
+        
+            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
+            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
+
+            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
+
+            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
+
+        else:
+            raise AssertionError('length of input modalities should be 1 or 2')
 
         loss_dict = criterion(outputs, obj, indices, target_memory_mask)
         weight_dict = criterion.weight_dict
@@ -151,10 +165,24 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         obj = defaultdict(lambda: None, obj)
 
-        outputs, captions_with_eos, indices, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+        if len(args.dvc.input_modalities) == 1:
+            outputs, captions_with_eos, indices, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+        
+            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
+            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
 
-        context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-        assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
+        elif len(args.dvc.input_modalities) == 2:
+            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
+        
+            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
+            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
+
+            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
+
+            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
+
+        else:
+            raise AssertionError('length of input modalities should be 1 or 2')
         
         loss_dict = criterion(outputs, obj, indices, target_memory_mask)
         weight_dict = criterion.weight_dict

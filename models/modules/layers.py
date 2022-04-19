@@ -496,7 +496,7 @@ class DecoderLayer(nn.Module):
 
 # TODO - dropout before/after each layer_norm?
 # TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
-class CaptionDecoderLayer(nn.Module):
+class UnimodalCaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
 
@@ -515,7 +515,7 @@ class CaptionDecoderLayer(nn.Module):
             `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
         """
 
-        super(CaptionDecoderLayer, self).__init__()
+        super(UnimodalCaptionDecoderLayer, self).__init__()
 
         self.pre_norm=pre_norm
         
@@ -621,6 +621,170 @@ class CaptionDecoderLayer(nn.Module):
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)
+
+        return target
+
+
+
+# TODO - dropout before/after each layer_norm?
+# TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
+class MultimodalCaptionDecoderLayer(nn.Module):
+    def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
+                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True):
+
+        """
+        Decoder consisting of the basic attention architecture.
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads. 
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
+        """
+
+        super(MultimodalCaptionDecoderLayer, self).__init__()
+
+        self.pre_norm=pre_norm
+        
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.video_cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+        
+        self.audio_cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.linear_layer = nn.Linear(2 * d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.activation_layer = nn.GELU()
+
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_4 = nn.LayerNorm(d_model, eps=1e-6)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=dropout_1, dropout_2=dropout_2)
+
+    
+    def forward(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+
+        """
+        Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
+  
+        Parameters:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            **word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            **positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
+        """
+
+        if self.pre_norm:
+            return self.forward_pre(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask) # (batch_size, num_queries, d_model)
+        else:
+            return self.forward_post(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask) # (batch_size, num_queries, d_model)
+
+    
+    def forward_pre(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+        
+        """
+        Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
+        """
+
+        target_after_norm = self.layer_norm_1(target) 
+        # q = k = word_positional_embedding_layer(target_after_norm)
+        q = k = target_after_norm
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask)    # (batch_size, num_queries, d_model)
+
+        target_after_norm = self.layer_norm_2(target)
+        # q = word_positional_embedding_layer(target_after_norm)
+        q = target_after_norm
+        
+        # video
+        # k = positional_embedding_layer(video_memory)
+        k = video_memory
+        video_target = target + self.video_cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)    # (batch_size, num_queries, d_model)
+
+        # audio
+        # k = positional_embedding_layer(audio_memory)
+        k = audio_memory
+        audio_target = target + self.audio_cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)    # (batch_size, num_queries, d_model)
+
+        # bridge
+        target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
+        target = self.layer_norm_3(target)
+        target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
+        target = self.activation(target)
+
+        target_after_norm = self.layer_norm_4(target)
+        target = target + self.mlp(target_after_norm)
+
+        return target
+
+
+    def forward_post(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+
+        """
+        Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
+  
+        Parameters:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size). The sequence to the decoder layer. 
+            memory: Tensor of dimension (batch_size, num_tokens, d_model). The sequence from the last layer of the encoder
+            word_positional_embedding_layer (nn.Module): position embedding layer for captions
+            positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
+            tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Target mask for the captions to be used in the self attention block
+            memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block
+        
+        Returns:
+            target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
+        """
+       
+        # q = k = word_positional_embedding_layer(target)
+        q = k = target
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=tgt_mask)) # (batch_size, num_queries, d_model)
+
+        # q = word_positional_embedding_layer(target)
+        q = target
+
+        # k = positional_embedding_layer(memory)
+        k = video_memory
+        video_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)) # (batch_size, num_queries, d_model)
+
+        # k = positional_embedding_layer(memory)
+        k = audio_memory
+        audio_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)) # (batch_size, num_queries, d_model)
+
+        # bridge
+        target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
+        target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
+        target = self.layer_norm_3(target)
+        target = self.activation(target)
+
+        target = target + self.mlp(target)
+        target = self.layer_norm_4(target)
 
         return target
 

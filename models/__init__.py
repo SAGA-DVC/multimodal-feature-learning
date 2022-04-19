@@ -57,13 +57,14 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         num_classes=args.num_classes,
                         aux_loss=args.aux_loss,
                         matcher=matcher,
-                        vocab_size=len(dataset.vocab), 
+                        vocab=dataset.vocab,  
                         seq_len=dataset.max_caption_len_all, 
                         embedding_matrix=embedding_matrix, 
                         vivit_args=args.vivit, 
                         ast_args=args.ast, 
                         detr_args=args.detr, 
-                        caption_args=args.caption
+                        caption_args=args.caption,
+                        use_differentiable_mask=use_differentiable_mask
                     )
     
     else :
@@ -85,7 +86,8 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
     weight_dict = {'loss_ce': args.cls_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
-                'loss_caption': args.captions_loss_coef
+                'loss_caption': args.captions_loss_coef,
+                'loss_context': args.dvc.context_loss_coef
                 }
 
     if use_differentiable_mask:
@@ -99,7 +101,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
         weight_dict.update(aux_weight_dict)
 
 
-    criterion = SetCriterion(num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
+    criterion = SetCriterion(len(args.input_modalities) == 2, num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
                             eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
                             focal_alpha=0.25, focal_gamma=2)
 
