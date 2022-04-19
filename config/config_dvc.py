@@ -22,17 +22,20 @@ def load_config():
     cfg.lr_drop = 200
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
+
+    cfg.checkpoint_rate = 10
+    cfg.eval_rate = 5
         
     cfg.output_dir = 'output'
     # cfg.output_dir = 'output_temp'
 
-    cfg.resume = 'output/checkpoint0009.pth'
+    # cfg.resume = 'output/checkpoint0009.pth'
     # cfg.resume = 'output_temp/checkpoint.pth'
 
-    # cfg.resume = None
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 100
+    cfg.epochs = 30
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -57,7 +60,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Testing the flow of the DVC model"
+    cfg.wandb.notes = "DVC v2 run"
     cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -116,14 +119,15 @@ def load_config():
 
     cfg.dvc.use_deformable_detr = True    # Switch DVC
 
-    cfg.dvc.smoothing = 0.1
+    cfg.dvc.smoothing = 0.3
 
     cfg.dvc.cls_loss_coef = 1
-    cfg.dvc.bbox_loss_coef = 1
-    cfg.dvc.giou_loss_coef = 1
-    cfg.dvc.captions_loss_coef = 1
-    cfg.dvc.context_loss_coef = 1
-    cfg.dvc.eos_coef = 1
+    cfg.dvc.bbox_loss_coef = 5
+    cfg.dvc.giou_loss_coef = 2
+    cfg.dvc.self_iou_loss_coef = 2
+    cfg.dvc.captions_loss_coef = 2
+    cfg.dvc.context_loss_coef = 2
+    cfg.dvc.eos_coef = 0.1
 
     cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
     if cfg.use_differentiable_mask:
@@ -134,8 +138,8 @@ def load_config():
     cfg.dvc.matcher = ml_collections.ConfigDict()
 
     cfg.dvc.matcher.cost_class = 1 
-    cfg.dvc.matcher.cost_segment = 1 
-    cfg.dvc.matcher.cost_giou = 1
+    cfg.dvc.matcher.cost_segment = 5 
+    cfg.dvc.matcher.cost_giou = 2
     cfg.dvc.matcher.cost_alpha = 0.25
     cfg.dvc.matcher.cost_gamma = 2.0
 
@@ -155,8 +159,8 @@ def load_config():
     cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
     cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
 
-    cfg.dvc.detr.enc_layers = 12    # depth
-    cfg.dvc.detr.dec_layers = 12    # depth
+    cfg.dvc.detr.enc_layers = 6    # depth
+    cfg.dvc.detr.dec_layers = 6    # depth
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048
@@ -177,13 +181,14 @@ def load_config():
     cfg.dvc.caption.mlp_ratio = 4
     cfg.dvc.caption.qkv_bias = True
 
-    cfg.dvc.caption.positional_embedding_dropout = 0.
-    cfg.dvc.caption.attention_dropout = 0.
-    cfg.dvc.caption.projection_dropout = 0.
-    cfg.dvc.caption.dropout_1 = 0.2
-    cfg.dvc.caption.dropout_2 = 0.2
+    cfg.dvc.caption.positional_embedding_dropout = 0.1
+    cfg.dvc.caption.attention_dropout = 0.1
+    cfg.dvc.caption.projection_dropout = 0.1
+    cfg.dvc.caption.decoder_dropout = 0.1
+    cfg.dvc.caption.mlp_dropout_1 = 0.1
+    cfg.dvc.caption.mlp_dropout_2 = 0.1
 
-    cfg.dvc.caption.pre_norm = True
+    cfg.dvc.caption.pre_norm = False
 
     cfg.dvc.caption.model_official = None
     cfg.dvc.caption.weight_init = True
@@ -227,11 +232,11 @@ def load_config():
     cfg.dvc.vivit.mlp_ratio = 4
     cfg.dvc.vivit.qkv_bias = True
 
-    cfg.dvc.vivit.positional_embedding_dropout = 0.
-    cfg.dvc.vivit.attention_dropout = 0.
-    cfg.dvc.vivit.projection_dropout = 0.
-    cfg.dvc.vivit.dropout_1 = 0.2
-    cfg.dvc.vivit.dropout_2 = 0.2
+    cfg.dvc.vivit.positional_embedding_dropout = 0.1
+    cfg.dvc.vivit.attention_dropout = 0.1
+    cfg.dvc.vivit.projection_dropout = 0.1
+    cfg.dvc.vivit.mlp_dropout_1 = 0.2
+    cfg.dvc.vivit.mlp_dropout_2 = 0.2
 
     cfg.dvc.vivit.pre_norm = True
 
@@ -273,11 +278,11 @@ def load_config():
     cfg.dvc.decoder.mlp_ratio = 4
     cfg.dvc.decoder.qkv_bias = True
 
-    cfg.dvc.decoder.positional_embedding_dropout = 0.
-    cfg.dvc.decoder.attention_dropout = 0.
-    cfg.dvc.decoder.projection_dropout = 0.
-    cfg.dvc.decoder.dropout_1 = 0.2
-    cfg.dvc.decoder.dropout_2 = 0.2
+    cfg.dvc.decoder.positional_embedding_dropout = 0.1
+    cfg.dvc.decoder.attention_dropout = 0.1
+    cfg.dvc.decoder.projection_dropout = 0.1
+    cfg.dvc.decoder.mlp_dropout_1 = 0.2
+    cfg.dvc.decoder.mlp_dropout_2 = 0.2
 
     cfg.dvc.decoder.pre_norm = True
 

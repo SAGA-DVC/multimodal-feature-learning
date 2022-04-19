@@ -86,8 +86,9 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
     weight_dict = {'loss_ce': args.cls_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
+                'loss_self_iou': args.self_iou_loss_coef,
                 'loss_caption': args.captions_loss_coef,
-                'loss_context': args.dvc.context_loss_coef
+                'loss_context': args.context_loss_coef
                 }
 
     if use_differentiable_mask:

@@ -120,7 +120,7 @@ def main(args):
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
             # extra checkpoint before LR drop and every 100 epochs
-            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % 10 == 0:
+            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_rate == 0:
                 checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
                 save_on_master({
@@ -133,14 +133,14 @@ def main(args):
 
                 if args.wandb.on and is_main_process():
                     # versioning on wandb
-                    artifact = wandb.Artifact("simple-end-to-end", type="model", description="Unimodal-DVC checkpoint")
+                    artifact = wandb.Artifact("dvc-v2", type="model", description="Unimodal-DVC v2 checkpoint")
                     artifact.add_file(checkpoint_path)
                     wandb.log_artifact(artifact)
 
 
         # Validation
         val_stats = {}
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % args.eval_rate == 0:
             val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
 
 
