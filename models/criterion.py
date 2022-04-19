@@ -98,9 +98,8 @@ class SetCriterion(nn.Module):
         losses = {'loss_ce': loss_ce}
 
         # used in pdvc
-        # (batch_size, num_queries, num_classes + 1)
-        # target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2]],
-        #                                     dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
+        # # (batch_size, num_queries, num_classes + 1)
+        # target_classes_onehot = torch.zeros(src_logits.shape, dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         
         # # 1 for positive class, 0 for negative class
         # target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
@@ -150,6 +149,7 @@ class SetCriterion(nn.Module):
         """
 
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
+
         pred_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
         device = pred_logits.device
 
@@ -207,21 +207,21 @@ class SetCriterion(nn.Module):
 
         losses['loss_giou'] = loss_giou.sum() / num_segments
 
-        # # used in pdvc
-        # # (nb_target_segments, nb_target_segments)
-        # self_iou = torch.triu(box_iou(
-        #     segment_cl_to_xy(src_segments),
-        #     segment_cl_to_xy(src_segments))[0], diagonal=1)
+        # used in pdvc
+        # (nb_target_segments, nb_target_segments)
+        self_iou = torch.triu(box_iou(
+            segment_cl_to_xy(src_segments),
+            segment_cl_to_xy(src_segments))[0], diagonal=1)
 
-        # # [nb_target_segments]
-        # sizes = [len(v[0]) for v in indices]
-        # self_iou_split = 0
+        # [nb_target_segments]
+        sizes = [len(v[0]) for v in indices]
+        self_iou_split = 0
 
-        # for i, c in enumerate(self_iou.split(sizes, -1)):
-        #     cc = c.split(sizes, -2)[i] # (num_segments) --varies per batch
-        #     self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
+        for i, c in enumerate(self_iou.split(sizes, -1)):
+            cc = c.split(sizes, -2)[i] # (num_segments) --varies per batch
+            self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
 
-        # losses['loss_self_iou'] = self_iou_split
+        losses['loss_self_iou'] = self_iou_split
 
         return losses
 
@@ -241,6 +241,8 @@ class SetCriterion(nn.Module):
         
         Returns: dict {loss : value} where loss is 'loss_caption'.
         """
+
+        assert 'pred_captions' in outputs, "Outputs does not have the key 'pred_captions'."
 
         losses = {}
         loss_caption = self.labelSmoothing(outputs['pred_captions'], targets['cap_tensor'][:, 1:])
@@ -265,6 +267,8 @@ class SetCriterion(nn.Module):
         Returns: dict {loss : value} where loss is 'loss_context'.
         """
 
+        assert 'pred_memory_mask' in outputs, "Outputs does not have the key 'pred_memory_mask'."
+
         losses = {}
         loss_context = F.binary_cross_entropy_with_logits(outputs['pred_memory_mask'], memory_mask)
         losses['loss_context'] = loss_context
@@ -287,6 +291,9 @@ class SetCriterion(nn.Module):
         
         Returns: dict {loss : value} where loss is 'loss_context'.
         """
+        
+        assert 'video_pred_memory_mask' in outputs, "Outputs does not have the key 'video_pred_memory_mask'."
+        assert 'audio_pred_memory_mask' in outputs, "Outputs does not have the key 'audio_pred_memory_mask'."
 
         losses = {}
         video_memory_mask, audio_memory_mask = memory_mask
@@ -334,7 +341,7 @@ class SetCriterion(nn.Module):
             'cardinality': self.loss_cardinality,
             'segments': self.loss_segments,
             'captions': self.loss_captions,
-            'contexts': self.multimodal_loss_contexts if self.is_multimdoal else self.unimodal_loss_contexts
+            'contexts': self.multimodal_loss_contexts if self.is_multimodal else self.unimodal_loss_contexts
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
