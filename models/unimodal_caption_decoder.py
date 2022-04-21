@@ -19,7 +19,7 @@ from .load_weights import init_encoder_block_weights, load_token_embeddings, loa
 class UnimodalCaptionDecoder(nn.Module):
     def __init__(self, vocab_size, seq_len=20, d_model=768, embedding_matrix=None, emb_weights_req_grad=False, depth=12, num_heads=12, mlp_ratio=4., qkv_bias=True, 
                 positional_embedding_dropout=0., attention_dropout=0., projection_dropout=0., 
-                decoder_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True,
+                bridge_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True,
                 weight_init=False, weight_load=False, model_official=None, return_intermediate=False):
         
         """
@@ -45,7 +45,7 @@ class UnimodalCaptionDecoder(nn.Module):
                         qkv_bias=qkv_bias,
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
-                        decoder_dropout=decoder_dropout,
+                        bridge_dropout=bridge_dropout,
                         mlp_dropout_1=mlp_dropout_1,
                         mlp_dropout_2=mlp_dropout_2,
                         pre_norm=pre_norm
@@ -150,7 +150,7 @@ def build_unimodal_caption_decoder(args, vocab_size, seq_len, embedding_matrix):
                         positional_embedding_dropout=args.positional_embedding_dropout,
                         attention_dropout=args.attention_dropout, 
                         projection_dropout=args.projection_dropout, 
-                        decoder_dropout=args.decoder_dropout,
+                        bridge_dropout=args.bridge_dropout,
                         mlp_dropout_1=args.mlp_dropout_1, 
                         mlp_dropout_2=args.mlp_dropout_2, 
                         pre_norm=args.pre_norm,

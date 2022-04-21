@@ -133,7 +133,7 @@ def main(args):
 
                 if args.wandb.on and is_main_process():
                     # versioning on wandb
-                    artifact = wandb.Artifact("dvc-v2", type="model", description="Unimodal-DVC v2 checkpoint")
+                    artifact = wandb.Artifact("dvc-v2-bs-16", type="model", description="Unimodal-DVC v2 batch size 16 checkpoint")
                     artifact.add_file(checkpoint_path)
                     wandb.log_artifact(artifact)
 

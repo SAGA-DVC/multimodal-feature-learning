@@ -200,6 +200,7 @@ class UnimodalDeformableDVC(nn.Module):
 
             # Gating mechanism for memory_mask TODO: scores
             seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
+
             pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
                         
             out['pred_memory_mask'] = pred_memory_mask

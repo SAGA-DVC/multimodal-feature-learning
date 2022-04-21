@@ -498,7 +498,7 @@ class DecoderLayer(nn.Module):
 # TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class UnimodalCaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
-                attention_dropout=0., projection_dropout=0., decoder_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
+                attention_dropout=0., projection_dropout=0., bridge_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
 
         """
         Decoder consisting of the basic attention architecture.
@@ -524,9 +524,6 @@ class UnimodalCaptionDecoderLayer(nn.Module):
 
         self.cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
                                 attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
-        self.dropout_1 = nn.Dropout(decoder_dropout)
-        self.dropout_2 = nn.Dropout(decoder_dropout)
 
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
@@ -580,14 +577,14 @@ class UnimodalCaptionDecoderLayer(nn.Module):
         target_after_norm = self.layer_norm_1(target) 
         # q = k = word_positional_embedding_layer(target_after_norm)
         q = k = target_after_norm
-        target = target + self.dropout_1(self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask)) # (batch_size, num_queries, d_model)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         # q = word_positional_embedding_layer(target_after_norm)
         q = target_after_norm
         # k = positional_embedding_layer(memory)
         k = memory
-        target = target + self.dropout_2(self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
+        target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
         target = target + self.mlp(target_after_norm)
@@ -614,13 +611,13 @@ class UnimodalCaptionDecoderLayer(nn.Module):
        
         # q = k = word_positional_embedding_layer(target)
         q = k = target
-        target = self.layer_norm_1(target + self.dropout_1(self.self_attention(q=q, k=k, v=target, mask=tgt_mask))) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=tgt_mask)) # (batch_size, num_queries, d_model)
 
         # q = word_positional_embedding_layer(target)
         q = target
         # k = positional_embedding_layer(memory)
         k = memory
-        target = self.layer_norm_2(target + self.dropout_1(self.cross_attention(q=q, k=k, v=memory, mask=memory_mask))) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)
@@ -633,7 +630,7 @@ class UnimodalCaptionDecoderLayer(nn.Module):
 # TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class MultimodalCaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
-                attention_dropout=0., projection_dropout=0., decoder_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
+                attention_dropout=0., projection_dropout=0., bridge_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
 
         """
         Decoder consisting of the basic attention architecture.
@@ -666,10 +663,7 @@ class MultimodalCaptionDecoderLayer(nn.Module):
         self.linear_layer = nn.Linear(2 * d_model, d_model)
         self.activation_layer = nn.GELU()
 
-        self.dropout_1 = nn.Dropout(decoder_dropout)
-        self.dropout_2 = nn.Dropout(decoder_dropout)
-        self.dropout_3 = nn.Dropout(decoder_dropout)
-        self.dropout_4 = nn.Dropout(decoder_dropout)
+        self.dropout = nn.Dropout(bridge_dropout)
 
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
@@ -724,7 +718,7 @@ class MultimodalCaptionDecoderLayer(nn.Module):
         target_after_norm = self.layer_norm_1(target) 
         # q = k = word_positional_embedding_layer(target_after_norm)
         q = k = target_after_norm
-        target = target + self.dropout_1(self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask))    # (batch_size, num_queries, d_model)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask)    # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         # q = word_positional_embedding_layer(target_after_norm)
@@ -733,18 +727,18 @@ class MultimodalCaptionDecoderLayer(nn.Module):
         # video
         # k = positional_embedding_layer(video_memory)
         k = video_memory
-        video_target = target + self.dropout_2(self.video_cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask))    # (batch_size, num_queries, d_model)
+        video_target = target + self.video_cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)    # (batch_size, num_queries, d_model)
 
         # audio
         # k = positional_embedding_layer(audio_memory)
         k = audio_memory
-        audio_target = target + self.dropout_3(self.audio_cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask))    # (batch_size, num_queries, d_model)
+        audio_target = target + self.audio_cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)    # (batch_size, num_queries, d_model)
 
         # bridge
         target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
         target = self.layer_norm_3(target)
         target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
-        target = self.dropout_4(target)
+        target = self.dropout(target)
         target = self.activation(target)
 
         target_after_norm = self.layer_norm_4(target)
@@ -772,23 +766,23 @@ class MultimodalCaptionDecoderLayer(nn.Module):
        
         # q = k = word_positional_embedding_layer(target)
         q = k = target
-        target = self.layer_norm_1(target + self.dropout_1(self.self_attention(q=q, k=k, v=target, mask=tgt_mask))) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=tgt_mask)) # (batch_size, num_queries, d_model)
 
         # q = word_positional_embedding_layer(target)
         q = target
 
         # k = positional_embedding_layer(memory)
         k = video_memory
-        video_target = self.layer_norm_2(target + self.dropout_2(self.cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask))) # (batch_size, num_queries, d_model)
+        video_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)) # (batch_size, num_queries, d_model)
 
         # k = positional_embedding_layer(memory)
         k = audio_memory
-        audio_target = self.layer_norm_2(target + self.dropout_3(self.cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask))) # (batch_size, num_queries, d_model)
+        audio_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)) # (batch_size, num_queries, d_model)
 
         # bridge
         target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
         target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
-        target = self.dropout_4(target)
+        target = self.dropout(target)
         target = self.layer_norm_3(target)
         target = self.activation(target)
 

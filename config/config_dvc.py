@@ -29,13 +29,12 @@ def load_config():
     cfg.output_dir = 'output'
     # cfg.output_dir = 'output_temp'
 
-    # cfg.resume = 'output/checkpoint0009.pth'
-    # cfg.resume = 'output_temp/checkpoint.pth'
+    cfg.resume = 'output/checkpoint.pth'
 
-    cfg.resume = None
+    # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 30
+    cfg.epochs = 50
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -45,7 +44,7 @@ def load_config():
     # Distributed training
     # is_distributed, rank, world_size, gpu - doesn't matter what it is in cfg. It is set in init_distributed_mode() in utils/misc.py
     cfg.distributed = ml_collections.ConfigDict()
-    cfg.distributed.is_distributed = True    
+    cfg.distributed.is_distributed = False    
     cfg.distributed.rank = 0
     cfg.distributed.world_size = 1
     cfg.distributed.gpu = 0
@@ -60,7 +59,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "DVC v2 run"
+    cfg.wandb.notes = "DVC v2 bs 16 run"
     cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -84,7 +83,7 @@ def load_config():
     data_rescale = ['interpolate', 'uniform']    # do not use uniform for now - TODO - determine rescale length
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.video_feature_sample_rate = 2
-    cfg.dataset.activity_net.video_rescale_len = 300    # Switch DVC
+    cfg.dataset.activity_net.video_rescale_len = 400    # Switch DVC - avg len in train is 220
     cfg.dataset.activity_net.audio_feature_sample_rate = 2
     cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
 
@@ -175,7 +174,7 @@ def load_config():
 
     cfg.dvc.caption.d_model = cfg.dvc.d_model
 
-    cfg.dvc.caption.depth = 12
+    cfg.dvc.caption.depth = 6
 
     cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4
@@ -184,7 +183,7 @@ def load_config():
     cfg.dvc.caption.positional_embedding_dropout = 0.1
     cfg.dvc.caption.attention_dropout = 0.1
     cfg.dvc.caption.projection_dropout = 0.1
-    cfg.dvc.caption.decoder_dropout = 0.1
+    cfg.dvc.caption.bridge_dropout = 0.1
     cfg.dvc.caption.mlp_dropout_1 = 0.1
     cfg.dvc.caption.mlp_dropout_2 = 0.1
 
