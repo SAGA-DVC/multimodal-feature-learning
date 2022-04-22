@@ -191,7 +191,7 @@ def main(cfg):
 
         if cfg.pretrained_models.vivit:
             state_dict = torch.load(cfg.pretrained_models.ast_audioset)
-            backbone.load_state_dict(state_dict, strict=True)
+            backbone.load_weights_from_state_dict(state_dict)
 
         backbone.to(device)
         feature_backbones.append(backbone)

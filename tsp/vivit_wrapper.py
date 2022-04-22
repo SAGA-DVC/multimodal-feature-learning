@@ -129,3 +129,47 @@ class VivitWrapper(nn.Module):
         """
 
         load_positional_embeddings(self, model_official)
+    
+    
+    def load_weights_from_state_dict(self, state_dict):
+        '''Load Kinetics pretrained weights'''
+
+        if self.model_name != 'spatio temporal attention' or self.vivit.tokenization_method != 'central frame':
+            raise NotImplementedError
+
+        # Positional Embedding
+        self.positional_embedding_layer.positional_embedding.data[:, 1:] = state_dict['encoder.add_positional_embedding.positional_embedding']
+        self.positional_embedding_layer.positional_embedding.data[:, 0] = state_dict['encoder.add_positional_embedding_to_cls']
+
+        # Token Embedding
+        assert self.vivit.token_embeddings_layer.temporal_patch_size == 2, f"Kinetics pretrained model requires temporal_patch_size=2, got {self.vivit.token_embeddings_layer.temporal_patch_size}"
+        self.vivit.token_embeddings_layer.project_to_patch_embeddings.weight.data = state_dict['token_embeddings_layer.project_to_patch_embeddings.weight']
+        self.vivit.token_embeddings_layer.project_to_patch_embeddings.bias.data = state_dict['token_embeddings_layer.project_to_patch_embeddings.bias']
+
+        # Classification token
+        self.vivit.vivitEncoder.cls.data = state_dict['encoder.cls']
+
+        # Encoder weights
+        assert len(self.vivit.vivitEncoder.encoder) == 12, f"Kinetics pretrained model requires depth=12, got {len(self.vivit.vivitEncoder.encoder)}"
+        for (i, encoder_layer) in enumerate(self.vivit.vivitEncoder.encoder):
+            prefix = f"encoder.basicEncoder.{i}."
+            encoder_layer.layer_norm_1.weight.data = state_dict[prefix + "layer_norm_1.weight"]
+            encoder_layer.layer_norm_1.bias.data = state_dict[prefix + "layer_norm_1.bias"]
+
+            encoder_layer.attention.qkv.weight.data = state_dict[prefix + "attention.qkv.weight"]
+            encoder_layer.attention.qkv.bias.data = state_dict[prefix + "attention.qkv.bias"]
+
+            encoder_layer.attention.projection_layer.weight.data = state_dict[prefix + "attention.projection_layer.weight"]
+            encoder_layer.attention.projection_layer.bias.data = state_dict[prefix + "attention.projection_layer.bias"]
+
+            encoder_layer.layer_norm_2.weight.data = state_dict[prefix + "layer_norm_2.weight"]
+            encoder_layer.layer_norm_2.bias.data = state_dict[prefix + "layer_norm_2.bias"]
+
+            encoder_layer.mlp.fully_connected_1.weight.data = state_dict[prefix + "mlp.fully_connected_1.weight"]
+            encoder_layer.mlp.fully_connected_1.bias.data = state_dict[prefix + "mlp.fully_connected_1.bias"]
+
+            encoder_layer.mlp.fully_connected_2.weight.data = state_dict[prefix + "mlp.fully_connected_2.weight"]
+            encoder_layer.mlp.fully_connected_2.bias.data = state_dict[prefix + "mlp.fully_connected_2.bias"]
+
+
+

@@ -59,9 +59,9 @@ def transform_state(state_dict, transformer_layers=12):
 
     new_state['encoder.cls'] = state_dict['optimizer']['target']['cls']
 
-    # (1, 16, 196, 768) <-- (1, 3137, 768)
-    new_state['encoder.add_positional_embedding.positional_embedding'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, :-1, :].reshape(1, 16, 196, 768)
-    new_state['encoder.add_positional_embedding_to_cls'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, -1, :]
+    # (1, 16, 196, 768) <-- (1, 3137, 768)  # TODO: Which token is the cls token?
+    new_state['encoder.add_positional_embedding.positional_embedding'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, 1:, :].reshape(1, 16, 196, 768)
+    new_state['encoder.add_positional_embedding_to_cls'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, 0, :]
 
     for i in range(transformer_layers):
         new_state.update(transform_state_encoder_block(state_dict, i))
