@@ -249,7 +249,7 @@ class SetCriterion(nn.Module):
         losses['loss_caption'] = loss_caption / num_tokens_without_pad
         return losses
 
-
+    # TODO - focal loss and dice loss for masks
     def unimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
 
         """
@@ -346,7 +346,7 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
 
-    def forward(self, outputs, targets, indices, memory_mask):
+    def forward(self, outputs, targets, indices, indices_aux, memory_mask):
 
         """ 
         This performs the loss computation.
@@ -364,6 +364,10 @@ class SetCriterion(nn.Module):
             
             `indices` (list): matching between the outputs of the last layer and the targets
                             list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+
+            `indices_aux` (list): list of len=depth. Matching between the outputs of the each layer (except the last) 
+                            and the targets list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+
             `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
         
         Returns:
@@ -406,17 +410,16 @@ class SetCriterion(nn.Module):
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
-            for i, aux_outputs in enumerate(outputs['aux_outputs']):
-                indices_aux = self.matcher(aux_outputs, targets['video_target'])
+            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
                 for loss in self.losses:
-                    if loss == 'masks':
+                    if loss == 'contexts':
                         # Intermediate masks losses are too costly to compute, we ignore them.
                         continue
                     kwargs = {}
                     if loss == 'labels':
-                        # Logging is enabled only for the last layer
+                        # Logging is enabled only for the last layer (class error)
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices_aux, num_segments, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

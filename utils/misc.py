@@ -121,10 +121,12 @@ class MetricLogger(object):
 
     def __str__(self):
         loss_str = []
+        substring_list = [str(i) for i in range(5)]
         for name, meter in self.meters.items():
-            loss_str.append(
-                "{}: {}".format(name, str(meter))
-            )
+            if all(substring not in name for substring in substring_list):
+                loss_str.append(
+                    "{}: {}".format(name, str(meter))
+                )
         return self.delimiter.join(loss_str)
 
     def synchronize_between_processes(self):
