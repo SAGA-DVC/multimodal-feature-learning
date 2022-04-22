@@ -15,10 +15,6 @@ def load_config():
     cfg.dataset.valid_csv_filename = "tsp/dataset/activitynet_v1-3_valid_tsp_groundtruth.csv"  # Path to the validation CSV file
     cfg.dataset.unavailable_videos = 'tsp/dataset/unavailable-videos.json'
 
-    cfg.metadata_csv_filename = "tsp/dataset/train-metadata.csv"
-    # cfg.metadata_csv_filename = "tsp/dataset/val-metadata.csv"
-    # cfg.metadata_csv_filename = "tsp/dataset/test-metadata.csv"
-    
     #-------------------------------------------------------------------------------------------------
     # Video
     cfg.video = ml_collections.ConfigDict()
@@ -32,12 +28,12 @@ def load_config():
 
 
     # AST
-    # cfg.audio.num_mel_bins = 128
-    # cfg.audio.target_length = 64
+    cfg.audio.num_mel_bins = 128
+    cfg.audio.target_length = 64
 
     # VGGish
-    cfg.audio.num_mel_bins = 64
-    cfg.audio.target_length = 96
+    # cfg.audio.num_mel_bins = 64
+    # cfg.audio.target_length = 96
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -110,7 +106,7 @@ def load_config():
     ast_base384 = 'vit_deit_base_distilled_patch16_384'
 
     cfg.pretrained_models.ast = "deit_base_patch16_224"
-    
+    cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/audioset_10_10_0.4593.pth"
     
     #-------------------------------------------------------------------------------------------------
 
@@ -125,11 +121,11 @@ def load_config():
     cfg.tsp.val_global_video_features = None
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['vivit']
+    cfg.tsp.modalities = ['audio']
+    cfg.tsp.backbones = ['ast']
 
-    cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
-    cfg.tsp.fc_lr = 0.001
+    cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
+    cfg.tsp.fc_lr = 0.0001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
@@ -145,7 +141,7 @@ def load_config():
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 16  # Batch size per GPU
+    cfg.batch_size = 8  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
@@ -174,15 +170,6 @@ def load_config():
         cfg.print_freq = 5
 
     #-------------------------------------------------------------------------------------------------
-    # Feature extraction, not used for TSP training
-    cfg.feature_extraction = ml_collections.ConfigDict()
-    cfg.feature_extraction.num_shards = 1
-    cfg.feature_extraction.shard_id = 0
-    cfg.feature_extraction.video_stride = 16
-    cfg.feature_extraction.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
-    cfg.feature_extraction.subdir = 'train'
-
-    #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
     distributed = True
     cfg.distributed = ml_collections.ConfigDict()
@@ -204,6 +191,6 @@ def load_config():
     cfg.wandb.on = True 
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "TSP with VIVIT only (no audio)"
+    cfg.wandb.notes = "AST pretrained on Audioset (only audio)"
 
     return cfg

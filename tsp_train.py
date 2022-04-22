@@ -22,7 +22,7 @@ from tsp.video_cnn_backbones import i3d, r2plus1d_18, r2plus1d_34, r3d_18
 from tsp.audio_cnn_backbones import vggish, PermuteAudioChannel
 from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp.untrimmed_video_dataset import UntrimmedVideoDataset
-from tsp.config import load_config
+from tsp.config.tsp_train_config import load_config
 from tsp import utils
 from tsp.engine import epoch_loop, evaluate
 
@@ -173,7 +173,7 @@ def main(cfg):
     )
 
 
-    print("Creating TSP backbones")
+    print("Creating TSP backbones:")
 
     # Create backbones
     feature_backbones = []
@@ -234,6 +234,10 @@ def main(cfg):
 
         backbone = AudioSpectrogramTransformer(
             model_official=model_official, **cfg.ast)
+        
+        state_dict = torch.load(cfg.pretrained_models.ast_audioset)
+        backbone.load_state_dict(state_dict, strict=False)
+
         backbone.to(device)
         d_feats.append(backbone.d_model)
         feature_backbones.append(backbone)
