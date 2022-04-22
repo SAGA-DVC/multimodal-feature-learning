@@ -26,13 +26,13 @@ def transform_state_encoder_block(state_dict, i):
         prefix+'layer_norm_2.bias': state['LayerNorm_1']['bias'],
         prefix+'layer_norm_2.weight': state['LayerNorm_1']['scale'],
     }
-    qbias = state['MultiHeadDotProductAttention_0']['query']['bias']
+    qbias = state['MultiHeadDotProductAttention_0']['query']['bias'].reshape(768)
     qweight = state['MultiHeadDotProductAttention_0']['query']['kernel'].reshape(768, 768).transpose()
 
-    kbias = state['MultiHeadDotProductAttention_0']['key']['bias']
+    kbias = state['MultiHeadDotProductAttention_0']['key']['bias'].reshape(768)
     kweight = state['MultiHeadDotProductAttention_0']['key']['kernel'].reshape(768, 768).transpose()
 
-    vbias = state['MultiHeadDotProductAttention_0']['value']['bias']
+    vbias = state['MultiHeadDotProductAttention_0']['value']['bias'].reshape(768)
     vweight = state['MultiHeadDotProductAttention_0']['value']['kernel'].reshape(768, 768).transpose()
 
     qkv_bias = np.concatenate((qbias, kbias, vbias), axis=0)
@@ -59,7 +59,7 @@ def transform_state(state_dict, transformer_layers=12):
 
     new_state['encoder.cls'] = state_dict['optimizer']['target']['cls']
 
-    # (1, 3137, 768)  # TODO: Which token is the cls token?
+    # (1, 3137, 768)
     new_state['encoder.add_positional_embedding.positional_embedding'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, 1:, :]
     new_state['encoder.add_positional_embedding_to_cls'] = state_dict['optimizer']['target']['Transformer']['posembed_input']['pos_embedding'][:, 0, :]
 
