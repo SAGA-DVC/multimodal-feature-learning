@@ -54,7 +54,7 @@ def load_config():
     cfg.vivit.in_channels = 3
     cfg.vivit.d_model = 768
 
-    cfg.vivit.depth = 6
+    cfg.vivit.depth = 12
     cfg.vivit.temporal_depth = 4
 
     cfg.vivit.num_heads = 12
@@ -107,6 +107,8 @@ def load_config():
 
     cfg.pretrained_models.ast = "deit_base_patch16_224"
     cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/audioset_10_10_0.4593.pth"
+
+    cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights.pt"
     
     #-------------------------------------------------------------------------------------------------
 
@@ -121,8 +123,8 @@ def load_config():
     cfg.tsp.val_global_video_features = None
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['audio']
-    cfg.tsp.backbones = ['ast']
+    cfg.tsp.modalities = ['video']
+    cfg.tsp.backbones = ['vivit']
 
     cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.0001
@@ -162,7 +164,7 @@ def load_config():
 
     cfg.print_freq = 50  # Print frequency in number of batches
 
-    cfg.debug = False 
+    cfg.debug = True 
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 8
@@ -171,7 +173,7 @@ def load_config():
 
     #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
-    distributed = True
+    distributed = False
     cfg.distributed = ml_collections.ConfigDict()
     if distributed:
         cfg.distributed.on = True
@@ -188,7 +190,7 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True 
+    cfg.wandb.on = False 
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "AST pretrained on Audioset (only audio)"

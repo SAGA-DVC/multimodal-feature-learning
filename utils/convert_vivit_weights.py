@@ -1,5 +1,5 @@
 """Convert Flax checkpoints from original paper to PyTorch"""
-import argparse
+from argparse import ArgumentParser
 from collections import OrderedDict
 from pathlib import Path
 
@@ -54,7 +54,7 @@ def transform_state(state_dict, transformer_layers=12):
     new_state['layer_norm.weight'] = state_dict['optimizer']['target']['Transformer']['encoder_norm']['scale']
 
     # [768, 3, 2, 16, 16] <-- (2, 16, 16, 3, 768)
-    new_state['token_embeddings_layer.project_to_patch_embeddings.weight'] = state_dict['optimizer']['target']['embedding']['kernel'].permute((4, 3, 0, 1, 2))
+    new_state['token_embeddings_layer.project_to_patch_embeddings.weight'] = state_dict['optimizer']['target']['embedding']['kernel'].transpose((4, 3, 0, 1, 2))
     new_state['token_embeddings_layer.project_to_patch_embeddings.bias'] = state_dict['optimizer']['target']['embedding']['bias']
 
     new_state['encoder.cls'] = state_dict['optimizer']['target']['cls']
@@ -75,10 +75,10 @@ def get_n_layers(state_dict):
 
 
 if __name__ == '__main__':
-    parser = argparse.ParseArguments()
+    parser = ArgumentParser()
     
-    parser.add_argument('--flax_model', type=str, help='Path to flax model')
-    parser.add_argument('--output_model_name', type=str, help='Name of the outputed file')
+    parser.add_argument('--flax_model', type=str, help='Path to flax model', required=True)
+    parser.add_argument('--output_model_name', type=str, help='Name of the outputed file', required=True)
     
     args = parser.parse_args()
     
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     
     out_path = Path(args.flax_model).parent.absolute()
     
-    if '.pt' in args.output_model_name
+    if '.pt' in args.output_model_name:
         out_path = out_path / args.output_model_name
         
     else:

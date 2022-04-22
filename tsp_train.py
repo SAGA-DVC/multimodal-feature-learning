@@ -188,6 +188,11 @@ def main(cfg):
 
         # Use return_prelogits=True for VideoVisionTransformer
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+
+        if cfg.pretrained_models.vivit:
+            state_dict = torch.load(cfg.pretrained_models.ast_audioset)
+            backbone.load_state_dict(state_dict, strict=True)
+
         backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
@@ -235,8 +240,9 @@ def main(cfg):
         backbone = AudioSpectrogramTransformer(
             model_official=model_official, **cfg.ast)
         
-        state_dict = torch.load(cfg.pretrained_models.ast_audioset)
-        backbone.load_state_dict(state_dict, strict=False)
+        if cfg.pretrained_models.ast_audioset:
+                state_dict = torch.load(cfg.pretrained_models.ast_audioset)
+                backbone.load_state_dict(state_dict, strict=False)
 
         backbone.to(device)
         d_feats.append(backbone.d_model)
