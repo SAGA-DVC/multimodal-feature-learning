@@ -18,7 +18,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Video
     cfg.video = ml_collections.ConfigDict()
-    cfg.video.clip_len = 16  # Number of frames per clip
+    cfg.video.clip_len = 32  # Number of frames per clip. 32 for using Kinetics pretrained weights
     cfg.video.frame_rate = 30  # Frames-per-second rate at which the videos are sampled
     cfg.video.clips_per_segment = 5 # Number of clips sampled per video segment
 
@@ -42,7 +42,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.vivit.model_name = models[0]
 
-    cfg.vivit.num_frames_in = 16
+    cfg.vivit.num_frames_in = cfg.video.clip_len
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
