@@ -25,7 +25,7 @@ def plot_grad_flow_line_plot(named_parameters, epoch, batch_idx, output_dir='out
     plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical", fontsize=5)
     plt.xlim(xmin=0, xmax=len(ave_grads))
-    plt.ylim(bottom = -0.001, top=0.01) # zoom in on the lower gradient regions
+    plt.ylim(bottom = -0.001, top=0.004) # zoom in on the lower gradient regions
 
     plt.xlabel("Layers")
     plt.ylabel("Average Gradient")
@@ -65,7 +65,7 @@ def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, output_dir='outp
     plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical", fontsize=5)
     plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom = -0.001, top=0.01) # zoom in on the lower gradient regions
+    plt.ylim(bottom = -0.001, top=0.004) # zoom in on the lower gradient regions
 
     plt.xlabel("Layers")
     plt.ylabel("Average Gradient")

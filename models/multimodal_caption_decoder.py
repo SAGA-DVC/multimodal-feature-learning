@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
 from .modules.embedding_layers import PositionEmbeddingCaptionSine, VocabularyEmbedder
-from .modules.layers import CaptionDecoderLayer
+from .modules.layers import MultimodalCaptionDecoderLayer
 from .modules.misc_modules import NestedTensor
 
 from .load_weights import init_encoder_block_weights, load_token_embeddings, load_positional_embeddings, load_cls_tokens, load_vivit_encoder_weights, load_classification_weights
@@ -16,17 +16,17 @@ from .load_weights import init_encoder_block_weights, load_token_embeddings, loa
 
 # TODO - add pos ebmbed for video features used in cross attention
 # TODO - context features (for vid feats and captions(captions influence each other))
-class CaptionDecoder(nn.Module):
+class MultimodalCaptionDecoder(nn.Module):
     def __init__(self, vocab_size, seq_len=20, d_model=768, embedding_matrix=None, emb_weights_req_grad=False, depth=12, num_heads=12, mlp_ratio=4., qkv_bias=True, 
                 positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True,
                 weight_init=False, weight_load=False, model_official=None, return_intermediate=False):
         
         """
-        Caption Decoder
+        Multimodal Caption Decoder
         """
 
-        super(CaptionDecoder, self).__init__()
+        super(CapMultimodalCaptionDecoderionDecoder, self).__init__()
         
         self.vocab_size = vocab_size
         self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
@@ -38,7 +38,7 @@ class CaptionDecoder(nn.Module):
 
         self.decoder = nn.ModuleList(
                 [
-                    CaptionDecoderLayer(
+                    MultimodalCaptionDecoderrLayer(
                         d_model=d_model,
                         num_heads=num_heads,
                         mlp_ratio=mlp_ratio,
@@ -63,14 +63,13 @@ class CaptionDecoder(nn.Module):
         elif weight_init:
             self.init_weights(embedding_matrix, emb_weights_req_grad)
         
-    # TODO - add <start> and <end> token
-    # TODO - change ordering of pos embed and query embed parameters 
+
     # TODO - check if pos embed should be given at every decoder layer to word and video
     # TODO - use log softmax?
-    def forward(self, captions, memory, tgt_mask, padding_mask, memory_mask):
+    def forward(self, captions, video_memory, audio_memory, tgt_mask, padding_mask, video_memory_mask, audio_memory_mask):
 
         """
-        Performs a forward pass on the Transformer model
+        Performs a forward pass on the Bimodal caption decoder model
   
         Parameters:
             captions (Tensor): Tensor of dimension (batch_size, seq_len)
@@ -92,7 +91,7 @@ class CaptionDecoder(nn.Module):
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, memory, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
+            target = layer(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(target))
@@ -135,9 +134,9 @@ class CaptionDecoder(nn.Module):
     
 
 
-def build_caption_decoder(args, vocab_size, seq_len, embedding_matrix):
-    # return CaptionDecoder(vocab_size=vocab_size, seq_len=seq_len, embedding_matrix=embedding_matrix, **args)
-    return CaptionDecoder(vocab_size=vocab_size, 
+def build_multimodal_caption_decoder(args, vocab_size, seq_len, embedding_matrix):
+    # return MultimodalCaptionDecoder(vocab_size=vocab_size, seq_len=seq_len, embedding_matrix=embedding_matrix, **args)
+    return MultimodalCaptionDecoder(vocab_size=vocab_size, 
                         seq_len=seq_len, 
                         d_model=args.d_model, 
                         embedding_matrix=embedding_matrix, 
