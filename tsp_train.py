@@ -190,7 +190,7 @@ def main(cfg):
         backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
 
         if cfg.pretrained_models.vivit:
-            state_dict = torch.load(cfg.pretrained_models.ast_audioset)
+            state_dict = torch.load(cfg.pretrained_models.vivit)
             backbone.load_weights_from_state_dict(state_dict)
 
         backbone.to(device)
