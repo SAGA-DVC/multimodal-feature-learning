@@ -182,12 +182,9 @@ def main(cfg):
     # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
-        model_official = timm.create_model(
-            cfg.pretrained_models.vit, pretrained=True)
-        model_official.eval()
 
         # Use return_prelogits=True for VideoVisionTransformer
-        backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+        backbone = VivitWrapper(**cfg.vivit)
 
         if cfg.pretrained_models.vivit:
             state_dict = torch.load(cfg.pretrained_models.vivit)

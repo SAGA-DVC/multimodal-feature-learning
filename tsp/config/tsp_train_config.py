@@ -76,8 +76,9 @@ def load_config():
     cfg.vivit.return_preclassifier = False  # Set True for Feature extraction
     cfg.vivit.return_prelogits = True  # Set True for TSP & GVF extraction
 
+    # This is for VIT weights, not VIVIT in particular
     cfg.vivit.weight_init = False
-    cfg.vivit.weight_load = True
+    cfg.vivit.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
     # AST
@@ -133,17 +134,17 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda'
+    cfg.device = 'cuda:0'
     # cfg.device = 'cpu'
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-Kpretrained'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 8  # Batch size per GPU
+    cfg.batch_size = 2  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
@@ -157,18 +158,18 @@ def load_config():
     # cfg.lr_warmup_factor = 1e-5
 
     # cfg.resume = "/home/arnavshah/tsp/tsp-output/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
-    cfg.resume = None 
+    cfg.resume = None
     cfg.start_epoch = 0  # not used when resume is specified
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
 
     cfg.print_freq = 50  # Print frequency in number of batches
 
-    cfg.debug = True 
+    cfg.debug = False
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 8
-        cfg.batch_size=16
+        cfg.batch_size=8
         cfg.print_freq = 5
 
     #-------------------------------------------------------------------------------------------------
@@ -190,9 +191,9 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = False 
+    cfg.wandb.on = True 
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "AST pretrained on Audioset (only audio)"
+    cfg.wandb.notes = "VIVIT pretrained on Kinetics"
 
     return cfg
