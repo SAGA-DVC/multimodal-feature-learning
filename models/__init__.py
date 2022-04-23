@@ -86,7 +86,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
     weight_dict = {'loss_ce': args.cls_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
-                'loss_self_iou': args.self_iou_loss_coef,
+                # 'loss_self_iou': args.self_iou_loss_coef,
                 'loss_caption': args.captions_loss_coef,
                 'loss_context': args.context_loss_coef
                 }
@@ -97,7 +97,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
     # TODO this is a hack
     if args.aux_loss:
         aux_weight_dict = {}
-        for i in range(args.dec_layers - 1):
+        for i in range(args.detr.dec_layers - 1):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 

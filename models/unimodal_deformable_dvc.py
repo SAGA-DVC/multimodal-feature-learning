@@ -227,14 +227,17 @@ class UnimodalDeformableDVC(nn.Module):
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
-            # TODO - indices for aux loss
+            indices_aux = []
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
 
+                for i, aux_outputs in enumerate(out['aux_outputs']):
+                    indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+
             if self.use_differentiable_mask:
-                return out, indices, torch.squeeze(memory_mask).float()
+                return out, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, indices, None
+                return out, indices, indices_aux, None
 
         # TODO - implement changes in caption decoder 
         # Inference
@@ -266,18 +269,18 @@ class UnimodalDeformableDVC(nn.Module):
 
                 out['pred_captions'] = outputs_captions[-1]
 
-                outputs_captions = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+                outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
 
                 # Update predicted word in captions
                 if faster_eval:
-                    captions[:, word_index] = outputs_captions[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
+                    captions[:, word_index] = outputs_captions_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
 
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:
-                            captions[caption_index, word_index] = outputs_captions[caption_index, word_index]
+                            captions[caption_index, word_index] = outputs_captions_last_layer[caption_index, word_index]
 
-                            if outputs_captions[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
+                            if outputs_captions_last_layer[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
                                 caption_done_indices.append(caption_index)
                                 total_caption_done += 1
 
@@ -293,10 +296,18 @@ class UnimodalDeformableDVC(nn.Module):
                 last_token = torch.tensor([self.vocab['<pad>'] if self.vocab['<eos>'] in c else self.vocab['<eos>'] for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
                 captions_with_eos = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
 
+            indices_aux = []
+            if self.aux_loss:
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
+
+                for i, aux_outputs in enumerate(out['aux_outputs']):
+                    indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+
+
             if self.use_differentiable_mask:
-                return out, captions_with_eos, indices, torch.squeeze(memory_mask).float()
+                return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, captions_with_eos, indices, None
+                return out, captions_with_eos, indices, indices_aux, None
             
 
 
@@ -304,7 +315,7 @@ class UnimodalDeformableDVC(nn.Module):
     def _set_aux_loss(self, outputs_class, outputs_segment, outputs_captions):
         return [{'pred_logits': a, 'pred_segments': b, 'pred_captions': c}
                 for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_captions[:-1])]
-
+                
     
     def make_tgt_mask(self, target, tgt_padding_mask):
         """

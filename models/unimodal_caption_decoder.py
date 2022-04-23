@@ -54,7 +54,7 @@ class UnimodalCaptionDecoder(nn.Module):
                 ]
             )
         
-        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+        # self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         
         self.head = nn.Linear(d_model, vocab_size)
         
@@ -96,7 +96,7 @@ class UnimodalCaptionDecoder(nn.Module):
             target = layer(target, memory, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
-                intermediate.append(self.layer_norm(target))
+                intermediate.append(target)
 
         if self.return_intermediate:
             target = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)

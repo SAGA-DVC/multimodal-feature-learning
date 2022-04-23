@@ -14,7 +14,7 @@ def load_config():
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 16
-    cfg.num_workers = 2
+    cfg.num_workers = 4
 
     cfg.print_freq = 10
 
@@ -29,12 +29,11 @@ def load_config():
     cfg.output_dir = 'output'
     # cfg.output_dir = 'output_temp'
 
-    cfg.resume = 'output/checkpoint.pth'
-
-    # cfg.resume = None
+    # cfg.resume = 'output/checkpoint.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 50
+    cfg.epochs = 30
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -59,7 +58,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "DVC v2 bs 16 run"
+    cfg.wandb.notes = "DVC v3 aux loss run"
     cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -113,7 +112,7 @@ def load_config():
 
     cfg.dvc.num_queries = 20
     cfg.dvc.d_model = 512
-    cfg.dvc.aux_loss = False
+    cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
 
     cfg.dvc.use_deformable_detr = True    # Switch DVC
@@ -124,10 +123,11 @@ def load_config():
     cfg.dvc.bbox_loss_coef = 5
     cfg.dvc.giou_loss_coef = 2
     cfg.dvc.self_iou_loss_coef = 2
-    cfg.dvc.captions_loss_coef = 2
-    cfg.dvc.context_loss_coef = 2
+    cfg.dvc.captions_loss_coef = 1
+    cfg.dvc.context_loss_coef = 1
     cfg.dvc.eos_coef = 0.1
 
+    # TODO - handle not using some losses
     cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
     if cfg.use_differentiable_mask:
         cfg.dvc.losses.append('contexts')
@@ -149,7 +149,7 @@ def load_config():
     cfg.dvc.detr.feature_dim = cfg.dvc.d_model    # dim of frame-level feature vector
     cfg.dvc.detr.d_model = cfg.dvc.d_model 
     
-    cfg.dvc.detr.hidden_dropout_prob = 0.5
+    cfg.dvc.detr.hidden_dropout_prob = 0.1    # previously 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
 
     cfg.dvc.detr.num_heads = 8 
@@ -159,7 +159,7 @@ def load_config():
     cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
 
     cfg.dvc.detr.enc_layers = 6    # depth
-    cfg.dvc.detr.dec_layers = 6    # depth
+    cfg.dvc.detr.dec_layers = 6    # depth - if you change this, change the str() method in utils/misc.py in the MetricLogger function
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048
@@ -194,7 +194,7 @@ def load_config():
     cfg.dvc.caption.weight_load = False
 
     cfg.dvc.caption.emb_weights_req_grad = True
-    cfg.dvc.caption.return_intermediate = False
+    cfg.dvc.caption.return_intermediate = True
 
     # TODO - handle embedding matrix loading better
     cfg.dvc.caption.pretrained_word_embed_dim = 300
@@ -234,8 +234,8 @@ def load_config():
     cfg.dvc.vivit.positional_embedding_dropout = 0.1
     cfg.dvc.vivit.attention_dropout = 0.1
     cfg.dvc.vivit.projection_dropout = 0.1
-    cfg.dvc.vivit.mlp_dropout_1 = 0.2
-    cfg.dvc.vivit.mlp_dropout_2 = 0.2
+    cfg.dvc.vivit.mlp_dropout_1 = 0.1
+    cfg.dvc.vivit.mlp_dropout_2 = 0.1
 
     cfg.dvc.vivit.pre_norm = True
 
@@ -280,8 +280,8 @@ def load_config():
     cfg.dvc.decoder.positional_embedding_dropout = 0.1
     cfg.dvc.decoder.attention_dropout = 0.1
     cfg.dvc.decoder.projection_dropout = 0.1
-    cfg.dvc.decoder.mlp_dropout_1 = 0.2
-    cfg.dvc.decoder.mlp_dropout_2 = 0.2
+    cfg.dvc.decoder.mlp_dropout_1 = 0.1
+    cfg.dvc.decoder.mlp_dropout_2 = 0.1
 
     cfg.dvc.decoder.pre_norm = True
 

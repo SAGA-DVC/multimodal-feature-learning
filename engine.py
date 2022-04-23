@@ -56,10 +56,13 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, indices, target_memory_mask = model(obj, is_training=True)
+            outputs, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
+            
+            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
+            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
             outputs, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
@@ -69,12 +72,15 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
 
             assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
 
+            # aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
+            # assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
+
             target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
 
         else:
             raise AssertionError('length of input modalities should be 1 or 2')
 
-        loss_dict = criterion(outputs, obj, indices, target_memory_mask)
+        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -110,14 +116,15 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         if wandb_log and is_main_process():
+            substring_list = [str(i) for i in range(args.dvc.detr.dec_layers - 1)]
             wandb_log_metrics(
                 phase="train",
                 loss=loss_value,
                 loss_dict=loss_dict_reduced_scaled,
                 epoch=epoch,
-                batch_idx=batch_idx
+                batch_idx=batch_idx,
+                substring_list=substring_list
             )
-
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -166,10 +173,13 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
+
+            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
+            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
             outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
@@ -184,7 +194,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         else:
             raise AssertionError('length of input modalities should be 1 or 2')
         
-        loss_dict = criterion(outputs, obj, indices, target_memory_mask)
+        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -224,12 +234,14 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         if wandb_log and is_main_process():
             loss_dict_reduced_scaled.update(avg_scores)
+            substring_list = [str(i) for i in range(args.dvc.detr.dec_layers - 1)]
             wandb_log_metrics(
                 phase="val",
                 loss=loss_value,
                 loss_dict=loss_dict_reduced_scaled,
                 epoch=epoch,
-                batch_idx=batch_idx
+                batch_idx=batch_idx,
+                substring_list=substring_list
             )
     
     # gather the stats from all processes
@@ -248,17 +260,18 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
 # TODO - no grad reqd??
 @torch.no_grad()
-def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx):
+def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx, substring_list):
     log = {
         "epoch": epoch,
         "batch": batch_idx,
         "loss": loss,
     }
     for key, value in loss_dict.items():
-        if isinstance(value, float):
-            log[key] = value
-        else:
-            log[key] = value.item()
+        if all(substring not in key for substring in substring_list):    # don't log aux loss in charts
+            if isinstance(value, float):
+                log[key] = value
+            else:
+                log[key] = value.item()
 
     log_dict = {f"{phase}-{key}": value for key, value in log.items()}
     # print(log_dict)
