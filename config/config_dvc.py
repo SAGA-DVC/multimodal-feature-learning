@@ -123,8 +123,8 @@ def load_config():
     cfg.dvc.bbox_loss_coef = 5
     cfg.dvc.giou_loss_coef = 2
     cfg.dvc.self_iou_loss_coef = 2
-    cfg.dvc.captions_loss_coef = 2
-    cfg.dvc.context_loss_coef = 2
+    cfg.dvc.captions_loss_coef = 1
+    cfg.dvc.context_loss_coef = 1
     cfg.dvc.eos_coef = 0.1
 
     # TODO - handle not using some losses
@@ -159,7 +159,7 @@ def load_config():
     cfg.dvc.detr.enc_n_points = 4    # number of sampling points per attention head per feature level for encoder
 
     cfg.dvc.detr.enc_layers = 6    # depth
-    cfg.dvc.detr.dec_layers = 6    # depth - if you change this, change the str() method in utils/misc in the MetricLogger function
+    cfg.dvc.detr.dec_layers = 6    # depth - if you change this, change the str() method in utils/misc.py in the MetricLogger function
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048

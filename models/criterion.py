@@ -209,19 +209,19 @@ class SetCriterion(nn.Module):
 
         # used in pdvc
         # (nb_target_segments, nb_target_segments)
-        self_iou = torch.triu(box_iou(
-            segment_cl_to_xy(src_segments),
-            segment_cl_to_xy(src_segments))[0], diagonal=1)
+        # self_iou = torch.triu(box_iou(
+        #     segment_cl_to_xy(src_segments),
+        #     segment_cl_to_xy(src_segments))[0], diagonal=1)
 
-        # [nb_target_segments]
-        sizes = [len(v[0]) for v in indices]
-        self_iou_split = 0
+        # # [nb_target_segments]
+        # sizes = [len(v[0]) for v in indices]
+        # self_iou_split = 0
 
-        for i, c in enumerate(self_iou.split(sizes, -1)):
-            cc = c.split(sizes, -2)[i] # (num_segments) --varies per batch
-            self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
+        # for i, c in enumerate(self_iou.split(sizes, -1)):
+        #     cc = c.split(sizes, -2)[i] # (num_segments) --varies per batch
+        #     self_iou_split += cc.sum() / (0.5 * (sizes[i]) * (sizes[i]-1))
 
-        losses['loss_self_iou'] = self_iou_split
+        # losses['loss_self_iou'] = self_iou_split
 
         return losses
 
