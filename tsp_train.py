@@ -141,9 +141,9 @@ def main(cfg):
 
 
     train_sampler = torch.utils.data.DistributedSampler(
-        train_dataset, shuffle=True) if cfg.distributed.on else None
+        train_dataset, shuffle=True) if cfg.distributed.on else torch.utils.data.RandomSampler(train_dataset)
     valid_sampler = torch.utils.data.DistributedSampler(
-        valid_dataset, shuffle=True) if cfg.distributed.on else None
+        valid_dataset, shuffle=True) if cfg.distributed.on else torch.utils.data.RandomSampler(valid_dataset)
 
     # Dataloaders
 
@@ -155,7 +155,6 @@ def main(cfg):
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=cfg.batch_size,
-        shuffle=False,
         sampler=train_sampler,
         num_workers=cfg.num_workers,
         pin_memory=True,
@@ -164,8 +163,7 @@ def main(cfg):
 
     valid_dataloader = torch.utils.data.DataLoader(
         valid_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=False,
+        batch_size=cfg.val_batch_size,
         sampler=valid_sampler,
         num_workers=cfg.num_workers,
         pin_memory=True,
