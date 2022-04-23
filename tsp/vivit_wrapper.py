@@ -150,7 +150,7 @@ class VivitWrapper(nn.Module):
         self.vivit.vivitEncoder.cls.data[:] = state_dict['encoder.cls']
 
         # Encoder weights
-        assert len(self.vivit.vivitEncoder.encoder) == 12, f"Kinetics pretrained model requires depth=12, got {len(self.vivit.vivitEncoder.encoder)}"
+        # assert len(self.vivit.vivitEncoder.encoder) == 12, f"Kinetics pretrained model requires depth=12, got {len(self.vivit.vivitEncoder.encoder)}"
         for (i, encoder_layer) in enumerate(self.vivit.vivitEncoder.encoder):
             prefix = f"encoder.basicEncoder.{i}."
             encoder_layer.layer_norm_1.weight.data[:] = state_dict[prefix + "layer_norm_1.weight"]

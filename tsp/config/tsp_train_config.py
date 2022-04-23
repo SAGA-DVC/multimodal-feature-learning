@@ -18,7 +18,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Video
     cfg.video = ml_collections.ConfigDict()
-    cfg.video.clip_len = 32  # Number of frames per clip. 32 for using Kinetics pretrained weights
+    cfg.video.clip_len = 16  # Number of frames per clip. 32 for using original Kinetics pretrained weights
     cfg.video.frame_rate = 30  # Frames-per-second rate at which the videos are sampled
     cfg.video.clips_per_segment = 5 # Number of clips sampled per video segment
 
@@ -109,7 +109,7 @@ def load_config():
     cfg.pretrained_models.ast = "deit_base_patch16_224"
     cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/audioset_10_10_0.4593.pth"
 
-    cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights.pt"
+    cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
     
     #-------------------------------------------------------------------------------------------------
 
@@ -134,7 +134,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
 
     # General
-    cfg.device = 'cuda:0'
+    cfg.device = 'cuda'
     # cfg.device = 'cpu'
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     
@@ -144,8 +144,8 @@ def load_config():
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 2  # Batch size per GPU
-    cfg.val_batch_size = 4  # Batch size per GPU
+    cfg.batch_size = 8  # Batch size per GPU
+    cfg.val_batch_size = 8  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
@@ -175,7 +175,7 @@ def load_config():
 
     #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
-    distributed = False
+    distributed = True
     cfg.distributed = ml_collections.ConfigDict()
     if distributed:
         cfg.distributed.on = True
@@ -192,7 +192,7 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True 
+    cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "VIVIT pretrained on Kinetics"
