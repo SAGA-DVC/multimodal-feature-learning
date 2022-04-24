@@ -235,8 +235,10 @@ def main(cfg):
 
     if cfg.local_checkpoint:
         checkpoint = torch.load(cfg.local_checkpoint, map_location='cpu')
-        tsp_model.load_state_dict(checkpoint['model'])
 
+        # No weights need to be loaded for tsp_model (only TSP FC heads here)
+
+        # Load backbone weights from checkpoint
         for (i, backbone) in enumerate(cfg.tsp.backbones):
             tsp_model.backbones[i].load_state_dict(checkpoint[backbone])
             print(f"Loaded {backbone} weights from checkpoint")
