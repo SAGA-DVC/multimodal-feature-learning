@@ -74,7 +74,8 @@ def load_config():
     cfg.vivit.num_classes = 1000
 
     cfg.vivit.return_preclassifier = False  # Set True for Feature extraction
-    cfg.vivit.return_prelogits = True  # Set True for TSP & GVF extraction
+    cfg.vivit.return_prelogits = True  # Set True for TSP (if using a CNN-based model) & GVF extraction
+    cfg.vivit.return_cls = True    # Set True for TSP Features Extraction for transformer-based model
 
     # This is for VIT weights, not VIVIT in particular
     cfg.vivit.weight_init = False

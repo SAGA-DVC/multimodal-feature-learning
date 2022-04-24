@@ -16,7 +16,7 @@ class VivitWrapper(nn.Module):
                 tokenization_method='central frame', in_channels=3, d_model=768, depth=12, temporal_depth=4,num_heads=12, 
                 mlp_ratio=4., qkv_bias=True, positional_embedding_dropout=0., attention_dropout=0., 
                 projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True, classification_head=False, num_classes=None,
-                return_preclassifier=True, return_prelogits=False, weight_init=False, weight_load=False, model_official=None):
+                return_preclassifier=True, return_prelogits=False, return_cls=False, weight_init=False, weight_load=False, model_official=None):
         
         """
         Wrapper class for ViViT for TSP
@@ -74,6 +74,8 @@ class VivitWrapper(nn.Module):
                         model_official=model_official
                     )
         
+        self.return_cls = return_cls
+        
         if weight_load and model_official is not None:
             self.load_weights(model_official)
 
@@ -101,6 +103,9 @@ class VivitWrapper(nn.Module):
         # TODO check grad later
         if self.vivit.model_name == 'factorised self attention' or self.vivit.model_name == 'factorised dot product attention':
             x = x.reshape(x.shape[0], -1, x.shape[-1])
+
+        if self.return_cls:
+            return x[:, 0]
 
         return x
     
@@ -150,7 +155,7 @@ class VivitWrapper(nn.Module):
         self.vivit.vivitEncoder.cls.data[:] = state_dict['encoder.cls']
 
         # Encoder weights
-        assert len(self.vivit.vivitEncoder.encoder) == 12, f"Kinetics pretrained model requires depth=12, got {len(self.vivit.vivitEncoder.encoder)}"
+        # assert len(self.vivit.vivitEncoder.encoder) == 12, f"Kinetics pretrained model requires depth=12, got {len(self.vivit.vivitEncoder.encoder)}"
         for (i, encoder_layer) in enumerate(self.vivit.vivitEncoder.encoder):
             prefix = f"encoder.basicEncoder.{i}."
             encoder_layer.layer_norm_1.weight.data[:] = state_dict[prefix + "layer_norm_1.weight"]
