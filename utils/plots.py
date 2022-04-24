@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import numpy as np
 
 
 def plot_grad_flow_line(named_parameters, epoch, batch_idx, prefix=None, output_dir="output"):
@@ -57,7 +58,7 @@ def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_d
     plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
     plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+    plt.ylim(bottom = -0.001) # zoom in on the lower gradient regions
     plt.xlabel("Layers")
     plt.ylabel("average gradient")
     plt.title("Gradient flow")
