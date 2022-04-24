@@ -126,11 +126,9 @@ def main(cfg):
     # Video Backbone
     if 'vivit' in cfg.tsp.backbones:
         print("Creating ViViT backbone")
-        model_official = timm.create_model(cfg.pretrained_models.vit, pretrained=True)
-        model_official.eval()
 
         # Use return_preclassifier=True for VideoVisionTransformer
-        backbone = VivitWrapper(model_official=model_official, **cfg.vivit)
+        backbone = VivitWrapper(**cfg.vivit)
         backbone = backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
@@ -234,6 +232,14 @@ def main(cfg):
         num_tsp_heads=0, 
         concat_gvf=False,
     )
+
+    if cfg.local_checkpoint:
+        checkpoint = torch.load(cfg.local_checkpoint, map_location='cpu')
+        tsp_model.load_state_dict(checkpoint['model'])
+
+        for (i, backbone) in enumerate(cfg.tsp.backbones):
+            tsp_model.backbones[i].load_state_dict(checkpoint[backbone])
+            print(f"Loaded {backbone} weights from checkpoint")
 
     tsp_model.to(device)
 

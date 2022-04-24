@@ -39,7 +39,7 @@ def load_config():
     models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
     cfg.vivit.model_name = models[0]
 
-    cfg.vivit.num_frames_in = 16
+    cfg.vivit.num_frames_in = cfg.video.clip_len
     cfg.vivit.img_size = 224
 
     cfg.vivit.spatial_patch_size = 16
@@ -51,7 +51,7 @@ def load_config():
     cfg.vivit.in_channels = 3
     cfg.vivit.d_model = 768
 
-    cfg.vivit.depth = 6
+    cfg.vivit.depth = 12
     cfg.vivit.temporal_depth = 4
 
     cfg.vivit.num_heads = 12
@@ -70,11 +70,11 @@ def load_config():
     # TODO Check if used
     cfg.vivit.num_classes = 1000
 
-    cfg.vivit.return_preclassifier = False  # Set True for Feature extraction
-    cfg.vivit.return_prelogits = True  # Set True for TSP & GVF extraction
+    cfg.vivit.return_preclassifier = False
+    cfg.vivit.return_prelogits = True
 
     cfg.vivit.weight_init = False
-    cfg.vivit.weight_load = True
+    cfg.vivit.weight_load = False
 
     #-------------------------------------------------------------------------------------------------
     # AST
@@ -103,6 +103,8 @@ def load_config():
     ast_base384 = 'vit_deit_base_distilled_patch16_384'
 
     cfg.pretrained_models.ast = "deit_base_patch16_224"
+
+    cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
     
     #-------------------------------------------------------------------------------------------------
     # TSP specific
@@ -110,7 +112,7 @@ def load_config():
 
     # One to one matching between modalities and backbones
     cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['r2plus1d_34']
+    cfg.tsp.backbones = ['vivit']
 
     #-------------------------------------------------------------------------------------------------
 
@@ -120,15 +122,16 @@ def load_config():
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-r2plus1d-34/train'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-vivit-nogvf/train'  # Path for saving checkpoints and results output
 
-    cfg.batch_size = 64  # Batch size per GPU
+    cfg.batch_size = 32  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
 
     cfg.num_shards = 4
     cfg.shard_id = 0
-    cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
+    # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
+    cfg.local_checkpoint = "/home/arnavshah/tsp/tsp-output-vivit-Kpretrained/epoch_4.pth"
 
     return cfg
