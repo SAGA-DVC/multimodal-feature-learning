@@ -91,10 +91,10 @@ def load_config():
     cfg.ast.imagenet_pretrained = True
     cfg.ast.model_size='base224'
 
-    cfg.ast.depth = 6
+    cfg.ast.depth = 12
     
-    cfg.ast.return_preclassifier = False  # Set True for Feature extraction
-    cfg.ast.return_prelogits = True  # Set True for TSP & GVF extraction
+    cfg.ast.return_preclassifier = False 
+    cfg.ast.return_prelogits = True
 
     #-------------------------------------------------------------------------------------------------
     # Pre-trained models
@@ -107,7 +107,7 @@ def load_config():
     ast_base384 = 'vit_deit_base_distilled_patch16_384'
 
     cfg.pretrained_models.ast = "deit_base_patch16_224"
-    cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/audioset_10_10_0.4593.pth"
+    cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/ast-weights.pth"
 
     cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
     
@@ -124,8 +124,8 @@ def load_config():
     cfg.tsp.val_global_video_features = None
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['vivit']
+    cfg.tsp.modalities = ['video', 'audio']
+    cfg.tsp.backbones = ['vivit', 'ast']
 
     cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.0001
@@ -140,7 +140,7 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-Kpretrained'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-ast'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
@@ -195,6 +195,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "VIVIT pretrained on Kinetics"
+    cfg.wandb.notes = "VIVIT pretrained on Kinetics, AST pretrained on Audioset | Withput GVF"
 
     return cfg

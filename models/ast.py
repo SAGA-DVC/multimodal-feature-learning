@@ -18,7 +18,7 @@ class AudioSpectrogramTransformer(nn.Module):
         :param imagenet_pretrained: if use ImageNet pretrained model
         :param audioset_pretrained: if use full AudioSet and ImageNet pretrained model
         :param model_size: the model size of AST, should be in [tiny224, small224, base224, base384], base224 and base 384 are same model, but are trained differently during ImageNet pretraining.
-        `model_official`: This model's weights are used by AST
+        `model_official`: This model's weights are used by AST  # TODO Not for audioset pretrained
         """
         super(AudioSpectrogramTransformer, self).__init__()
  
