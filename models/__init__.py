@@ -6,6 +6,7 @@ import numpy as np
 import timm
 from .unimodal_deformable_dvc import UnimodalDeformableDVC
 from .multimodal_deformable_dvc import MultimodalDeformableDVC
+from .unimodal_sparse_dvc import UnimodalSparseDVC
 from .dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
@@ -66,7 +67,44 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         caption_args=args.caption,
                         use_differentiable_mask=use_differentiable_mask
                     )
-    
+    elif args.use_sparse_detr:
+
+        if len(args.input_modalities) == 1:
+            model = UnimodalSparseDVC(input_modalities=args.input_modalities,
+                        num_queries=args.num_queries,
+                        d_model=args.d_model, 
+                        num_classes=args.num_classes,
+                        aux_loss=args.aux_loss,
+                        matcher=matcher,
+                        vocab=dataset.vocab, 
+                        seq_len=dataset.max_caption_len_all, 
+                        embedding_matrix=embedding_matrix, 
+                        vivit_args=args.vivit, 
+                        ast_args=args.ast, 
+                        sparse_detr_args=args.sparse_detr, 
+                        caption_args=args.caption,
+                        use_differentiable_mask=use_differentiable_mask
+                    )
+        else:
+            # model = MultimodalSparseDVC(input_modalities=args.input_modalities,
+            #             num_queries=args.num_queries,
+            #             d_model=args.d_model, 
+            #             num_classes=args.num_classes,
+            #             aux_loss=args.aux_loss,
+            #             matcher=matcher,
+            #             vocab=dataset.vocab,  
+            #             seq_len=dataset.max_caption_len_all, 
+            #             embedding_matrix=embedding_matrix, 
+            #             vivit_args=args.vivit, 
+            #             ast_args=args.ast, 
+            #             detr_args=args.detr, 
+            #             caption_args=args.caption,
+            #             use_differentiable_mask=use_differentiable_mask
+            #         )
+            pass
+
+
+
     else :
         
         model = DVC(num_queries=args.num_queries,
@@ -88,7 +126,9 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                 'loss_giou': args.giou_loss_coef,
                 # 'loss_self_iou': args.self_iou_loss_coef,
                 'loss_caption': args.captions_loss_coef,
-                'loss_context': args.context_loss_coef
+                'loss_context': args.context_loss_coef,
+                'mask_prediction': args.mask_prediction_coef,
+                'corr': args.corr_coef,
                 }
 
     if use_differentiable_mask:

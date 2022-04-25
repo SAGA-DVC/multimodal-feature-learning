@@ -31,7 +31,6 @@ class SparseDeformableTransformer(nn.Module):
         self.d_model = d_model
         self.num_head = num_head
 
-        self.no_encoder = (num_encoder_layers == 0)
         self.num_feature_levels = num_feature_levels
         self.eff_query_init = eff_query_init
         self.eff_specific_head = eff_specific_head
@@ -126,7 +125,7 @@ class SparseDeformableTransformer(nn.Module):
             scale = valid_L.unsqueeze(-1)
             grid = (grid.unsqueeze(0).expand(N_, -1) + 0.5) / scale #   (batch_size, num_token in L layer)
             # wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl)
-            wh = torch.full(grid.shape, 0.05 * (2.0 ** lvl))    #   effiecint code for above line (batch_size, num_token in L layer)
+            wh = torch.full(grid.shape, 0.05 * (2.0 ** lvl), device=grid.device)    #   effiecint code for above line (batch_size, num_token in L layer)
             proposal = torch.cat((grid, wh), -1).view(N_, -1, 2)    #   (batch_size, num_token in L layer, 2) 2 is for centre_offset x length
             proposals.append(proposal)
             _cur += (L_)
@@ -142,7 +141,7 @@ class SparseDeformableTransformer(nn.Module):
             output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0))  #   (batch_size, sum of num_tokens in all levels, d_model)
             output_memory = output_memory.masked_fill(~output_proposals_valid, float(0))    #   (batch_size, sum of num_tokens in all levels, d_model)
             output_memory = self.enc_output_norm(self.enc_output(output_memory))    #   (batch_size, sum of num_tokens in all levels, d_model)
-        print("(~memory_padding_mask).sum(axis=-1)", (~memory_padding_mask).sum(axis=-1).shape)
+
         return output_memory, output_proposals, (~memory_padding_mask).sum(axis=-1)
 
     def get_valid_ratio(self, mask):
@@ -222,10 +221,12 @@ class SparseDeformableTransformer(nn.Module):
             backbone_topk_proposals = None
             backbone_outputs_class = None
             backbone_outputs_coord_unact = None
+            backbone_mask_prediction = None
             sparse_token_nums= None
 
 
-        return src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten,  backbone_output_proposals, backbone_topk_proposals, sparse_token_nums   
+        return src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten,  backbone_output_proposals, backbone_topk_proposals, backbone_mask_prediction, sparse_token_nums   
+
 
     def forward_encoder(self, src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
                         mask_flatten, backbone_output_proposals, backbone_topk_proposals, sparse_token_nums):
@@ -243,15 +244,11 @@ class SparseDeformableTransformer(nn.Module):
             :return memory (batch_size, sum of num_token in all level, d_model) #   Multi-scale frame features
         """
         # encoder
-        # TODO: handle if case
-        if self.no_encoder:
-            memory = src_flatten
-        else:
-            output_proposals = backbone_output_proposals if self.use_enc_aux_loss else None 
-            encoder_output = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
-                                  mask_flatten, backbone_topk_proposals, output_proposals, sparse_token_nums)
+        output_proposals = backbone_output_proposals if self.use_enc_aux_loss else None 
+        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
+                                mask_flatten, backbone_topk_proposals, output_proposals, sparse_token_nums)
 
-        return encoder_output
+        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords
 
     def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
@@ -372,8 +369,8 @@ class DeformableTransformerEncoder(nn.Module):
         self.num_layers = num_layers
          # hack implementation
         self.aux_heads = False
-        self.class_embed = None
-        self.bbox_embed = None
+        self.class_embedding = None
+        self.segment_embedding = None
 
     @staticmethod
     def get_reference_points(temporal_shapes, valid_ratios, device):
@@ -418,8 +415,8 @@ class DeformableTransformerEncoder(nn.Module):
         reference_points_orig = reference_points
         pos_orig = pos
         output_proposals_orig = output_proposals
-        sampling_locations_all = []
-        attn_weights_all = []
+        sampling_locations_enc = []
+        attn_weights_enc = []
         if self.aux_heads:
             enc_inter_outputs_class = []
             enc_inter_outputs_coords = []
@@ -439,8 +436,8 @@ class DeformableTransformerEncoder(nn.Module):
             # if tgt is None: self-attention / if tgt is not None: cross-attention w.r.t. the target queries
             tgt, sampling_locations, attn_weights = layer(output, pos, reference_points, temporal_shapes, level_start_index, padding_mask, 
                         tgt=tgt if sparsified_keys else None)
-            sampling_locations_all.append(sampling_locations)
-            attn_weights_all.append(attn_weights)
+            sampling_locations_enc.append(sampling_locations)
+            attn_weights_enc.append(attn_weights)
             if sparsified_keys:                
                 if sparse_token_nums is None:
                     output = output.scatter(1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, tgt.size(-1)), tgt)
@@ -454,23 +451,22 @@ class DeformableTransformerEncoder(nn.Module):
             
             if self.aux_heads and lid < self.num_layers - 1:
                 # feed outputs to aux. heads
-                output_class = self.class_embed[lid](tgt)
-                output_offset = self.bbox_embed[lid](tgt)
+                output_class = self.class_embedding[lid](tgt)
+                output_offset = self.segment_embedding[lid](tgt)
                 output_coords_unact = output_proposals + output_offset
                 # values to be used for loss compuation
                 enc_inter_outputs_class.append(output_class)
                 enc_inter_outputs_coords.append(output_coords_unact.sigmoid())
 
         # Change dimension from [num_layer, batch_size, ...] to [batch_size, num_layer, ...]
-        sampling_locations_all = torch.stack(sampling_locations_all, dim=1)
-        attn_weights_all = torch.stack(attn_weights_all, dim=1)
-        
-        ret = [output, sampling_locations_all, attn_weights_all]
+        sampling_locations_enc = torch.stack(sampling_locations_enc, dim=1)
+        attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.aux_heads:
-            ret += [enc_inter_outputs_class, enc_inter_outputs_coords]
+            return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords
+        else:
+            return output, sampling_locations_enc, attn_weights_enc, None, None
         
-        return ret
 
 
 class DeformableTransformerDecoderLayer(nn.Module):
@@ -561,8 +557,8 @@ class DeformableTransformerDecoder(nn.Module):
         self.return_intermediate = return_intermediate
         # hack implementation for iterative bounding box refinement and two-stage Deformable DETR
         self.bbox_head = None
-        # self.bbox_embed = None
-        # self.class_embed = None
+        # self.segment_embedding = None
+        # self.class_embedding = None
 
     def forward(self, tgt, reference_points, src, src_temporal_shapes, src_level_start_index, src_valid_ratios,
                 query_pos=None, src_padding_mask=None, query_padding_mask=None, disable_iterative_refine=False):
@@ -585,8 +581,8 @@ class DeformableTransformerDecoder(nn.Module):
 
         intermediate = []
         intermediate_reference_points = []
-        sampling_locations_all = []
-        attn_weights_all = []
+        sampling_locations_enc = []
+        attn_weights_enc = []
         bs = tgt.shape[0]
         for lid, layer in enumerate(self.layers):
             if reference_points.shape[-1] == 2:
@@ -597,8 +593,8 @@ class DeformableTransformerDecoder(nn.Module):
                 reference_points_input = reference_points[:, :, None] * src_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
             output, sampling_locations, attn_weights = layer(output, query_pos, reference_points_input, src, src_temporal_shapes, src_level_start_index, src_padding_mask, query_padding_mask)    #   (batch_size, num_queries, d_model)
             
-            sampling_locations_all.append(sampling_locations)
-            attn_weights_all.append(attn_weights)
+            sampling_locations_enc.append(sampling_locations)
+            attn_weights_enc.append(attn_weights)
 
             # hack implementation for iterative bounding box refinement
             if disable_iterative_refine:
@@ -622,15 +618,15 @@ class DeformableTransformerDecoder(nn.Module):
                 intermediate.append(output)
                 intermediate_reference_points.append(reference_points)
 
-        sampling_locations_all = torch.stack(sampling_locations_all, dim=1)
-        attn_weights_all = torch.stack(attn_weights_all, dim=1)
+        sampling_locations_enc = torch.stack(sampling_locations_enc, dim=1)
+        attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.return_intermediate:
             intermediate_outputs = torch.stack(intermediate)
             intermediate_reference_points = torch.stack(intermediate_reference_points)
-            return intermediate_outputs, intermediate_reference_points, sampling_locations_all, attn_weights_all
+            return intermediate_outputs, intermediate_reference_points, sampling_locations_enc, attn_weights_enc
 
-        return output, reference_points, sampling_locations_all, attn_weights_all
+        return output, reference_points, sampling_locations_enc, attn_weights_enc
     
 
 class MaskPredictor(nn.Module):

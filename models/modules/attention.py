@@ -290,60 +290,74 @@ class CrossAttention(nn.Module):
 
 class MSDeformAttnFunction(Function):
     @staticmethod
-    def forward(ctx, value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights, im2col_step):
+    def forward(ctx, value, value_temporal_shapes, value_level_start_index, sampling_locations, attention_weights, im2col_step):
         # sampling_locations:(...,2), the first item of last dim means x axis corresponding to w, and second item of the last dim means y, corresponding to h.
         ctx.im2col_step = im2col_step
         output = MSDA.ms_deform_attn_forward(
-            value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights, ctx.im2col_step)
-        ctx.save_for_backward(value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights)
+            value, value_temporal_shapes, value_level_start_index, sampling_locations, attention_weights, ctx.im2col_step)
+        ctx.save_for_backward(value, value_temporal_shapes, value_level_start_index, sampling_locations, attention_weights)
         return output
 
     @staticmethod
     @once_differentiable
     def backward(ctx, grad_output):
-        value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights = ctx.saved_tensors
+        value, value_temporal_shapes, value_level_start_index, sampling_locations, attention_weights = ctx.saved_tensors
         grad_value, grad_sampling_loc, grad_attn_weight = \
             MSDA.ms_deform_attn_backward(
-                value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights, grad_output, ctx.im2col_step)
+                value, value_temporal_shapes, value_level_start_index, sampling_locations, attention_weights, grad_output, ctx.im2col_step)
 
         return grad_value, None, None, grad_sampling_loc, grad_attn_weight, None
 
 
-def ms_deform_attn_core_pytorch(value, value_spatial_shapes, sampling_locations, attention_weights, return_value=False):
+def ms_deform_attn_core_pytorch(value, value_temporal_shapes, sampling_locations, attention_weights, return_value=False):
     # for debug and test only,
     # need to use cuda version instead
     '''
     :param value (batch_size, sum of num_token in all level, nhead, dmodel/nhead)  
-    :param value_spatial_shapes (num_feature_levels, 2)
-    :param sampling_locations (batch_size, sum of num_token in all level, n_heads, n_levels, n_points, 2) 
-    :param attention_weights (batch_size, sum of num_token in all level, n_heads, n_levels, n_points)
+    :param value_temporal_shapes (num_feature_levels, 1)
+    :param sampling_locations (batch_size, sparse_tokens, n_heads, n_levels, n_points, 1) 
+    :param attention_weights (batch_size, sparse_tokens, n_heads, n_levels, n_points)
     :param return_value
     '''
-    N_, S_, M_, D_ = value.shape    # N_: batch size , S_: \sum_H*W, M_ : head number, D_: feature dim of each head
 
-    _, Lq_, M_, L_, P_, _ = sampling_locations.shape  # Lq_: \sum H*W, L_: multi-scale number, P_: number of sampled key points
+    batch_size, num_tokens, num_heads, d_model = value.shape    # batch_size: batch size , num_tokens: \sum_H*W, num_heads : head number, d_model: feature dim of each head
 
-    value_list = value.split([H_ * W_ for H_, W_ in value_spatial_shapes], dim=1)
+    _, num_sparse_tokens, num_heads, num_feature_levels, num_points, _ = sampling_locations.shape  # num_sparse_tokens: sparse_tokens, num_feature_levels: multi-scale number, num_points: number of sampled key points
 
+    value_list = value.split([num_feature_levels for num_feature_levels in value_temporal_shapes], dim=1)   # [(B, 400, nhead, dmodel/nhead), (B, 200, nhead, dmodel/nhead), ...]
+
+    # (batch_size, sparse_tokens, n_heads, n_levels, n_points, 1)
     sampling_grids = 2 * sampling_locations - 1 # convert value from range[0,1] to [-1, 1]
+
     sampling_value_list = []
-    for lid_, (H_, W_) in enumerate(value_spatial_shapes):
-        # N_, H_*W_, M_, D_ -> N_, H_*W_, M_*D_ -> N_, M_*D_, H_*W_ -> N_*M_, D_, H_, W_
-        value_l_ = value_list[lid_].flatten(2).transpose(1, 2).reshape(N_*M_, D_, H_, W_)
-        # N_, Lq_, M_, P_, 2 -> N_, M_, Lq_, P_, 2 -> N_*M_, Lq_, P_, 2
+    for lid_, (current_lvl_tokens) in enumerate(value_temporal_shapes):
+        # batch_size, num_feature_levels, num_heads, d_model -> batch_size, num_feature_levels, num_heads*d_model -> batch_size, num_heads*d_model, num_feature_levels-> batch_size*num_heads, d_model, num_feature_levels, 1
+        value_l_ = value_list[lid_].flatten(2).transpose(1, 2).reshape(batch_size*num_heads, d_model, current_lvl_tokens).unsqueeze(-1)
+        
+        # batch_size, num_sparse_tokens, num_heads, num_points, 1 -> batch_size, num_heads, num_sparse_tokens, num_points, 1 -> batch_size*num_heads, num_sparse_tokens, num_points, 1
         sampling_grid_l_ = sampling_grids[:, :, :, lid_].transpose(1, 2).flatten(0, 1)
+        
+        # TODO: HACK Implementation
+        sampling_grid_l_ = torch.stack([sampling_grid_l_, sampling_grid_l_], dim=-1).reshape(sampling_grid_l_.shape[0], sampling_grid_l_.shape[1], sampling_grid_l_.shape[2], 2)
+        
+        # TODO: 1d interpolation
         # sampling_grid_l_: (...,2), the first item of last dim means x axis corresponding to w, and second item of the last dim means y, corresponding to h.
-        # N_*M_, D_, Lq_, P_
+        # batch_size*num_heads, d_model, num_sparse_tokens, num_points
         sampling_value_l_ = F.grid_sample(value_l_, sampling_grid_l_,
                                           mode='bilinear', padding_mode='border', align_corners=False)
+
         sampling_value_list.append(sampling_value_l_)
-    # (N_, Lq_, M_, L_, P_) -> (N_, M_, Lq_, L_, P_) -> (N_, M_, 1, Lq_, L_*P_)
-    attention_weights = attention_weights.transpose(1, 2).reshape(N_*M_, 1, Lq_, L_*P_)
+
+    # (batch_size, num_sparse_tokens, num_heads, num_feature_levels, num_points) -> (batch_size, num_heads, num_sparse_tokens, num_feature_levels, num_points) -> (batch_size, num_heads, 1, num_sparse_tokens, num_feature_levels*num_points)
+    attention_weights = attention_weights.transpose(1, 2).reshape(batch_size*num_heads, 1, num_sparse_tokens, num_feature_levels*num_points)
 
     if return_value:
+        print("[UNUSED] RETURN VALUE: ", return_value)
         return torch.stack(sampling_value_list, dim=-2)
-    #(N_ * M_, D_, Lq_, L_* P_) * (N_*M_, 1, Lq_, L_*P_) --> (N_*M_, D_, Lq_)
-    output = (torch.stack(sampling_value_list, dim=-2).flatten(-2) * attention_weights).sum(-1).view(N_, M_*D_, Lq_)
+    
+    # (batch_size * num_heads, d_model, num_sparse_tokens, num_feature_levels* num_points) * (batch_size*num_heads, 1, num_sparse_tokens, num_feature_levels*num_points) --> (batch_size*num_heads, d_model, num_sparse_tokens)
+    output = (torch.stack(sampling_value_list, dim=-2).flatten(-2) * attention_weights).sum(-1).view(batch_size, num_heads*d_model, num_sparse_tokens)
+
     return output.transpose(1, 2).contiguous()
 
 
@@ -446,15 +460,26 @@ class MSDeformAttn(nn.Module):
             raise ValueError(
                 'Last dim of reference_points must be 1 or 2, but get {} instead.'.format(reference_points.shape[-1]))
 
-        if True:
-            sampling_locations = torch.stack((sampling_locations, 0.5 * sampling_locations.new_ones(sampling_locations.shape)), -1)  #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points, 2) 
-            input_spatial_shapes = torch.stack([input_spatial_shapes.new_ones(input_spatial_shapes.shape), input_spatial_shapes], -1)   # (num_feature_levels, 2)
+        # if True:
+        #     sampling_locations = torch.stack((sampling_locations, 0.5 * sampling_locations.new_ones(sampling_locations.shape)), -1)  #   (batch_size, sum of num_token in all level, n_heads, n_levels, n_points, 2) 
+        #     input_spatial_shapes = torch.stack([input_spatial_shapes.new_ones(input_spatial_shapes.shape), input_spatial_shapes], -1)   # (num_feature_levels, 2)
 
         # if query.device.type == 'cuda':
         #     output = MSDeformAttnFunction.apply(
         #         value, input_spatial_shapes, input_level_start_index, sampling_locations, attention_weights,
         #         self.im2col_step)
         # else:
+
+        input_spatial_shapes = input_spatial_shapes.unsqueeze(-1)
+        sampling_locations = sampling_locations.unsqueeze(-1)
+
+        # print(':='*40)
+        # print("value: ", value.shape)
+        # print("input_spatial_shapes: ", input_spatial_shapes)
+        # print("sampling_locations: ", sampling_locations.shape)
+        # print("attention_weights: ", attention_weights.shape)
+        # print(':='*40)
+
         output = ms_deform_attn_core_pytorch(value, input_spatial_shapes, sampling_locations, attention_weights)
 
         output = self.output_proj(output)
