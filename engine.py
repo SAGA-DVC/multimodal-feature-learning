@@ -243,7 +243,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
                 batch_idx=batch_idx,
                 substring_list=substring_list
             )
-    
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(f"\nAveraged val stats for epoch [{epoch}]: ", metric_logger, "\n")
@@ -252,6 +252,10 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     scores = run_eval(args.eval, submission_json_epoch)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     return_dict.update(scores)
+
+    if args.save_submission:
+        save_submission(submission_json_epoch, os.path.join(args.submission_dir, f"E{epoch}_submission.json"))
+
     return return_dict
      
 

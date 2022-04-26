@@ -287,9 +287,9 @@ class SetCriterion(nn.Module):
         corr = compute_corr(flat_grid_topk, flat_grid_attn_map_dec, temporal_shapes)
 
         losses = {}
-        losses["corr_mask_attn_map_dec_all"] = corr[0].mean()
-        for i, _corr in enumerate(corr[1:]):
-            losses[f"corr_mask_attn_map_dec_{i}"] = _corr.mean()
+        losses["loss_corr"] = corr[0].mean()
+        # for i, _corr in enumerate(corr[1:]):
+        #     losses[f"loss_corr_{i}"] = _corr.mean()
         return losses
 
 
