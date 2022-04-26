@@ -320,7 +320,7 @@ def ms_deform_attn_core_pytorch(value, value_temporal_shapes, sampling_locations
     :param return_value
     '''
 
-    batch_size, num_tokens, num_heads, d_model = value.shape    # batch_size: batch size , num_tokens: \sum_H*W, num_heads : head number, d_model: feature dim of each head
+    batch_size, num_tokens, num_heads, d_model_per_head = value.shape    # batch_size: batch size , num_tokens: \sum_H*W, num_heads : head number, d_model_per_head: feature dim of each head
 
     _, num_sparse_tokens, num_heads, num_feature_levels, num_points, _ = sampling_locations.shape  # num_sparse_tokens: sparse_tokens, num_feature_levels: multi-scale number, num_points: number of sampled key points
 
@@ -331,32 +331,35 @@ def ms_deform_attn_core_pytorch(value, value_temporal_shapes, sampling_locations
 
     sampling_value_list = []
     for lid_, (current_lvl_tokens) in enumerate(value_temporal_shapes):
-        # batch_size, num_feature_levels, num_heads, d_model -> batch_size, num_feature_levels, num_heads*d_model -> batch_size, num_heads*d_model, num_feature_levels-> batch_size*num_heads, d_model, num_feature_levels, 1
-        value_l_ = value_list[lid_].flatten(2).transpose(1, 2).reshape(batch_size*num_heads, d_model, current_lvl_tokens).unsqueeze(-1)
+        # batch_size, num_feature_levels, num_heads, d_model_per_head -> batch_size, num_feature_levels, num_heads*d_model_per_head -> batch_size, num_heads*d_model_per_head, num_feature_levels-> batch_size*num_heads, d_model_per_head, num_feature_levels, 1
+        value_l_ = value_list[lid_].flatten(2).transpose(1, 2).reshape(batch_size*num_heads, d_model_per_head, current_lvl_tokens).unsqueeze(-1)
         
         # batch_size, num_sparse_tokens, num_heads, num_points, 1 -> batch_size, num_heads, num_sparse_tokens, num_points, 1 -> batch_size*num_heads, num_sparse_tokens, num_points, 1
         sampling_grid_l_ = sampling_grids[:, :, :, lid_].transpose(1, 2).flatten(0, 1)
-        
-        # TODO: HACK Implementation
-        sampling_grid_l_ = torch.stack([sampling_grid_l_, sampling_grid_l_], dim=-1).reshape(sampling_grid_l_.shape[0], sampling_grid_l_.shape[1], sampling_grid_l_.shape[2], 2)
-        
-        # TODO: 1d interpolation
-        # sampling_grid_l_: (...,2), the first item of last dim means x axis corresponding to w, and second item of the last dim means y, corresponding to h.
-        # batch_size*num_heads, d_model, num_sparse_tokens, num_points
+
+        # batch_size*num_heads, num_sparse_tokens, num_points, 1 -> batch_size*num_heads, num_sparse_tokens * num_points, 1 -> batch_size*num_heads, 1, num_sparse_tokens * num_points
+        sampling_grid_l_ = sampling_grid_l_.flatten(1, 2).reshape(sampling_grid_l_.shape[0], 1, -1)
+
+        # batch_size*num_heads, 1, num_sparse_tokens * num_points, 2
+        sampling_grid_l_ = torch.stack([-torch.ones_like(sampling_grid_l_), sampling_grid_l_], dim=-1)
+
+        # sampling_grid_l_: (...,2), the first item of last dim is '-1', and second item of the last dim means t_start.
+        # batch_size*num_heads, d_model_per_head, 1, num_sparse_tokens * num_points
         sampling_value_l_ = F.grid_sample(value_l_, sampling_grid_l_,
                                           mode='bilinear', padding_mode='border', align_corners=False)
 
+        sampling_value_l_ = sampling_value_l_.reshape(batch_size*num_heads, d_model_per_head, num_sparse_tokens, num_points)
         sampling_value_list.append(sampling_value_l_)
 
     # (batch_size, num_sparse_tokens, num_heads, num_feature_levels, num_points) -> (batch_size, num_heads, num_sparse_tokens, num_feature_levels, num_points) -> (batch_size, num_heads, 1, num_sparse_tokens, num_feature_levels*num_points)
     attention_weights = attention_weights.transpose(1, 2).reshape(batch_size*num_heads, 1, num_sparse_tokens, num_feature_levels*num_points)
 
     if return_value:
-        print("[UNUSED] RETURN VALUE: ", return_value)
+        print("[UNUSED] RETURN VALUE in attention.py: ", return_value)
         return torch.stack(sampling_value_list, dim=-2)
     
-    # (batch_size * num_heads, d_model, num_sparse_tokens, num_feature_levels* num_points) * (batch_size*num_heads, 1, num_sparse_tokens, num_feature_levels*num_points) --> (batch_size*num_heads, d_model, num_sparse_tokens)
-    output = (torch.stack(sampling_value_list, dim=-2).flatten(-2) * attention_weights).sum(-1).view(batch_size, num_heads*d_model, num_sparse_tokens)
+    # (batch_size * num_heads, d_model_per_head, num_sparse_tokens, num_feature_levels* num_points) * (batch_size*num_heads, 1, num_sparse_tokens, num_feature_levels*num_points) --> (batch_size*num_heads, d_model_per_head, num_sparse_tokens)
+    output = (torch.stack(sampling_value_list, dim=-2).flatten(-2) * attention_weights).sum(-1).view(batch_size, num_heads*d_model_per_head, num_sparse_tokens)
 
     return output.transpose(1, 2).contiguous()
 
