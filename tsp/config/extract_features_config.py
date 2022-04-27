@@ -124,7 +124,7 @@ def load_config():
     cfg.subdir = 'train'
     cfg.output_dir = '/home/arnavshah/tsp/video-features-vivit-gvf/train'  # Path for saving checkpoints and results output
 
-    cfg.batch_size = 32  # Batch size per GPU
+    cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
 
