@@ -129,9 +129,10 @@ def load_config():
 
 
     cfg.num_shards = 4
-    cfg.shard_id = 0
+    cfg.shard_id = 1
     # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
+    cfg.local_checkpoint = None
     # cfg.local_checkpoint = "/home/arnavshah/tsp/tsp-output-vivit-Kpretrained/epoch_4.pth"
 
     return cfg
