@@ -67,7 +67,7 @@ def load_config():
     cfg.vivit.pre_norm = True
 
     cfg.vivit.classification_head = False
-    # TODO Check if used
+
     cfg.vivit.num_classes = 1000
 
     cfg.vivit.return_preclassifier = False
@@ -122,7 +122,7 @@ def load_config():
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-vivit-nogvf/train'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/video-features-vivit-gvf/train'  # Path for saving checkpoints and results output
 
     cfg.batch_size = 32  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
@@ -132,6 +132,6 @@ def load_config():
     cfg.shard_id = 0
     # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
-    cfg.local_checkpoint = "/home/arnavshah/tsp/tsp-output-vivit-Kpretrained/epoch_4.pth"
+    # cfg.local_checkpoint = "/home/arnavshah/tsp/tsp-output-vivit-Kpretrained/epoch_4.pth"
 
     return cfg

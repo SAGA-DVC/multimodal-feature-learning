@@ -129,6 +129,10 @@ def main(cfg):
 
         # Use return_preclassifier=True for VideoVisionTransformer
         backbone = VivitWrapper(**cfg.vivit)
+        if cfg.pretrained_models.vivit:
+            state_dict = torch.load(cfg.pretrained_models.vivit)
+            backbone.load_weights_from_state_dict(state_dict)
+
         backbone = backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
