@@ -237,7 +237,7 @@ def main(cfg):
         
         if cfg.pretrained_models.ast_audioset:
                 state_dict = torch.load(cfg.pretrained_models.ast_audioset)
-                backbone.load_state_dict(state_dict, strict=False)
+                backbone.load_state_dict(state_dict)
 
         backbone.to(device)
         d_feats.append(backbone.d_model)
@@ -268,7 +268,7 @@ def main(cfg):
         input_modalities=cfg.tsp.modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
-        combiner=concat_combiner,
+        combiner=add_combiner,
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.train_global_video_features is not None,
