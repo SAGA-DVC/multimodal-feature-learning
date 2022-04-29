@@ -19,7 +19,7 @@ def main(args):
                     if args.pooling_fn == 'max':
                         gvf, _ = torch.tensor(np.array(video_clips)).max(dim=0)
                     elif args.pooling_fn == 'avg':
-                        gvf, _ = torch.tensor(np.array(video_clips)).mean(dim=0)
+                        gvf = torch.tensor(np.array(video_clips)).mean(dim=0)
 
                     output_file.create_dataset(video_id, data=gvf, **compression_flags)
 
