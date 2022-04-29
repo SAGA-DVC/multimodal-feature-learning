@@ -118,17 +118,17 @@ def load_config():
 
     # Paths to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    # cfg.tsp.train_global_video_features = "tsp/dataset/train-gvf.h5"
-    # cfg.tsp.val_global_video_features = "tsp/dataset/val-gvf.h5"
-    cfg.tsp.train_global_video_features = None
-    cfg.tsp.val_global_video_features = None
+    # cfg.tsp.train_global_video_features = None
+    # cfg.tsp.val_global_video_features = None
+    cfg.tsp.train_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/train-max-gvf.h5"
+    cfg.tsp.val_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/val-max-gvf.h5"
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video', 'audio']
-    cfg.tsp.backbones = ['vivit', 'ast']
+    cfg.tsp.modalities = ['video']
+    cfg.tsp.backbones = ['vivit']
 
-    cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
-    cfg.tsp.fc_lr = 0.0001
+    cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
+    cfg.tsp.fc_lr = 0.001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
@@ -145,7 +145,7 @@ def load_config():
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
     cfg.batch_size = 8  # Batch size per GPU
-    cfg.val_batch_size = 8  # Batch size per GPU
+    cfg.val_batch_size = 16  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
@@ -164,7 +164,7 @@ def load_config():
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
 
-    cfg.print_freq = 50  # Print frequency in number of batches
+    cfg.print_freq = 100  # Print frequency in number of batches
 
     cfg.debug = False
     if cfg.debug:

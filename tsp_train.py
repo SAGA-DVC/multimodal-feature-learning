@@ -90,6 +90,7 @@ def main(cfg):
         unavailable_videos = json.load(f)
 
     # Training dataset
+    print("Training Dataset:")
     train_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.train_csv_filename,
         root_dir=train_dir,
@@ -118,9 +119,10 @@ def main(cfg):
             (cfg.vivit.img_size, cfg.vivit.img_size))
     ])
 
-    print("Length of train dataset: ", len(train_dataset))
+    print("Length of training dataset: ", len(train_dataset))
 
     # Validation dataset
+    print("Validation Dataset:")
     valid_dataset = UntrimmedVideoDataset(
         csv_filename=cfg.dataset.valid_csv_filename,
         root_dir=valid_dir,
@@ -139,6 +141,7 @@ def main(cfg):
         unavailable_videos=unavailable_videos
     )
 
+    print("Length of validation dataset: ", len(valid_dataset))
 
     train_sampler = torch.utils.data.DistributedSampler(
         train_dataset, shuffle=True) if cfg.distributed.on else torch.utils.data.RandomSampler(train_dataset)
