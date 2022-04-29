@@ -195,6 +195,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "VIVIT pretrained on Kinetics, AST pretrained on Audioset | Withput GVF"
+    cfg.wandb.notes = "VIVIT pretrained on Kinetics | With GVF"
 
     return cfg
