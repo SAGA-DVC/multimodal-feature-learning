@@ -59,9 +59,9 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
                 module = model.module
             else:
                 module = model
-            plots.plot_grad_flow_line(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir)
+            plots.plot_grad_flow_line(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir, wandb_log=wandb_log)
             for (modality, backbone) in zip(module.input_modalities, module.backbones):
-                plots.plot_grad_flow_line(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir)
+                plots.plot_grad_flow_line(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir, wandb_log=wandb_log)
 
         optimizer.step()
 
@@ -169,6 +169,7 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
         log_dict = {
             f"{phase}/{key}": value
             for key, value in log.items()
+            if value is not torch.nan and value is not np.nan
         }
         # if optimizer:
         #     for g in optimizer.param_groups:
