@@ -127,8 +127,8 @@ def load_config():
     cfg.tsp.modalities = ['video']
     cfg.tsp.backbones = ['vivit']
 
-    cfg.tsp.backbone_lr = 0.001  # Backbone layers learning rate
-    cfg.tsp.fc_lr = 0.001
+    cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
+    cfg.tsp.fc_lr = 0.0001
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------

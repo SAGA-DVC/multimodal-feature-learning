@@ -169,7 +169,7 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
         log_dict = {
             f"{phase}/{key}": value
             for key, value in log.items()
-            if value is not torch.nan and value is not np.nan
+            if not np.isnan(value)
         }
         # if optimizer:
         #     for g in optimizer.param_groups:
