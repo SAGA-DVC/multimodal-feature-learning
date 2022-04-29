@@ -12,20 +12,20 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 3
     cfg.num_workers = 1
 
-    cfg.print_freq = 1
+    cfg.print_freq = 10
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
 
-    cfg.checkpoint_rate = 10
-    cfg.eval_rate = 1
+    cfg.checkpoint_rate = 5
+    cfg.eval_rate = 5    # used for val loops and submission json files
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
@@ -35,7 +35,7 @@ def load_config():
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 10
+    cfg.epochs = 2
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -61,7 +61,7 @@ def load_config():
     cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "DVC v3 aux loss run"
+    cfg.wandb.notes = "Sparse DETR with vivit feats"
     cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -75,7 +75,10 @@ def load_config():
     cfg.dataset.activity_net.anet_path = './anet_data'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
     cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
+
+    cfg.dataset.activity_net.for_testing = True
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -139,9 +142,9 @@ def load_config():
     if cfg.use_differentiable_mask:
         cfg.dvc.losses.append('contexts')
     
-    if cfg.dvc.use_sparse_detr:
-        cfg.dvc.losses.append('mask_prediction')
-        cfg.dvc.losses.append('corr')
+    # if cfg.dvc.use_sparse_detr:
+        # cfg.dvc.losses.append('mask_prediction')
+        # cfg.dvc.losses.append('corr')
 
 
     # Matcher args
@@ -163,7 +166,7 @@ def load_config():
     cfg.dvc.detr.hidden_dropout_prob = 0.1    # previously 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.detr.num_heads = 12
+    cfg.dvc.detr.num_heads = 8
 
     cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
     cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
@@ -190,7 +193,7 @@ def load_config():
     cfg.dvc.sparse_detr.hidden_dropout_prob = 0.1
     cfg.dvc.sparse_detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.sparse_detr.num_heads = 12 #   the number of heads in the multiheadattention models
+    cfg.dvc.sparse_detr.num_heads = 8 #   the number of heads in the multiheadattention models
     
     cfg.dvc.sparse_detr.num_feature_levels = 4  #  number of feature levels in multiscale Deformable Attention 
     cfg.dvc.sparse_detr.dec_n_points = 4   #   number of sampling points per attention head per feature level for decoder
@@ -203,7 +206,7 @@ def load_config():
     cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.sparse_detr.rho=0.4 
+    cfg.dvc.sparse_detr.rho=0.3
     cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.eff_query_init=True
     cfg.dvc.sparse_detr.eff_specific_head=True
@@ -217,7 +220,7 @@ def load_config():
 
     cfg.dvc.caption.depth = 6
 
-    cfg.dvc.caption.num_heads = 12
+    cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4
     cfg.dvc.caption.qkv_bias = True
 

@@ -61,7 +61,8 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        # self.keys = self.keys[:6]
+        if args.for_testing:
+            self.keys = self.keys[:6]
 
         # self.video_features_folder = video_features_folder
 

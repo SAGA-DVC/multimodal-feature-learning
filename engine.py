@@ -20,7 +20,7 @@ from evaluation.evaluate import run_eval
 
 
 
-def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device, epoch, args, wandb_log):
+def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq, device, epoch, args, wandb_log):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -56,7 +56,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
+            outputs, captions, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -65,7 +65,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
+            outputs, captions, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -107,6 +107,11 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
             # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
             plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
 
+            # captions TODO
+            captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+            # with (output_dir / "train_log.txt").open("a") as f:
+            #     f.write(json.dumps(train_log_stats) + "\n")
+
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
         optimizer.step()
@@ -133,7 +138,6 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-# TODO: Pass json instead of creating file and passing file path
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
 def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):

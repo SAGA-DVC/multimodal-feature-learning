@@ -93,12 +93,12 @@ class UnimodalSparseDVC(nn.Module):
         
         if sparse_detr_args.use_enc_aux_loss:
             # the output from the last layer should be specially treated as an input of decoder
-            num_layers_excluding_the_last = sparse_detr_args.enc_layers - 1 
+            num_layers_excluding_the_last = sparse_detr_args.enc_layers - 1
             self.unimodal_sparse_transformer.encoder.aux_heads = True
             self.unimodal_sparse_transformer.encoder.class_embedding = self.class_embedding[-num_layers_excluding_the_last:]
             self.unimodal_sparse_transformer.encoder.segment_embedding = self.segment_embedding[-num_layers_excluding_the_last:] 
-            for box_embed in self.unimodal_sparse_transformer.encoder.segment_embedding:
-                nn.init.constant_(box_embed.layers[-1].bias.data[2:], 0.0)
+            for segment_embed in self.unimodal_sparse_transformer.encoder.segment_embedding:
+                nn.init.constant_(segment_embed.layers[-1].bias.data[2:], 0.0)
 
 
         # Context Module
@@ -309,6 +309,8 @@ class UnimodalSparseDVC(nn.Module):
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
+            outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+            
             indices_aux = []
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class[:-1], outputs_segment[:-1], outputs_captions[:-1])
@@ -317,9 +319,9 @@ class UnimodalSparseDVC(nn.Module):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
 
             if self.use_differentiable_mask:
-                return out, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, outputs_captions_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, indices, indices_aux, None
+                return out, outputs_captions_last_layer, indices, indices_aux, None
 
         # TODO - implement changes in caption decoder 
         # Inference

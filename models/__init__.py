@@ -128,7 +128,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                 'loss_caption': args.captions_loss_coef,
                 'loss_context': args.context_loss_coef,
                 'loss_mask_prediction': args.mask_prediction_coef,
-                'loss_corr': args.corr_coef,
+                # 'loss_corr': args.corr_coef,
                 }
 
     if use_differentiable_mask:

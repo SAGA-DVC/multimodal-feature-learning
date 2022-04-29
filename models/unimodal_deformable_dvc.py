@@ -227,6 +227,8 @@ class UnimodalDeformableDVC(nn.Module):
 
             out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
+            outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+
             indices_aux = []
             if self.aux_loss:
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
@@ -235,9 +237,9 @@ class UnimodalDeformableDVC(nn.Module):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
 
             if self.use_differentiable_mask:
-                return out, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, outputs_captions_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, indices, indices_aux, None
+                return out, outputs_captions_last_layer, indices, indices_aux, None
 
         # TODO - implement changes in caption decoder 
         # Inference

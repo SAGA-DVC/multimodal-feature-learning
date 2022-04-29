@@ -89,6 +89,8 @@ def main(args):
         print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # for a,b in model.named_parameters():
+    #     print(a, b.shape)
     print(f'number of params: {n_parameters / 1000000} M')
 
     param_dicts = [
@@ -113,7 +115,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
         
         lr_scheduler.step()
 
