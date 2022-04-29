@@ -1,9 +1,12 @@
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
+import wandb
+
+from tsp.utils import is_main_process
 
 
-def plot_grad_flow_line(named_parameters, epoch, batch_idx, prefix=None, output_dir="output"):
+def plot_grad_flow_line(named_parameters, epoch, batch_idx, prefix=None, output_dir="output", wandb_log=False):
     ave_grads = []
     max_grads= []
     layers = []
@@ -30,9 +33,11 @@ def plot_grad_flow_line(named_parameters, epoch, batch_idx, prefix=None, output_
     plt.title("Gradient flow")
     plt.grid(True)
     plt.savefig(f'{output_dir}/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png', bbox_inches="tight")
+    if wandb_log and is_main_process():
+        wandb.save(f'{output_dir}/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png')
     
 
-def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_dir="output"):
+def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_dir="output", wandb_log=False):
     '''Plots the gradients flowing through different layers in the net during training.
     Can be used for checking for possible gradient vanishing / exploding problems.
     
@@ -67,3 +72,5 @@ def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_d
                 Line2D([0], [0], color="b", lw=4),
                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
     plt.savefig(f'{output_dir}/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png', bbox_inches="tight")
+    if wandb_log and is_main_process():
+        wandb.save(f'{output_dir}/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png')
