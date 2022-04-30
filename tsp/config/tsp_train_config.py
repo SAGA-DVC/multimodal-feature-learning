@@ -118,14 +118,14 @@ def load_config():
 
     # Paths to the h5 file containing global video features (GVF)
     # If None, then model will not use GVF
-    # cfg.tsp.train_global_video_features = None
-    # cfg.tsp.val_global_video_features = None
-    cfg.tsp.train_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/train-max-gvf.h5"
-    cfg.tsp.val_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/val-max-gvf.h5"
+    cfg.tsp.train_global_video_features = None
+    cfg.tsp.val_global_video_features = None
+    # cfg.tsp.train_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/train-max-gvf.h5"
+    # cfg.tsp.val_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/val-max-gvf.h5"
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['vivit']
+    cfg.tsp.modalities = ['video', 'audio']
+    cfg.tsp.backbones = ['vivit', 'ast']
 
     cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.0001
@@ -195,6 +195,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "VIVIT pretrained on Kinetics | With GVF"
+    cfg.wandb.notes = "VIVIT and AST | Without GVF"
 
     return cfg
