@@ -144,7 +144,7 @@ def load_config():
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 8  # Batch size per GPU
+    cfg.batch_size = 4  # Batch size per GPU
     cfg.val_batch_size = 16  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
