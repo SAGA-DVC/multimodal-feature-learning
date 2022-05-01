@@ -377,7 +377,7 @@ class MultimodalDeformableTransformerDecoderLayer(nn.Module):
         return tgt
 
     # TODO - check key_padding_mask (~mask??)
-    def forward(self, tgt, query_pos, reference_points, query_mask, video_src, video_temporal_shapes, video_level_start_index,
+    def forward(self, tgt, query_pos, reference_points_input_video, reference_points_input_audio, query_mask, video_src, video_temporal_shapes, video_level_start_index,
                 video_src_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index,
                 audio_src_padding_mask):
 
@@ -408,14 +408,14 @@ class MultimodalDeformableTransformerDecoderLayer(nn.Module):
 
         # cross attention for video
         tgt_video = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-                               reference_points,
+                               reference_points_input_video,
                                video_src, video_temporal_shapes, video_level_start_index, video_src_padding_mask)
         tgt_video = tgt + self.dropout1(tgt_video)
         tgt_video = self.norm1(tgt_video)
 
         # cross attention for video
         tgt_audio = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-                               reference_points,
+                               reference_points_input_audio,
                                audio_src, audio_temporal_shapes, audio_level_start_index, audio_src_padding_mask)
         tgt_audio = tgt + self.dropout1(tgt_audio)
         tgt_audio = self.norm1(tgt_audio)
@@ -473,12 +473,16 @@ class MultimodalDeformableTransformerDecoder(nn.Module):
         bs = tgt.shape[0]
         for lid, layer in enumerate(self.layers):
             if reference_points.shape[-1] == 2:
-                reference_points_input = reference_points[:, :, None] \
+                reference_points_input_video = reference_points[:, :, None] \
                                          * torch.stack([video_valid_ratios, video_valid_ratios], -1)[:, None]
+                reference_points_input_audio = reference_points[:, :, None] \
+                                         * torch.stack([audio_valid_ratios, audio_valid_ratios], -1)[:, None]
             else:
                 assert reference_points.shape[-1] == 1
-                reference_points_input = reference_points[:, :, None] * video_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
-            output = layer(output, query_pos, reference_points_input, query_padding_mask, video_src, video_temporal_shapes, video_level_start_index, video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_padding_mask)    #   (batch_size, num_queries, d_model)
+                reference_points_input_video = reference_points[:, :, None] * video_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
+                reference_points_input_audio = reference_points[:, :, None] * audio_valid_ratios[:, None, :, None] 
+
+            output = layer(output, query_pos, reference_points_input_video, reference_points_input_audio, query_padding_mask, video_src, video_temporal_shapes, video_level_start_index, video_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index, audio_padding_mask)    #   (batch_size, num_queries, d_model)
             
             # hack implementation for iterative bounding box refinement
             if disable_iterative_refine:

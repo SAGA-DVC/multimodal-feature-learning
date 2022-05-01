@@ -719,7 +719,7 @@ class MultimodalSparseDeformableTransformerDecoder(nn.Module):
                 reference_points_input_video = reference_points[:, :, None] \
                                          * torch.stack([video_input['valid_ratios'], video_input['valid_ratios']], -1)[:, None]
                 reference_points_input_audio = reference_points[:, :, None] \
-                                         * torch.stack([video_input['valid_ratios'], audio_input['valid_ratios']], -1)[:, None]
+                                         * torch.stack([audio_input['valid_ratios'], audio_input['valid_ratios']], -1)[:, None]
             else:
                 assert reference_points.shape[-1] == 1
                 reference_points_input_video = reference_points[:, :, None] * video_input['valid_ratios'][:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
