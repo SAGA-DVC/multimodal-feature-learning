@@ -25,12 +25,12 @@ def load_config():
     cfg.audio = ConfigDict()
     
     # AST
-    # cfg.audio.num_mel_bins = 128
-    # cfg.audio.target_length = 64
+    cfg.audio.num_mel_bins = 128
+    cfg.audio.target_length = 64
 
     # VGGish
-    cfg.audio.num_mel_bins = 64
-    cfg.audio.target_length = 96
+    # cfg.audio.num_mel_bins = 64
+    # cfg.audio.target_length = 96
 
     #-------------------------------------------------------------------------------------------------
     # ViViT
@@ -87,7 +87,7 @@ def load_config():
     cfg.ast.imagenet_pretrained = True
     cfg.ast.model_size='base224'
 
-    cfg.ast.depth = 6
+    cfg.ast.depth = 12
     
     cfg.ast.return_preclassifier = False  # Set True for Feature extraction
     cfg.ast.return_prelogits = True  # Set True for TSP & GVF extraction
@@ -103,6 +103,7 @@ def load_config():
     ast_base384 = 'vit_deit_base_distilled_patch16_384'
 
     cfg.pretrained_models.ast = "deit_base_patch16_224"
+    cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/ast-weights.pth"
 
     cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
     
@@ -111,8 +112,8 @@ def load_config():
     cfg.tsp = ConfigDict()
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['vivit']
+    cfg.tsp.modalities = ['video', 'audio']
+    cfg.tsp.backbones = ['vivit', 'ast']
 
     #-------------------------------------------------------------------------------------------------
 
@@ -122,14 +123,14 @@ def load_config():
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/video-features-vivit-gvf/train'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/video-features-vivit-ast/train'  # Path for saving checkpoints and results output
 
     cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
 
     cfg.num_shards = 4
-    cfg.shard_id = 1
+    cfg.shard_id = 0
     # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
     cfg.local_checkpoint = None

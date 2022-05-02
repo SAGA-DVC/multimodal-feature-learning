@@ -3,6 +3,7 @@ Code adapted from https://github.com/HumamAlwassel/TSP
 Alwassel, H., Giancola, S., & Ghanem, B. (2021). TSP: Temporally-Sensitive Pretraining of Video Encoders for Localization Tasks. Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) Workshops.
 '''
 
+from email.charset import add_charset
 import os
 import sys
 import json
@@ -18,7 +19,7 @@ sys.path.insert(0, '..')
 
 from tsp.config.extract_features_config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel
+from tsp.tsp_model import TSPModel, add_combiner
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -39,7 +40,7 @@ def evaluate(model, dataloader, device):
             # Modalities
             if 'video' in batch['clip']:
                 clip['video'] = batch['clip']['video'].to(device, non_blocking=True)
-            if 'audio' in batch:
+            if 'audio' in batch['clip']:
                 clip['audio'] = batch['clip']['audio'].to(device, non_blocking=True)
 
             # Forward pass through the model
@@ -80,7 +81,7 @@ def main(cfg):
 
     # Start and end idxs for current process
     start_idx, end_idx = shards[cfg.shard_id], shards[cfg.shard_id+1]
-    print(f'shard-id: {cfg.shard_id + 1} out of {cfg.num_shards}, '
+    print(f'shard: {cfg.shard_id + 1} of {cfg.num_shards}, (ID: {cfg.shard_id}) '
         f'total number of videos: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
 
     # Keep current process' shard only
@@ -201,6 +202,11 @@ def main(cfg):
         model_official.eval()
 
         backbone = AudioSpectrogramTransformer(model_official=model_official, **cfg.ast)
+
+        if cfg.pretrained_models.ast_audioset:
+            state_dict = torch.load(cfg.pretrained_models.ast_audioset)
+            backbone.load_state_dict(state_dict)
+
         backbone = backbone.to(device)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
@@ -232,8 +238,9 @@ def main(cfg):
         input_modalities=cfg.tsp.modalities,
         d_feats=d_feats,
         d_tsp_feat=d_feats[0],
+        combiner=add_combiner,
         num_tsp_classes=[],
-        num_tsp_heads=0, 
+        num_tsp_heads=0,
         concat_gvf=False,
     )
 
@@ -249,7 +256,7 @@ def main(cfg):
 
     tsp_model.to(device)
 
-    print('Start feature extraction')
+    print('Starting feature extraction')
     evaluate(tsp_model, dataloader, device)
 
 
