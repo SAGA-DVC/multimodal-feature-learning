@@ -210,6 +210,9 @@ class UnimodalSparseDVC(nn.Module):
         query_features, inter_references, sampling_locations_dec, attn_weights_dec = self.unimodal_sparse_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
                                                                                                                                     level_start_index, valid_ratios,  query_embedding_weight, 
                                                                                                                                     mask_flatten, proposals_mask, disable_iterative_refine)
+        # no aux loss
+        if not self.aux_loss:
+            query_features, inter_references, sampling_locations_dec, attn_weights_dec = query_features[-1:], inter_references[-1:], sampling_locations_dec[:, -1:], attn_weights_dec[:, -1:]
 
         outputs_class = []
         outputs_counts = []
@@ -279,7 +282,6 @@ class UnimodalSparseDVC(nn.Module):
         pred_memory_mask_list = []
 
         for lvl in range(num_pred):
-
             out_aux = {'pred_logits': outputs_class[lvl], 'pred_segments': outputs_segment[lvl], 'pred_count': outputs_count[lvl]}
             
             # Retrieve the matching between the outputs of the last layer and the targets

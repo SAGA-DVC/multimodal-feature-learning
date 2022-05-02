@@ -61,7 +61,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with vivit feats"
+    cfg.wandb.notes = "Sparse DETR with R(2+1)D feats no aux_loss"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -74,8 +74,8 @@ def load_config():
 
     cfg.dataset.activity_net.anet_path = './anet_data'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
-    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
     cfg.dataset.activity_net.for_testing = False    # for testing only
@@ -117,8 +117,8 @@ def load_config():
     # cfg.dvc.input_modalities = ['audio']
 
     cfg.dvc.num_queries = 20
-    cfg.dvc.d_model = 768
-    cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
+    cfg.dvc.d_model = 512
+    cfg.dvc.aux_loss = False    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
     cfg.dvc.threshold=0.5
 
@@ -172,7 +172,7 @@ def load_config():
     cfg.dvc.detr.hidden_dropout_prob = 0.1    # previously 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.detr.num_heads = 12
+    cfg.dvc.detr.num_heads = 8
 
     cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
     cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
@@ -199,7 +199,7 @@ def load_config():
     cfg.dvc.sparse_detr.hidden_dropout_prob = 0.1
     cfg.dvc.sparse_detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.sparse_detr.num_heads = 12    #   the number of heads in the multiheadattention models
+    cfg.dvc.sparse_detr.num_heads = 8    #   the number of heads in the multiheadattention models
     
     cfg.dvc.sparse_detr.num_feature_levels = 4  #  number of feature levels in multiscale Deformable Attention 
     cfg.dvc.sparse_detr.dec_n_points = 4   #   number of sampling points per attention head per feature level for decoder
@@ -213,7 +213,7 @@ def load_config():
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
     cfg.dvc.sparse_detr.rho=0.5
-    cfg.dvc.sparse_detr.use_enc_aux_loss=True
+    cfg.dvc.sparse_detr.use_enc_aux_loss=False
     cfg.dvc.sparse_detr.return_intermediate=True
 
     # not used
@@ -228,7 +228,7 @@ def load_config():
 
     cfg.dvc.caption.depth = 6
 
-    cfg.dvc.caption.num_heads = 12
+    cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4
     cfg.dvc.caption.qkv_bias = True
 
@@ -279,7 +279,7 @@ def load_config():
     cfg.dvc.vivit.depth = 2
     cfg.dvc.vivit.temporal_depth = 4
 
-    cfg.dvc.vivit.num_heads = 12
+    cfg.dvc.vivit.num_heads = 8
     cfg.dvc.vivit.mlp_ratio = 4
     cfg.dvc.vivit.qkv_bias = True
 
@@ -325,7 +325,7 @@ def load_config():
 
     cfg.dvc.decoder.depth = 2
 
-    cfg.dvc.decoder.num_heads = 12
+    cfg.dvc.decoder.num_heads = 8
     cfg.dvc.decoder.mlp_ratio = 4
     cfg.dvc.decoder.qkv_bias = True
 
