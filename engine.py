@@ -4,6 +4,8 @@ Train and eval functions used in main.py
 """
 import math
 import os
+import json
+from pathlib import Path
 import sys
 from typing import Iterable
 from collections import defaultdict
@@ -107,13 +109,23 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
             plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
 
-            # captions TODO
+            train_caption_path = Path(os.path.join(args.submission_dir, 'train'))
+            if not os.path.exists(train_caption_path):
+                train_caption_path.mkdir(parents=True, exist_ok=True)
+
             captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
-            # with (output_dir / "train_log.txt").open("a") as f:
-            #     f.write(json.dumps(train_log_stats) + "\n")
+            
+            if args.output_dir and is_main_process():
+                with (train_caption_path / "train_caption.json").open("a") as f:
+                    json.dump(captions_string, f, indent=4)
+                
+                # if args.wandb.on:
+                #     wandb.save(os.path.join(train_caption_path, "train_log.json"))
+
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
+        
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
@@ -177,7 +189,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=True)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'

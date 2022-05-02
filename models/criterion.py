@@ -19,7 +19,7 @@ class SetCriterion(nn.Module):
     """
     # TODO - check __init__() attributes
     def __init__(self, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
-                focal_alpha=0.25, focal_gamma=2):
+                focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=1, lloss_beta=1.):
 
         """ 
         Create the criterion.
@@ -51,9 +51,21 @@ class SetCriterion(nn.Module):
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
 
+        self.lloss_gau_mask = lloss_gau_mask
+        self.lloss_beta = lloss_beta
+
         self.pad_idx = pad_idx
 
         self.labelSmoothing = LabelSmoothing(smoothing, self.pad_idx)
+
+        counter_class_rate = [0.00000000e+00, 0.00000000e+00, 1.93425917e-01, 4.12129084e-01,
+                            1.88929963e-01, 7.81296833e-02, 5.09541413e-02, 3.12718553e-02,
+                            1.84833650e-02, 8.39244680e-03, 6.59406534e-03, 4.49595364e-03,
+                            2.19802178e-03, 1.79838146e-03, 5.99460486e-04, 4.99550405e-04,
+                            4.99550405e-04, 1.99820162e-04, 2.99730243e-04, 3.99640324e-04,
+                            2.99730243e-04, 0.00000000e+00, 1.99820162e-04, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, 9.99100809e-05, 9.99100809e-05]
+        self.counter_class_rate = torch.tensor(counter_class_rate)
 
 
 
@@ -112,22 +124,23 @@ class SetCriterion(nn.Module):
         # losses = {'loss_ce': loss_ce}
 
         # used in pdvc (event counter)
-        # pred_count = outputs['pred_count']
-        # max_length = pred_count.shape[1] - 1
-        # counter_target = [len(target['boxes']) if len(target['boxes']) < max_length  else max_length for target in targets]
-        # counter_target = torch.tensor(counter_target, device=src_logits.device, dtype=torch.long)
-        # counter_target_onehot = torch.zeros_like(pred_count)
-        # counter_target_onehot.scatter_(1, counter_target.unsqueeze(-1), 1)
-        # weight = self.counter_class_rate[:max_length + 1].to(src_logits.device)
+        pred_count = outputs['pred_count']
+        max_length = pred_count.shape[1] - 1
+        counter_target = [len(target['segments']) if len(target['segments']) < max_length  else max_length for target in targets['video_target']]
+        counter_target = torch.tensor(counter_target, device=src_logits.device, dtype=torch.long)
+        counter_target_onehot = torch.zeros_like(pred_count)
+        counter_target_onehot.scatter_(1, counter_target.unsqueeze(-1), 1)
+        weight = self.counter_class_rate[:max_length + 1].to(src_logits.device)
 
-        # counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, self.opt, weight)
-        # losses['loss_counter'] = counter_loss
+        counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, weight, self.lloss_gau_mask, self.lloss_beta)
+        losses['loss_counter'] = counter_loss
 
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             # only takes top-1 accuracy for now
             # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
             losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+        
         return losses
 
 
@@ -455,7 +468,7 @@ class SetCriterion(nn.Module):
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
-        # indices = self.matcher(outputs_without_aux, targets) 
+        # indices = self.matcher(outputs_without_aux, targets['video_target']) 
 
         # Average number of target segments accross all nodes, for normalization purposes
         num_segments = sum(len(t["labels"]) for t in targets['video_target'])
@@ -481,6 +494,7 @@ class SetCriterion(nn.Module):
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
+                # index_aux = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
                         # Intermediate masks losses are too costly to compute, we ignore them.
@@ -495,6 +509,7 @@ class SetCriterion(nn.Module):
         
         if 'aux_outputs_enc' in outputs:
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):
+                # index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
                         # Intermediate masks losses are too costly to compute, we ignore them.
@@ -546,6 +561,32 @@ class LabelSmoothing(nn.Module):
 
 
 
+
+
+def cross_entropy_with_gaussian_mask(inputs, targets, weight, lloss_gau_mask=1, lloss_beta=1.):
+    gau_mask = lloss_gau_mask
+    beta = lloss_beta
+
+    N_, max_seq_len = targets.shape
+    gassian_mu = torch.arange(max_seq_len, device=inputs.device).unsqueeze(0).expand(max_seq_len,
+                                                                                     max_seq_len).float()
+    x = gassian_mu.transpose(0, 1)
+    gassian_sigma = 2
+    mask_dict = torch.exp(-(x - gassian_mu) ** 2 / (2 * gassian_sigma ** 2))
+    _, ind = targets.max(dim=1)
+    mask = mask_dict[ind]
+
+    loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none", weight= 1 - weight)
+    if gau_mask:
+        coef = targets + ((1 - mask) ** beta) * (1 - targets)
+    else:
+        coef = targets + (1 - targets)
+    loss = loss * coef
+    loss = loss.mean(1)
+    return loss.mean()
+
+
+    
 def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
