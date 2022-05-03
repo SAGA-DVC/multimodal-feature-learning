@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.layers import BiModalEncoderLayer
-from load_weights import init_encoder_block_weights, load_bimodal_encoder_weights, load_classification_weights
+from ..modules.layers import BiModalEncoderLayer
+from ..load_weights import init_encoder_block_weights, load_bimodal_encoder_weights, load_classification_weights
 
 
 class BiModalEncoder(nn.Module):

@@ -4,10 +4,10 @@ import pickle
 import torch
 import numpy as np
 import timm
-from .unimodal_deformable_dvc import UnimodalDeformableDVC
-from .multimodal_deformable_dvc import MultimodalDeformableDVC
-from .unimodal_sparse_dvc import UnimodalSparseDVC
-from .dvc import DVC
+from .deformable.unimodal_deformable_dvc import UnimodalDeformableDVC
+from .deformable.multimodal_deformable_dvc import MultimodalDeformableDVC
+from .sparse.unimodal_sparse_dvc import UnimodalSparseDVC
+from .regular.dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
 from config.config_dvc import load_config

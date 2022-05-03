@@ -67,15 +67,15 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
+            outputs, captions, indices, indices_aux, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
 
             assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
 
-            # aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            # assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
+            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
+            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
             target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
 

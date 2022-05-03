@@ -6,7 +6,6 @@ from utils.box_ops import segment_cl_to_xy, segment_xy_to_cl, generalized_box_io
 from utils.misc import accuracy, is_dist_avail_and_initialized, get_world_size
 from utils.dam import idx_to_flat_grid, attn_map_to_flat_grid, compute_corr
 
-from .dvc import DVC
 from .matcher import build_matcher
 
 
@@ -343,7 +342,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
+            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss is 'loss_context'.
         """
@@ -368,7 +367,7 @@ class SetCriterion(nn.Module):
             `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
             `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
             `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
+            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
         
         Returns: dict {loss : value} where loss is 'loss_context'.
         """
@@ -451,7 +450,7 @@ class SetCriterion(nn.Module):
             `indices_aux` (list): list of len=depth. Matching between the outputs of the each layer (except the last) 
                             and the targets list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
 
-            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
+            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
         
         Returns:
             `losses`: dict consisting of the following items

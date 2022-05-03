@@ -12,12 +12,12 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 16
-    cfg.num_workers = 4
+    cfg.batch_size = 3
+    cfg.num_workers = 1
 
-    cfg.print_freq = 10
+    cfg.print_freq = 1
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
@@ -27,15 +27,15 @@ def load_config():
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
         
-    cfg.output_dir = 'output'
-    # cfg.output_dir = 'output_temp'
+    # cfg.output_dir = 'output'
+    cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
     # cfg.resume = 'output/checkpoint.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 30
+    cfg.epochs = 2
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -58,7 +58,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Sparse DETR with R(2+1)D feats no aux_loss"
@@ -78,7 +78,7 @@ def load_config():
     cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
-    cfg.dataset.activity_net.for_testing = False    # for testing only
+    cfg.dataset.activity_net.for_testing = True    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -137,7 +137,7 @@ def load_config():
     cfg.dvc.giou_loss_coef = 2
     cfg.dvc.self_iou_loss_coef = 2
     cfg.dvc.caption_loss_coef = 1
-    cfg.dvc.context_loss_coef = 1
+    cfg.dvc.context_loss_coef = 3
     cfg.dvc.mask_prediction_coef = 2
     cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1

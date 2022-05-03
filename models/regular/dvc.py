@@ -8,12 +8,12 @@ from torch.nn.init import trunc_normal_
 
 from .vivit import build_vivit
 from .decoder import build_decoder
-from .unimodal_caption_decoder import build_unimodal_caption_decoder
+from ..unimodal_caption_decoder import build_unimodal_caption_decoder
 
-from .modules.embedding_layers import PositionalEmbedding
-from .modules.layers import FFN
+from ..modules.embedding_layers import PositionalEmbedding
+from ..modules.layers import FFN
 
-from .load_weights import load_positional_embeddings
+from ..load_weights import load_positional_embeddings
 
 from utils.preds_postprocess import get_src_permutation_idx, denormalize_segments
 

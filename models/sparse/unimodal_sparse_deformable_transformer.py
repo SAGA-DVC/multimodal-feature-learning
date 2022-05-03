@@ -4,11 +4,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.init import xavier_uniform_, constant_, normal_
-from .modules.misc_modules import inverse_sigmoid 
-from .modules.attention import MSDeformAttn
+from ..modules.misc_modules import inverse_sigmoid, predict_event_num 
+from ..modules.attention import MSDeformAttn
 
-
-class MultimodalSparseDeformableTransformer(nn.Module):
+class SparseDeformableTransformer(nn.Module):
     '''Args:
         d_model: the number of expected features in the encoder/decoder inputs (default=256).
         num_head: the number of heads in the multiheadattention models (default=8).
@@ -32,7 +31,6 @@ class MultimodalSparseDeformableTransformer(nn.Module):
         self.d_model = d_model
         self.num_head = num_head
 
-        self.no_encoder = (num_encoder_layers == 0)
         self.num_feature_levels = num_feature_levels
         self.eff_query_init = eff_query_init
         self.eff_specific_head = eff_specific_head
@@ -46,15 +44,15 @@ class MultimodalSparseDeformableTransformer(nn.Module):
         else:
             self.enc_mask_predictor = None
 
-        encoder_layer = MultimodalSparseDeformableTransformerEncoderLayer(d_model, dim_feedforward,
+        encoder_layer = DeformableTransformerEncoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
                                                           num_feature_levels, num_head, enc_n_points)
-        self.encoder = MultimodalSparseDeformableTransformerEncoder(encoder_layer, num_encoder_layers, self.d_model)
+        self.encoder = DeformableTransformerEncoder(encoder_layer, num_encoder_layers, self.d_model)
 
-        decoder_layer = MultimodalSparseDeformableTransformerDecoderLayer(d_model, dim_feedforward,
+        decoder_layer = DeformableTransformerDecoderLayer(d_model, dim_feedforward,
                                                           dropout, activation,
                                                           num_feature_levels, num_head, dec_n_points)
-        self.decoder = MultimodalSparseDeformableTransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate_dec)
+        self.decoder = DeformableTransformerDecoder(decoder_layer, num_decoder_layers, return_intermediate_dec)
 
         self.level_embed = nn.Parameter(torch.Tensor(num_feature_levels, d_model))
 
@@ -127,7 +125,7 @@ class MultimodalSparseDeformableTransformer(nn.Module):
             scale = valid_L.unsqueeze(-1)
             grid = (grid.unsqueeze(0).expand(N_, -1) + 0.5) / scale #   (batch_size, num_token in L layer)
             # wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl)
-            wh = torch.full(grid.shape, 0.05 * (2.0 ** lvl))    #   effiecint code for above line (batch_size, num_token in L layer)
+            wh = torch.full(grid.shape, 0.05 * (2.0 ** lvl), device=grid.device)    #   effiecint code for above line (batch_size, num_token in L layer)
             proposal = torch.cat((grid, wh), -1).view(N_, -1, 2)    #   (batch_size, num_token in L layer, 2) 2 is for centre_offset x length
             proposals.append(proposal)
             _cur += (L_)
@@ -143,7 +141,7 @@ class MultimodalSparseDeformableTransformer(nn.Module):
             output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0))  #   (batch_size, sum of num_tokens in all levels, d_model)
             output_memory = output_memory.masked_fill(~output_proposals_valid, float(0))    #   (batch_size, sum of num_tokens in all levels, d_model)
             output_memory = self.enc_output_norm(self.enc_output(output_memory))    #   (batch_size, sum of num_tokens in all levels, d_model)
-        # print("(~memory_padding_mask).sum(axis=-1)", (~memory_padding_mask).sum(axis=-1).shape)
+
         return output_memory, output_proposals, (~memory_padding_mask).sum(axis=-1)
 
     def get_valid_ratio(self, mask):
@@ -226,22 +224,12 @@ class MultimodalSparseDeformableTransformer(nn.Module):
             backbone_mask_prediction = None
             sparse_token_nums= None
 
-        output = {
-            'src_flatten': src_flatten, 
-            'temporal_shapes': temporal_shapes, 
-            'level_start_index': level_start_index, 
-            'valid_ratios': valid_ratios, 
-            'lvl_pos_embed_flatten': lvl_pos_embed_flatten, 
-            'mask_flatten': mask_flatten,  
-            'backbone_output_proposals': backbone_output_proposals, 
-            'backbone_topk_proposals': backbone_topk_proposals, 
-            'backbone_mask_prediction': backbone_mask_prediction,
-            'sparse_token_nums': sparse_token_nums
-        }
 
-        return output
+        return src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten,  backbone_output_proposals, backbone_topk_proposals, backbone_mask_prediction, sparse_token_nums   
 
-    def forward_encoder(self, video_input, audio_input):
+
+    def forward_encoder(self, src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
+                        mask_flatten, backbone_output_proposals, backbone_topk_proposals, sparse_token_nums):
         """
             :param src_flatten (batch_size, sum of num_token in all level, d_model)
             :param temporal_shapes: (num_feature_levels)    #   list of num token at each level
@@ -255,12 +243,12 @@ class MultimodalSparseDeformableTransformer(nn.Module):
 
             :return memory (batch_size, sum of num_token in all level, d_model) #   Multi-scale frame features
         """
-       # encoder
-        video_input['backbone_output_proposals'] = video_input['backbone_output_proposals'] if self.use_enc_aux_loss else None 
-        audio_input['backbone_output_proposals'] = audio_input['backbone_output_proposals'] if self.use_enc_aux_loss else None 
-        video_output, video_sampling_locations_enc, video_attn_weights_enc, audio_output, audio_sampling_locations_enc, audio_attn_weights_enc, video_enc_inter_outputs_class, video_enc_inter_outputs_coords, audio_enc_inter_outputs_class, audio_enc_inter_outputs_coords = self.encoder(video_input, audio_input)
+        # encoder
+        output_proposals = backbone_output_proposals if self.use_enc_aux_loss else None 
+        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
+                                mask_flatten, backbone_topk_proposals, output_proposals, sparse_token_nums)
 
-        return video_output, video_sampling_locations_enc, video_attn_weights_enc, audio_output, audio_sampling_locations_enc, audio_attn_weights_enc, video_enc_inter_outputs_class, video_enc_inter_outputs_coords, audio_enc_inter_outputs_class, audio_enc_inter_outputs_coords
+        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
 
     def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
@@ -290,12 +278,12 @@ class MultimodalSparseDeformableTransformer(nn.Module):
         return init_reference_out, tgt, reference_points, query_embed
 
     def forward_decoder(self, *kargs):
-        output, reference_points, video_sampling_locations_dec, video_attn_weights_dec, audio_sampling_locations_dec, audio_attn_weights_dec = self.decoder(*kargs)
-        return output, reference_points, video_sampling_locations_dec, video_attn_weights_dec, audio_sampling_locations_dec, audio_attn_weights_dec
+        hs, inter_references_out,  sampling_locations_dec, attn_weights_dec = self.decoder(*kargs)
+        return hs, inter_references_out,  sampling_locations_dec, attn_weights_dec
 
 
 
-class MultimodalSparseDeformableTransformerEncoderLayer(nn.Module):
+class DeformableTransformerEncoderLayer(nn.Module):
     '''Args:
         d_model: the number of expected features in the encoder/decoder inputs (default=256).
         d_ffn: the dimension of the feedforward network model (default=1024).
@@ -310,8 +298,6 @@ class MultimodalSparseDeformableTransformerEncoderLayer(nn.Module):
                  dropout=0.1, activation="relu",
                  n_levels=4, n_heads=8, n_points=4):
         super().__init__()
-
-        self.isSparse = True
 
         # self attention
         self.self_attn = MSDeformAttn(d_model, n_levels, n_heads, n_points)
@@ -336,8 +322,7 @@ class MultimodalSparseDeformableTransformerEncoderLayer(nn.Module):
         src = self.norm2(src)
         return src
 
-
-    def forward(self, video_src, audio_src, video_input,  audio_input, video_tgt=None, audio_tgt=None):
+    def forward(self, src, pos, reference_points, temporal_shapes, level_start_index, padding_mask=None, tgt=None):
         '''
         param: src (batch_size, sum of num_token in all level, d_model)
         param: pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
@@ -345,79 +330,48 @@ class MultimodalSparseDeformableTransformerEncoderLayer(nn.Module):
         param: temporal_shapes (num_feature_levels)    #   list of num token at each level
         param: level_start_index (num_feature_levels)  #   list to find the start index of each level from flatten tensor
         param: padding_mask (batch_size, sum of num_tokens in all level)
-        param: video_tgt
-        param: audio_tgt
         
-        return: audio_attended_visual: (batch_size, sum of num_token in all level, d_model) 
-        return: visual_attended_audio: (batch_size, sum of num_token in all level, d_model) 
-        return: video_sampling_locations 
-        return: video_attn_weights 
-        return: audio_sampling_locations 
-        return: audio_attn_weights
+        return: output: (batch_size, sum of num_token in all level, d_model) 
         '''
 
-        if video_tgt is None or audio_tgt is None:
-            #   self attention for video
-            video_src2, _, _ = self.self_attn(self.with_pos_embed(video_src, video_input['lvl_pos_embed_flatten']), video_input['reference_points'], 
-                                                video_src, video_input['temporal_shapes'], video_input['level_start_index'], video_input['mask_flatten'], self.isSparse)
-            video_src = video_src + self.dropout1(video_src2)
-            video_src = self.norm1(video_src)
-
-            #   self attention for audio
-            audio_src2,  _, _ = self.self_attn(self.with_pos_embed(audio_src, audio_input['lvl_pos_embed_flatten']), audio_input['reference_points'], 
-                                                audio_src, audio_input['temporal_shapes'], audio_input['level_start_index'], audio_input['mask_flatten'], self.isSparse)
-            audio_src = audio_src + self.dropout1(audio_src2)
-            audio_src = self.norm1(audio_src)
-
-            #   multimodal attention
-            visual_attended_audio, audio_sampling_locations, audio_attn_weights = self.self_attn(audio_src, audio_input['reference_points'], video_src, 
-                                                                                                video_input['temporal_shapes'], video_input['level_start_index'], video_input['mask_flatten'], self.isSparse)
-            audio_attended_visual, video_sampling_locations, video_attn_weights = self.self_attn(video_src, video_input['reference_points'], audio_src, 
-                                                                                                audio_input['temporal_shapes'], audio_input['level_start_index'], audio_input['mask_flatten'], self.isSparse)
+        if tgt is None:
+            # self attention
+            src2, sampling_locations, attn_weights = self.self_attn(self.with_pos_embed(src, pos),
+                                reference_points, src, temporal_shapes,
+                                level_start_index, padding_mask, is_sparse=True)
+            src = src + self.dropout1(src2)
+            src = self.norm1(src)
+            # torch.Size([2, 13101, 256])
 
             # ffn
-            visual_attended_audio = self.forward_ffn(visual_attended_audio)
-            audio_attended_visual = self.forward_ffn(audio_attended_visual)
+            src = self.forward_ffn(src)
 
-            return audio_attended_visual, visual_attended_audio, video_sampling_locations, video_attn_weights, audio_sampling_locations, audio_attn_weights
+            return src, sampling_locations, attn_weights
         else:
-            #   self attention for video
-            video_tgt2, _, _ = self.self_attn(self.with_pos_embed(video_tgt, video_input['lvl_pos_embed_flatten']), video_input['reference_points'], 
-                                                video_src, video_input['temporal_shapes'], video_input['level_start_index'], video_input['mask_flatten'], self.isSparse)
-            video_tgt = video_tgt + self.dropout1(video_tgt2)
-            video_tgt = self.norm1(video_tgt)
-
-            #   self attention for audio
-            audio_tgt2,  _, _ = self.self_attn(self.with_pos_embed(audio_tgt, audio_input['lvl_pos_embed_flatten']), audio_input['reference_points'], 
-                                                audio_src, audio_input['temporal_shapes'], audio_input['level_start_index'], audio_input['mask_flatten'], self.isSparse)
-            audio_tgt = audio_tgt + self.dropout1(audio_tgt2)
-            audio_tgt = self.norm1(audio_tgt)
-
-            #   multimodal attention
-            visual_attended_audio, audio_sampling_locations, audio_attn_weights = self.self_attn(audio_tgt, audio_input['reference_points'], video_src, 
-                                                                                                video_input['temporal_shapes'], video_input['level_start_index'], video_input['mask_flatten'], self.isSparse)
-            audio_attended_visual, video_sampling_locations, video_attn_weights = self.self_attn(video_tgt, video_input['reference_points'], audio_src, 
-                                                                                                audio_input['temporal_shapes'], audio_input['level_start_index'], audio_input['mask_flatten'], self.isSparse)
+            tgt2, sampling_locations, attn_weights = self.self_attn(self.with_pos_embed(tgt, pos),
+                                reference_points, src, temporal_shapes,
+                                level_start_index, padding_mask, is_sparse=True)
+            tgt = tgt + self.dropout1(tgt2)
+            tgt = self.norm1(tgt)
 
             # ffn
-            visual_attended_audio = self.forward_ffn(visual_attended_audio)
-            audio_attended_visual = self.forward_ffn(audio_attended_visual)
+            tgt = self.forward_ffn(tgt)
 
-            return audio_attended_visual, visual_attended_audio, video_sampling_locations, video_attn_weights, audio_sampling_locations, audio_attn_weights
+            return tgt, sampling_locations, attn_weights
+            
 
 
-
-class MultimodalSparseDeformableTransformerEncoder(nn.Module):
+class DeformableTransformerEncoder(nn.Module):
+    
     def __init__(self, encoder_layer, num_layers, d_model):
         super().__init__()
         self.layers = _get_clones(encoder_layer, num_layers)
         self.num_layers = num_layers
          # hack implementation
         self.aux_heads = False
-        self.video_class_embedding = None
-        self.video_segment_embedding = None
-        self.audio_class_embedding = None
-        self.audio_segment_embedding = None
+        self.class_embedding = None
+        self.count_head = None
+        self.segment_embedding = None
 
     @staticmethod
     def get_reference_points(temporal_shapes, valid_ratios, device):
@@ -438,7 +392,7 @@ class MultimodalSparseDeformableTransformerEncoder(nn.Module):
         reference_points = reference_points[:,:,:,None]
         return reference_points
 
-    def forward(self, video_input, audio_input):
+    def forward(self, src, temporal_shapes, level_start_index, valid_ratios, pos=None, padding_mask=None, backbone_topk_proposals=None, output_proposals=None, sparse_token_nums=None):
         """
         param: src (batch_size, sum of num_token in all level, d_model)
         param: temporal_shapes (num_feature_levels)    #   list of num token at each level
@@ -446,134 +400,80 @@ class MultimodalSparseDeformableTransformerEncoder(nn.Module):
         param: valid_ratios (batch_size, num_feature_levels)
         param: pos (batch_size, sum of num_token in all level, d_model) #  lvl_pos_embed_flatten
         param: padding_mask (batch_size, sum of num_tokens in all level)
-    
-
-        return: memory -> (audio_attended_visual, visual_attended_audio)
-        audio_attended_visual: (batch_size, sum of num_token in all level, d_model) 
-        visual_attended_audio: (batch_size, sum of num_token in all level, d_model) 
-
+        
+        return: output: (batch_size, sum of num_token in all level, d_model) #   Multi-scale frame features
 
         """
-        
         # print("output_proposals", output_proposals.shape)
         if self.aux_heads:
-            assert video_input['backbone_output_proposals'] is not None and audio_input['backbone_output_proposals'] is not None
+            assert output_proposals is not None
         else:
-            assert video_input['backbone_output_proposals'] is None and audio_input['backbone_output_proposals'] is None
+            assert output_proposals is None
 
-        video_output = video_input['src_flatten']
-        video_sparsified_keys = False if video_input['backbone_topk_proposals'] is None else True
-        video_input['reference_points'] = self.get_reference_points(video_input['temporal_shapes'], video_input['valid_ratios'], device=video_input['src_flatten'].device)  # (batch_size, sum of num_token in all level, num_feature_levels, 1)
-        video_reference_points_orig = video_input['reference_points']
-        video_pos_orig = video_input['lvl_pos_embed_flatten']
-        video_output_proposals_orig = video_input['backbone_output_proposals']
-        video_sampling_locations_enc = []
-        video_attn_weights_enc = []
-
-        audio_output = audio_input['src_flatten']
-        audio_sparsified_keys = False if audio_input['backbone_topk_proposals'] is None else True
-        audio_input['reference_points'] = self.get_reference_points(audio_input['temporal_shapes'], audio_input['valid_ratios'], device=audio_input['src_flatten'].device)  # (batch_size, sum of num_token in all level, num_feature_levels, 1)
-        audio_reference_points_orig = audio_input['reference_points']
-        audio_pos_orig = audio_input['lvl_pos_embed_flatten']
-        audio_output_proposals_orig = audio_input['backbone_output_proposals']
-        audio_sampling_locations_enc = []
-        audio_attn_weights_enc = []
+        output = src
+        sparsified_keys = False if backbone_topk_proposals is None else True
+        reference_points = self.get_reference_points(temporal_shapes, valid_ratios, device=src.device)  # (batch_size, sum of num_token in all level, num_feature_levels, 1)
+        reference_points_orig = reference_points
+        pos_orig = pos
+        output_proposals_orig = output_proposals
+        sampling_locations_enc = []
+        attn_weights_enc = []
         if self.aux_heads:
-            video_enc_inter_outputs_class = []
-            video_enc_inter_outputs_coords = []
-            audio_enc_inter_outputs_class = []
-            audio_enc_inter_outputs_coords = []
+            enc_inter_outputs_class = []
+            enc_inter_outputs_count = []
+            enc_inter_outputs_coords = []
       
-        if video_sparsified_keys:
-            assert video_input['backbone_topk_proposals'] is not None
-            B_, N_, S_, P_ = video_input['reference_points'].shape
-            video_input['reference_points'] = torch.gather(video_input['reference_points'].view(B_, N_, -1), 1, video_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, S_*P_)).view(B_, -1, S_, P_)
-            video_tgt = torch.gather(video_output, 1, video_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, video_output.size(-1)))
-            video_input['lvl_pos_embed_flatten'] = torch.gather(video_input['lvl_pos_embed_flatten'], 1, video_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, video_input['lvl_pos_embed_flatten'].size(-1)))
-            if video_input['backbone_output_proposals'] is not None:
-                video_input['backbone_output_proposals'] = video_input['backbone_output_proposals'].gather(1, video_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, video_input['backbone_output_proposals'].size(-1)))
+      
+        if sparsified_keys:
+            assert backbone_topk_proposals is not None
+            B_, N_, S_, P_ = reference_points.shape
+            reference_points = torch.gather(reference_points.view(B_, N_, -1), 1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, S_*P_)).view(B_, -1, S_, P_)
+            tgt = torch.gather(output, 1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, output.size(-1)))
+            pos = torch.gather(pos, 1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, pos.size(-1)))
+            if output_proposals is not None:
+                output_proposals = output_proposals.gather(1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, output_proposals.size(-1)))
         else:
-            video_tgt = None
-
-        if audio_sparsified_keys:
-            assert audio_input['backbone_topk_proposals'] is not None
-            B_, N_, S_, P_ = audio_input['reference_points'].shape
-            audio_input['reference_points'] = torch.gather(audio_input['reference_points'].view(B_, N_, -1), 1, audio_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, S_*P_)).view(B_, -1, S_, P_)
-            audio_tgt = torch.gather(audio_output, 1, audio_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, audio_output.size(-1)))
-            audio_input['lvl_pos_embed_flatten'] = torch.gather(audio_input['lvl_pos_embed_flatten'], 1, audio_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, audio_input['lvl_pos_embed_flatten'].size(-1)))
-            if audio_input['backbone_output_proposals'] is not None:
-                audio_input['backbone_output_proposals'] = audio_input['backbone_output_proposals'].gather(1, audio_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, audio_input['backbone_output_proposals'].size(-1)))
-        else:
-            audio_tgt = None
-
-
-
+            tgt = None
         for lid, layer in enumerate(self.layers):
             # if tgt is None: self-attention / if tgt is not None: cross-attention w.r.t. the target queries
-            audio_attended_visual, visual_attended_audio, video_sampling_locations, video_attn_weights, audio_sampling_locations, audio_attn_weights = layer(video_output, audio_output, video_input, audio_input, 
-                                                                                                                                                                video_tgt=video_tgt if video_sparsified_keys else None, audio_tgt=audio_tgt if audio_sparsified_keys else None)
-            video_sampling_locations_enc.append(video_sampling_locations)
-            video_attn_weights_enc.append(video_attn_weights)
-            audio_sampling_locations_enc.append(audio_sampling_locations)
-            audio_attn_weights_enc.append(audio_attn_weights)
-
-            if video_sparsified_keys:                
-                if video_input['sparse_token_nums'] is None:
-                    video_output = video_output.scatter(1, video_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, audio_attended_visual.size(-1)), audio_attended_visual)
+            tgt, sampling_locations, attn_weights = layer(output, pos, reference_points, temporal_shapes, level_start_index, padding_mask, 
+                        tgt=tgt if sparsified_keys else None)
+            sampling_locations_enc.append(sampling_locations)
+            attn_weights_enc.append(attn_weights)
+            if sparsified_keys:                
+                if sparse_token_nums is None:
+                    output = output.scatter(1, backbone_topk_proposals.unsqueeze(-1).repeat(1, 1, tgt.size(-1)), tgt)
                 else:
-                    video_outputs = []
-                    for i in range(video_input['backbone_topk_proposals'].shape[0]):
-                        video_outputs.append(video_output[i].scatter(0, video_input['backbone_topk_proposals'][i][:video_input['sparse_token_nums'][i]].unsqueeze(-1).repeat(1, audio_attended_visual.size(-1)), audio_attended_visual[i][:video_input['sparse_token_nums'][i]]))
-                    video_output = torch.stack(video_outputs)
+                    outputs = []
+                    for i in range(backbone_topk_proposals.shape[0]):
+                        outputs.append(output[i].scatter(0, backbone_topk_proposals[i][:sparse_token_nums[i]].unsqueeze(-1).repeat(1, tgt.size(-1)), tgt[i][:sparse_token_nums[i]]))
+                    output = torch.stack(outputs)
             else:
-                video_output = audio_attended_visual
-
-            if audio_sparsified_keys:                
-                if audio_input['sparse_token_nums'] is None:
-                    audio_output = audio_output.scatter(1, audio_input['backbone_topk_proposals'].unsqueeze(-1).repeat(1, 1, visual_attended_audio.size(-1)), visual_attended_audio)
-                else:
-                    audio_outputs = []
-                    for i in range(audio_input['backbone_topk_proposals'].shape[0]):
-                        audio_outputs.append(video_output[i].scatter(0, audio_input['backbone_topk_proposals'][i][:audio_input['sparse_token_nums'][i]].unsqueeze(-1).repeat(1, visual_attended_audio.size(-1)), visual_attended_audio[i][:audio_input['sparse_token_nums'][i]]))
-                    audio_output = torch.stack(audio_outputs)
-            else:
-                audio_output = audio_attended_visual
-
+                output = tgt
+            
             if self.aux_heads and lid < self.num_layers - 1:
                 # feed outputs to aux. heads
-                video_output_class = self.video_class_embedding[lid](audio_attended_visual)
-                video_output_offset = self.video_segment_embedding[lid](audio_attended_visual)
-                video_output_coords_unact = video_input['backbone_output_proposals'] + video_output_offset
-
-                audio_output_class = self.audio_class_embedding[lid](visual_attended_audio)
-                audio_output_offset = self.audio_segment_embedding[lid](visual_attended_audio)
-                audio_output_coords_unact = audio_input['backbone_output_proposals'] + audio_output_offset
-
+                output_class = self.class_embedding[lid](tgt)
+                output_count = predict_event_num(self.count_head[lid], tgt)
+                output_offset = self.segment_embedding[lid](tgt)
+                output_coords_unact = output_proposals + output_offset
                 # values to be used for loss compuation
-                video_enc_inter_outputs_class.append(video_output_class)
-                video_enc_inter_outputs_coords.append(video_output_coords_unact.sigmoid())
-
-                 # values to be used for loss compuation
-                audio_enc_inter_outputs_class.append(audio_output_class)
-                audio_enc_inter_outputs_coords.append(audio_output_coords_unact.sigmoid())
+                enc_inter_outputs_class.append(output_class)
+                enc_inter_outputs_count.append(output_count)
+                enc_inter_outputs_coords.append(output_coords_unact.sigmoid())
 
         # Change dimension from [num_layer, batch_size, ...] to [batch_size, num_layer, ...]
-        video_sampling_locations_enc = torch.stack(video_sampling_locations_enc, dim=1)
-        video_attn_weights_enc = torch.stack(video_attn_weights_enc, dim=1)
-
-        # Change dimension from [num_layer, batch_size, ...] to [batch_size, num_layer, ...]
-        audio_sampling_locations_enc = torch.stack(audio_sampling_locations_enc, dim=1)
-        audio_attn_weights_enc = torch.stack(audio_attn_weights_enc, dim=1)
-        
+        sampling_locations_enc = torch.stack(sampling_locations_enc, dim=1)
+        attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.aux_heads:
-            return video_output, video_sampling_locations_enc, video_attn_weights_enc, audio_output, audio_sampling_locations_enc, audio_attn_weights_enc, video_enc_inter_outputs_class, video_enc_inter_outputs_coords, audio_enc_inter_outputs_class, audio_enc_inter_outputs_coords 
+            return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
         else:
-            return video_output, video_sampling_locations_enc, video_attn_weights_enc, audio_output, audio_sampling_locations_enc, audio_attn_weights_enc, None, None, None, None
+            return output, sampling_locations_enc, attn_weights_enc, None, None, None
+        
 
 
-
-class MultimodalSparseDeformableTransformerDecoderLayer(nn.Module):
+class DeformableTransformerDecoderLayer(nn.Module):
     '''Args:
         d_model: the number of expected features in the encoder/decoder inputs (default=256).
         d_ffn: the dimension of the feedforward network model (default=1024).
@@ -588,7 +488,6 @@ class MultimodalSparseDeformableTransformerDecoderLayer(nn.Module):
                  n_levels=4, n_heads=8, n_points=4):
         super().__init__()
 
-        self.isSparse = True
         # cross attention
         self.cross_attn = MSDeformAttn(d_model, n_levels, n_heads, n_points)
         self.dropout1 = nn.Dropout(dropout)
@@ -607,11 +506,6 @@ class MultimodalSparseDeformableTransformerDecoderLayer(nn.Module):
         self.dropout4 = nn.Dropout(dropout)
         self.norm3 = nn.LayerNorm(d_model)
 
-        # bridge
-        self.norm4 = nn.LayerNorm(2*d_model)
-        self.linear3 = nn.Linear(2*d_model, d_model)
-        self.dropout5 = nn.Dropout(dropout)
-
     @staticmethod
     def with_pos_embed(tensor, pos):
         return tensor if pos is None else tensor + pos
@@ -623,9 +517,9 @@ class MultimodalSparseDeformableTransformerDecoderLayer(nn.Module):
         return tgt
 
     # TODO - check key_padding_mask (~mask??)
-    def forward(self, tgt, query_pos, reference_points_input_video, reference_points_input_audio, query_mask, video_src, video_temporal_shapes, video_level_start_index,
-                video_src_padding_mask, audio_src, audio_temporal_shapes, audio_level_start_index,
-                audio_src_padding_mask):
+    def forward(self, tgt, query_pos, reference_points, src, src_temporal_shapes, level_start_index,
+                src_padding_mask=None, query_mask=None):
+
         """
         param: tgt (batch_size, num_queries, d_model)
         param: query_pos (num_queries, d_model * 2)
@@ -645,36 +539,21 @@ class MultimodalSparseDeformableTransformerDecoderLayer(nn.Module):
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
 
-
-        # cross attention for video
-        tgt_video, video_sampling_locations, video_attn_weights = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-                               reference_points_input_video,
-                               video_src, video_temporal_shapes, video_level_start_index, video_src_padding_mask, self.isSparse)
-        tgt_video = tgt + self.dropout1(tgt_video)
-        tgt_video = self.norm1(tgt_video)
+        # cross attention
+        tgt2, sampling_locations, attn_weights = self.cross_attn(self.with_pos_embed(tgt, query_pos),
+                               reference_points,
+                               src, src_temporal_shapes, level_start_index, src_padding_mask, is_sparse=True)
 
 
-        # cross attention for audio
-        tgt_audio, audio_sampling_locations, audio_attn_weights = self.cross_attn(self.with_pos_embed(tgt, query_pos),
-                               reference_points_input_audio,
-                               audio_src, audio_temporal_shapes, audio_level_start_index, audio_src_padding_mask, self.isSparse)
-        tgt_audio = tgt + self.dropout1(tgt_audio)
-        tgt_audio = self.norm1(tgt_audio)
-
-        # bridge
-        tgt = torch.cat([tgt_video, tgt_audio], dim=-1) #   (batch_size, num_queries, 2*dmodel)
-        tgt = self.norm4(tgt)
-        tgt = self.linear3(tgt) #   (batch_size, num_queries, dmodel)
-        tgt = self.dropout5(tgt)
-        tgt = self.activation(tgt)
+        tgt = tgt + self.dropout1(tgt2)
+        tgt = self.norm1(tgt)
 
         # ffn
         tgt = self.forward_ffn(tgt)
-        return tgt, tgt_video, tgt_audio, video_sampling_locations, video_attn_weights, audio_sampling_locations, audio_attn_weights
+        return tgt, sampling_locations, attn_weights
 
 
-
-class MultimodalSparseDeformableTransformerDecoder(nn.Module):
+class DeformableTransformerDecoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, return_intermediate=True):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)
@@ -682,10 +561,12 @@ class MultimodalSparseDeformableTransformerDecoder(nn.Module):
         self.return_intermediate = return_intermediate
         # hack implementation for iterative bounding box refinement and two-stage Deformable DETR
         self.bbox_head = None
-        # self.bbox_embed = None
-        # self.class_embed = None
+        # self.segment_embedding = None
+        # self.class_embedding = None
+        # self.count_head= None
 
-    def forward(self, tgt, reference_points, video_src, video_input, audio_src, audio_input, query_pos=None, query_padding_mask=None, disable_iterative_refine=False):
+    def forward(self, tgt, reference_points, src, src_temporal_shapes, src_level_start_index, src_valid_ratios,
+                query_pos=None, src_padding_mask=None, query_padding_mask=None, disable_iterative_refine=False):
         """
         param: tgt (batch_size, num_queries, d_model)
         param: reference_points (batch_size, num_queries, 1)
@@ -705,33 +586,20 @@ class MultimodalSparseDeformableTransformerDecoder(nn.Module):
 
         intermediate = []
         intermediate_reference_points = []
-        video_sampling_locations_dec = []
-        video_attn_weights_dec = []
-        audio_sampling_locations_dec = []
-        audio_attn_weights_dec = []
+        sampling_locations_enc = []
+        attn_weights_enc = []
         bs = tgt.shape[0]
-        # print("reference_points", reference_points.shape)
-        # print(video_input['valid_ratios'].shape, "Fffff")
         for lid, layer in enumerate(self.layers):
-            # print("reference_points", reference_points.shape)
-            # print(video_input['valid_ratios'], "Fffff")
             if reference_points.shape[-1] == 2:
-                reference_points_input_video = reference_points[:, :, None] \
-                                         * torch.stack([video_input['valid_ratios'], video_input['valid_ratios']], -1)[:, None]
-                reference_points_input_audio = reference_points[:, :, None] \
-                                         * torch.stack([audio_input['valid_ratios'], audio_input['valid_ratios']], -1)[:, None]
+                reference_points_input = reference_points[:, :, None] \
+                                         * torch.stack([src_valid_ratios, src_valid_ratios], -1)[:, None]
             else:
                 assert reference_points.shape[-1] == 1
-                reference_points_input_video = reference_points[:, :, None] * video_input['valid_ratios'][:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
-                reference_points_input_audio = reference_points[:, :, None] * audio_input['valid_ratios'][:, None, :, None]
-
-            output, tgt_video, tgt_audio, video_sampling_locations, video_attn_weights, audio_sampling_locations, audio_attn_weights = layer(output, query_pos, reference_points_input_video, reference_points_input_audio, query_padding_mask, video_src, video_input['temporal_shapes'], video_input['level_start_index'], video_input['mask_flatten'], audio_src, audio_input['temporal_shapes'], audio_input['level_start_index'], audio_input['mask_flatten'])    #   (batch_size, num_queries, d_model)
+                reference_points_input = reference_points[:, :, None] * src_valid_ratios[:, None, :, None]  #   (batch_size, num_queries, num_feature_levels, 1)
+            output, sampling_locations, attn_weights = layer(output, query_pos, reference_points_input, src, src_temporal_shapes, src_level_start_index, src_padding_mask, query_padding_mask)    #   (batch_size, num_queries, d_model)
             
-            video_sampling_locations_dec.append(video_sampling_locations)
-            video_attn_weights_dec.append(video_attn_weights)
-
-            audio_sampling_locations_dec.append(audio_sampling_locations)
-            audio_attn_weights_dec.append(audio_attn_weights)
+            sampling_locations_enc.append(sampling_locations)
+            attn_weights_enc.append(attn_weights)
 
             # hack implementation for iterative bounding box refinement
             if disable_iterative_refine:
@@ -755,17 +623,15 @@ class MultimodalSparseDeformableTransformerDecoder(nn.Module):
                 intermediate.append(output)
                 intermediate_reference_points.append(reference_points)
 
-        video_sampling_locations_dec = torch.stack(video_sampling_locations_dec, dim=1)
-        video_attn_weights_dec = torch.stack(video_attn_weights_dec, dim=1)
-        audio_sampling_locations_dec = torch.stack(audio_sampling_locations_dec, dim=1)
-        audio_attn_weights_dec = torch.stack(audio_attn_weights_dec, dim=1)
+        sampling_locations_enc = torch.stack(sampling_locations_enc, dim=1)
+        attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.return_intermediate:
             intermediate_outputs = torch.stack(intermediate)
             intermediate_reference_points = torch.stack(intermediate_reference_points)
-            return intermediate_outputs, intermediate_reference_points, video_sampling_locations_dec, video_attn_weights_dec, audio_sampling_locations_dec, audio_attn_weights_dec
+            return intermediate_outputs, intermediate_reference_points, sampling_locations_enc, attn_weights_enc
 
-        return output, reference_points, video_sampling_locations_dec, video_attn_weights_dec, audio_sampling_locations_dec, audio_attn_weights_dec
+        return output, reference_points, sampling_locations_enc, attn_weights_enc
     
 
 class MaskPredictor(nn.Module):
@@ -810,8 +676,8 @@ def _get_activation_fn(activation):
 )
 
 
-def build_multimodal_sparse_deforamble_transformer(args):
-    return MultimodalSparseDeformableTransformer(
+def build_sparse_deforamble_transformer(args):
+    return SparseDeformableTransformer(
         d_model=args.d_model,
         num_head=args.num_heads,
         num_encoder_layers=args.enc_layers,

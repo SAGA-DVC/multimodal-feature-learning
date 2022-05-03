@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.layers import DecoderLayer
-from .load_weights import init_encoder_block_weights
+from ..modules.layers import DecoderLayer
+from ..load_weights import init_encoder_block_weights
 
 class Decoder(nn.Module):
     
