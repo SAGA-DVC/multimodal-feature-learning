@@ -140,11 +140,11 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-ast'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-nogvf-512'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
-    cfg.batch_size = 4  # Batch size per GPU
+    cfg.batch_size = 8  # Batch size per GPU
     cfg.val_batch_size = 16  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
@@ -158,7 +158,7 @@ def load_config():
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    # cfg.resume = "/home/arnavshah/tsp/tsp-output/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    # cfg.resume = "/home/arnavshah/tsp/temp/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
     cfg.resume = None
     cfg.start_epoch = 0  # not used when resume is specified
 
@@ -169,7 +169,7 @@ def load_config():
     cfg.debug = False
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
-        cfg.epochs = 8
+        cfg.epochs = 3
         cfg.batch_size=8
         cfg.print_freq = 5
 
@@ -195,6 +195,6 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "VIVIT and AST | Without GVF"
+    cfg.wandb.notes = "VIVIT 512 | Without GVF"
 
     return cfg

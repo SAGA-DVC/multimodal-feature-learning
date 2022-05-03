@@ -19,7 +19,7 @@ sys.path.insert(0, '..')
 
 from tsp.config.extract_features_config import load_config
 from tsp.eval_video_dataset import EvalVideoDataset
-from tsp.tsp_model import TSPModel, add_combiner
+from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from tsp import utils
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -236,9 +236,9 @@ def main(cfg):
     tsp_model = TSPModel(
         backbones=feature_backbones,
         input_modalities=cfg.tsp.modalities,
-        d_feats=d_feats,
-        d_tsp_feat=d_feats[0],
-        combiner=add_combiner,
+        d_feat=sum(d_feats),
+        d_tsp_feat=512,
+        combiner=concat_combiner,
         num_tsp_classes=[],
         num_tsp_heads=0,
         concat_gvf=False,
@@ -247,7 +247,7 @@ def main(cfg):
     if cfg.local_checkpoint:
         checkpoint = torch.load(cfg.local_checkpoint, map_location='cpu')
 
-        # No weights need to be loaded for tsp_model (only TSP FC heads here)
+        tsp_model.fc.load_state_dict(checkpoint['model'], strict=False)  # strict=False to ignore keys of TSP heads
 
         # Load backbone weights from checkpoint
         for (i, backbone) in enumerate(cfg.tsp.backbones):

@@ -49,6 +49,7 @@ def main(cfg):
     
     print(f"Output directory: {cfg.output_dir}")
     os.makedirs(cfg.output_dir, exist_ok=True)
+    os.makedirs(f"{cfg.output_dir}/grads", exist_ok=True)
     train_dir = os.path.join(cfg.data_dir, cfg.train_subdir)
     valid_dir = os.path.join(cfg.data_dir, cfg.valid_subdir)
 
@@ -269,16 +270,16 @@ def main(cfg):
     tsp_model = TSPModel(
         backbones=feature_backbones,
         input_modalities=cfg.tsp.modalities,
-        d_feats=d_feats,
-        d_tsp_feat=d_feats[0],
-        combiner=add_combiner,
+        d_feat=sum(d_feats),
+        d_tsp_feat=512,
+        combiner=concat_combiner,
         num_tsp_classes=[len(l) for l in label_mappings],
         num_tsp_heads=len(cfg.dataset.label_columns),
         concat_gvf=cfg.tsp.train_global_video_features is not None,
     )
 
     total_params += sum(p.numel() for p in tsp_model.parameters() if p.requires_grad)
-    print(f'Total number of trainable params: {(total_params) / 1000000} M')
+    print(f'Total number of trainable params: {(total_params) / 1e6} M')
 
     tsp_model.to(device)
     if cfg.distributed.on and cfg.distributed.sync_bn:
@@ -289,10 +290,12 @@ def main(cfg):
 
 
     if len(cfg.dataset.label_columns) == 1:
-        fc_params = tsp_model.action_fc.parameters()
+        fc_params = chain(tsp_model.fc.parameters(), 
+                            tsp_model.action_fc.parameters())
     elif len(cfg.dataset.label_columns) == 2:
-        fc_params = chain(tsp_model.action_fc.parameters(),
-                          tsp_model.region_fc.parameters())
+        fc_params = chain(tsp_model.fc.parameters(),
+                            tsp_model.action_fc.parameters(),
+                            tsp_model.region_fc.parameters())
     else:
         raise NotImplementedError
 

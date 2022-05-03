@@ -123,17 +123,17 @@ def load_config():
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
     cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/video-features-vivit-ast/train'  # Path for saving checkpoints and results output
+    cfg.output_dir = '/home/arnavshah/tsp/temp'  # Path for saving checkpoints and results output
 
     cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
 
     cfg.num_shards = 4
-    cfg.shard_id = 0
+    cfg.shard_id = 3
     # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
     cfg.local_checkpoint = None
-    # cfg.local_checkpoint = "/home/arnavshah/tsp/tsp-output-vivit-Kpretrained/epoch_4.pth"
+    # cfg.local_checkpoint = "/home/arnavshah/tsp/temp/epoch_0.pth"
 
     return cfg
