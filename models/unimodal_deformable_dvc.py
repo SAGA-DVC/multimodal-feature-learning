@@ -2,6 +2,7 @@
 DVC model for event segmentation and captioning
 """
 
+import math
 from math import floor, ceil
 
 import torch
@@ -14,16 +15,16 @@ from .unimodal_caption_decoder import build_unimodal_caption_decoder
 
 from .modules.embedding_layers import PositionEmbeddingVideoSine
 from .modules.layers import FFN, ContextMaskModel
-from .modules.misc_modules import decide_two_stage
+from .modules.misc_modules import decide_two_stage, predict_event_num
 
 from .load_weights import load_positional_embeddings
 
 from utils.preds_postprocess import get_src_permutation_idx, denormalize_segments
 
 # TODO - check devices for tensors
-# TODO - vanishing gradients
+# TODO - aux loss multiple embedding heads add
 class UnimodalDeformableDVC(nn.Module):
-    def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, 
+    def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, threshold, max_eseq_length,
                 vocab, seq_len, embedding_matrix, 
                 vivit_args, ast_args, detr_args, caption_args, use_differentiable_mask=False):
         
@@ -36,11 +37,15 @@ class UnimodalDeformableDVC(nn.Module):
         self.input_modalities = input_modalities
         self.num_queries = num_queries
         self.aux_loss = aux_loss
+        self.threshold = threshold
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
         self.class_embedding = nn.Linear(d_model, num_classes + 1)
         self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+
+        # TODO - +1 ??
+        self.count_head = nn.Linear(d_model, max_eseq_length + 1)
 
         self.matcher = matcher
 
@@ -49,11 +54,25 @@ class UnimodalDeformableDVC(nn.Module):
         self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
 
         self.base_encoder = build_base_encoder(detr_args)
+        
+        # TODO - do all this in init_weights()
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        self.class_embedding.bias.data = torch.ones(num_classes + 1) * bias_value
+        nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
+        nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
 
         # TODO - return intermediate=False deos not output depth dimesntion (dim 0)
         # Unimodal Deformable DETR
         self.unimodal_deformable_transformer = build_unimodal_deformable_transformer(detr_args)
         
+        # shared heads
+        num_pred = detr_args.dec_layers
+        nn.init.constant_(self.segment_embedding.layers[-1].bias.data[2:], -2.0)    # TODO - data[2:]??
+        self.class_embedding = nn.ModuleList([self.class_embedding for _ in range(num_pred)])
+        self.count_head = nn.ModuleList([self.count_head for _ in range(num_pred)])
+        self.segment_embedding = nn.ModuleList([self.segment_embedding for _ in range(num_pred)])
+
         # Context Module
         self.num_feature_levels = detr_args.num_feature_levels
         self.video_rescale_len = detr_args.video_rescale_len
@@ -139,7 +158,6 @@ class UnimodalDeformableDVC(nn.Module):
 
         # Forword Decoder
         # TODO - check proposals_mask (key_padding_mask in deformable_transformer (~mask??))
-        # TODO - see transformer_input_type = "gt_proposals"
         transformer_input_type = "queries"
         gt_boxes = None
         gt_boxes_mask = None
@@ -153,95 +171,135 @@ class UnimodalDeformableDVC(nn.Module):
             proposals_mask = torch.ones(batch_size, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
             init_reference, tgt, reference_points, query_embedding_weight = self.unimodal_deformable_transformer.prepare_decoder_input_query(batch_size, query_embedding_weight)
 
-
         # query_features (depth, batch_size, num_queries, d_model)
         # inter_reference = (depth, batch_size, num_queries, 1)
         query_features, inter_references = self.unimodal_deformable_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
                                                                 level_start_index, valid_ratios, query_embedding_weight,
                                                                 mask_flatten, proposals_mask, disable_iterative_refine)
 
-
-        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding(query_features).softmax(dim=-1)
-
-        # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
-        outputs_segment = self.segment_embedding(query_features).sigmoid()
-
-        out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1]}
-
-
-        # Retrieve the matching between the outputs of the last layer and the targets
-        # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
-        indices = self.matcher(out, obj['video_target']) 
-
-        # Context Features
-        video_durations = list(obj['video_length'][:, 1])
-        idx = get_src_permutation_idx(indices)
-        denormalized_segments = denormalize_segments(out['pred_segments'][idx], video_durations, idx[0])
-
-        # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-        memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
- 
-        memory = memory.to(video.device)
-
-        memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-        memory_mask = memory_mask.to(video.device)
-
-        # Differentiable Mask
-        if self.use_differentiable_mask:
-            # TODO - use outputs_segment and use [-1] for pred_memory_mask
-            # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
-            # input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
-
-            query_features_selected_segments = query_features[-1][idx]  # (nb_target_segments, d_model)
-
-            input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
-            pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens)
-
-            # Gating mechanism for memory_mask TODO: scores
-            seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
-
-            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
-                        
-            out['pred_memory_mask'] = pred_memory_mask
-            
-            assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
-
-            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
-            pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+        outputs_classes = []
+        outputs_counts = []
+        outputs_segments = []
         
-        # Caption Decoder
-        if is_training:
-            captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
+        num_pred = query_features.shape[0]
+        for lvl in range(num_pred):
+            # (batch_size, num_queries, num_classes + 1)
+            output_class = self.class_embedding[lvl](query_features[lvl]).softmax(dim=-1)
+
+            # (batch_size, num_queries, 2)
+            output_segment = self.segment_embedding[lvl](query_features[lvl]).sigmoid()
+
+            # (batch_size, max_eseq_length + 1)
+            output_count = predict_event_num(self.count_head[lvl], query_features[lvl])
+
+            outputs_classes.append(output_class)
+            outputs_counts.append(output_count)
+            outputs_segments.append(output_segment)
+
+        outputs_class = torch.stack(outputs_classes)    # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
+        outputs_count = torch.stack(outputs_counts)    # (1, batch_size, max_eseq_length + 1) OR (depth, batch_size, max_eseq_length + 1)
+        outputs_segment = torch.stack(outputs_segments)     # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
+
+        out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1], 'pred_count': outputs_count[-1]}
+
+        # indices
+        # scores, labels = outputs_class[-1].max(-1)
+        # bool_indices = scores > self.threshold    # (batch_size, num_queries)
+
+        # for i, bool_index in enumerate(bool_indices):
+        #     if bool_index.sum() == 0:    # all False
+        #         _, topk_labels = scores[i].topk(k=3, dim=-1)
+        #         bool_indices[i, topk_labels] = True
+
+        # indices = self.convert_bool_to_int_indices(bool_indices)    # list of len=batch_size [(pred_num_segments)] OR [(3)]
+        
+        outputs_captions = []
+        memory_list = []
+        memory_mask_list = []
+        pred_memory_mask_list = []
+
+        for lvl in range(num_pred):
             
-            padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
+            out_aux = {'pred_logits': outputs_class[lvl], 'pred_segments': outputs_segment[lvl], 'pred_count': outputs_count[lvl]}
+            
+            # Retrieve the matching between the outputs of the last layer and the targets
+            # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
+            indices = self.matcher(out_aux, obj['video_target']) 
 
-            tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-            tgt_mask = tgt_mask.to(captions.device)
+            # Context Features
+            video_durations = list(obj['video_length'][:, 1])
+            idx = get_src_permutation_idx(indices)
+            denormalized_segments = denormalize_segments(out_aux['pred_segments'][idx], video_durations, idx[0])
 
-            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
+            memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
+    
+            memory = memory.to(video.device)
+
+            memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+            memory_mask = memory_mask.to(video.device)
+
+            # Differentiable Mask
             if self.use_differentiable_mask:
-                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
-            else:
-                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
 
-            out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+                query_features_selected_segments = query_features[lvl][idx]  # (nb_target_segments, d_model)
 
-            outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+                input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
+                pred_memory_mask = self.context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens)
 
+                # Gating mechanism for memory_mask TODO: scores
+                seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
+
+                pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
+                            
+                out['pred_memory_mask'] = pred_memory_mask
+                
+                assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
+
+                pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
+                pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+            
+            memory_list.append(memory)
+            memory_mask_list.append(memory_mask)
+            pred_memory_mask_list.append(pred_memory_mask)
+
+            # Caption Decoder
+            if is_training:
+                captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
+                
+                padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
+
+                tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+                tgt_mask = tgt_mask.to(captions.device)
+
+                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+                if self.use_differentiable_mask:
+                    output_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
+                else:
+                    output_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
+
+                outputs_captions.append(output_caption[-1])
+
+        if is_training:
+
+            outputs_caption = torch.stack(outputs_captions)    # (1, batch_size, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+
+            out["pred_captions"] = outputs_caption[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+
+            outputs_caption_last_layer = torch.argmax(outputs_caption[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+            
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
-
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
 
             if self.use_differentiable_mask:
-                return out, outputs_captions_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, outputs_captions_last_layer, indices, indices_aux, None
+                return out, outputs_caption_last_layer, indices, indices_aux, None
 
-        # TODO - implement changes in caption decoder 
+
         # Inference
         else:
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
@@ -253,6 +311,7 @@ class UnimodalDeformableDVC(nn.Module):
             total_caption_num = memory.shape[0]
             total_caption_done = 0
             caption_done_indices = []
+            outputs_captions_val = []
 
             # Since END_TOKEN can be predicted even if the caption does not reach max_caption_length
             # range(1, max_caption_length - 1)
@@ -263,26 +322,31 @@ class UnimodalDeformableDVC(nn.Module):
                 tgt_mask = self.make_tgt_mask(captions, captions_padding_mask)  # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
                 tgt_mask = tgt_mask.to(captions.device)
 
-                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-                if self.use_differentiable_mask:
-                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
-                else:
-                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
+                for lvl in range(num_pred):
+                    # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+                    if self.use_differentiable_mask:
+                        output_caption_val = self.unimodal_caption_decoder(captions, memory_list[lvl], tgt_mask, captions_padding_mask, pred_memory_mask_list[lvl])
+                    else:
+                        output_caption_val = self.unimodal_caption_decoder(captions, memory_list[lvl], tgt_mask, captions_padding_mask, memory_mask_list[lvl])
+                    
+                    outputs_captions_val.append(output_caption_val[-1])
+                
+                outputs_caption_val = torch.stack(outputs_captions_val)
 
-                out['pred_captions'] = outputs_captions[-1]
+                out['pred_captions'] = outputs_caption_val[-1]
 
-                outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+                outputs_caption_last_layer = torch.argmax(outputs_caption_val[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
 
                 # Update predicted word in captions
                 if faster_eval:
-                    captions[:, word_index] = outputs_captions_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
+                    captions[:, word_index] = outputs_caption_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
 
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:
-                            captions[caption_index, word_index] = outputs_captions_last_layer[caption_index, word_index]
+                            captions[caption_index, word_index] = outputs_caption_last_layer[caption_index, word_index]
 
-                            if outputs_captions_last_layer[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
+                            if outputs_caption_last_layer[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
                                 caption_done_indices.append(caption_index)
                                 total_caption_done += 1
 
@@ -300,11 +364,9 @@ class UnimodalDeformableDVC(nn.Module):
 
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
-
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption_val)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
-
 
             if self.use_differentiable_mask:
                 return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
@@ -314,11 +376,11 @@ class UnimodalDeformableDVC(nn.Module):
 
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_captions):
-        return [{'pred_logits': a, 'pred_segments': b, 'pred_captions': c}
-                for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_captions[:-1])]
-                
-    
+    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, outputs_caption):
+        return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c, 'pred_captions': d}
+                for a, b, c, d in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1], outputs_caption[:-1])]
+        
+
     def make_tgt_mask(self, target, tgt_padding_mask):
         """
         Generates a mask that is a combination of a lookahead mask and a padding mask
@@ -455,3 +517,33 @@ class UnimodalDeformableDVC(nn.Module):
         """
 
         load_positional_embeddings(self, model_official)
+
+
+
+    
+    def convert_bool_to_int_indices(self, bool_indices):
+        """
+        Parameters:
+            `bool_indices`: Tensor of dimension (batch_size, num_queries)
+        
+        Returns:
+            `indices`: list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
+        """
+        indices = []
+        for bool_index in bool_indices:
+            index = bool_index.nonzero().flatten()    # (predicted_segments)
+            indices.append(index)
+        return indices
+
+
+    def _get_permutation_idx(self, indices):
+        """
+        permute predictions following indices
+
+        Parameters:
+            `indices`: list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
+        """
+        
+        batch_idx = torch.cat([torch.full_like(src, i) for i, src in enumerate(indices)])
+        src_idx = torch.cat(indices)
+        return batch_idx, src_idx

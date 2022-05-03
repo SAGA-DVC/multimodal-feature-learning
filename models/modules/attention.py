@@ -261,7 +261,7 @@ class CrossAttention(nn.Module):
 
         q = q.reshape(batch_size, num_tokens_q, self.num_heads, self.head_dim)
         q = q.permute(0, 2, 1, 3) # (batch_size, num_heads, num_tokens_q, head_dim)
-
+        
         k = k.reshape(batch_size, num_tokens_k, self.num_heads, self.head_dim)
         k = k.permute(0, 2, 1, 3) # (batch_size, num_heads, num_tokens_k, head_dim)
 

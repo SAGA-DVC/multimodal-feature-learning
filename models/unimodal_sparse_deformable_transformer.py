@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.init import xavier_uniform_, constant_, normal_
-from .modules.misc_modules import inverse_sigmoid 
+from .modules.misc_modules import inverse_sigmoid, predict_event_num 
 from .modules.attention import MSDeformAttn
 
 class SparseDeformableTransformer(nn.Module):
@@ -245,10 +245,10 @@ class SparseDeformableTransformer(nn.Module):
         """
         # encoder
         output_proposals = backbone_output_proposals if self.use_enc_aux_loss else None 
-        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
+        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
                                 mask_flatten, backbone_topk_proposals, output_proposals, sparse_token_nums)
 
-        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords
+        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
 
     def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
@@ -370,6 +370,7 @@ class DeformableTransformerEncoder(nn.Module):
          # hack implementation
         self.aux_heads = False
         self.class_embedding = None
+        self.count_head = None
         self.segment_embedding = None
 
     @staticmethod
@@ -419,6 +420,7 @@ class DeformableTransformerEncoder(nn.Module):
         attn_weights_enc = []
         if self.aux_heads:
             enc_inter_outputs_class = []
+            enc_inter_outputs_count = []
             enc_inter_outputs_coords = []
       
       
@@ -452,10 +454,12 @@ class DeformableTransformerEncoder(nn.Module):
             if self.aux_heads and lid < self.num_layers - 1:
                 # feed outputs to aux. heads
                 output_class = self.class_embedding[lid](tgt)
+                output_count = predict_event_num(self.count_head[lid], tgt)
                 output_offset = self.segment_embedding[lid](tgt)
                 output_coords_unact = output_proposals + output_offset
                 # values to be used for loss compuation
                 enc_inter_outputs_class.append(output_class)
+                enc_inter_outputs_count.append(output_count)
                 enc_inter_outputs_coords.append(output_coords_unact.sigmoid())
 
         # Change dimension from [num_layer, batch_size, ...] to [batch_size, num_layer, ...]
@@ -463,9 +467,9 @@ class DeformableTransformerEncoder(nn.Module):
         attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.aux_heads:
-            return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_coords
+            return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
         else:
-            return output, sampling_locations_enc, attn_weights_enc, None, None
+            return output, sampling_locations_enc, attn_weights_enc, None, None, None
         
 
 
@@ -559,6 +563,7 @@ class DeformableTransformerDecoder(nn.Module):
         self.bbox_head = None
         # self.segment_embedding = None
         # self.class_embedding = None
+        # self.count_head= None
 
     def forward(self, tgt, reference_points, src, src_temporal_shapes, src_level_start_index, src_valid_ratios,
                 query_pos=None, src_padding_mask=None, query_padding_mask=None, disable_iterative_refine=False):

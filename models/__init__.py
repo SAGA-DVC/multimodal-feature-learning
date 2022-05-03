@@ -42,6 +42,8 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         num_classes=args.num_classes,
                         aux_loss=args.aux_loss,
                         matcher=matcher,
+                        threshold=args.threshold,
+                        max_eseq_length=args.max_eseq_length,
                         vocab=dataset.vocab, 
                         seq_len=dataset.max_caption_len_all, 
                         embedding_matrix=embedding_matrix, 
@@ -58,6 +60,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         num_classes=args.num_classes,
                         aux_loss=args.aux_loss,
                         matcher=matcher,
+                        threshold=args.threshold,
                         vocab=dataset.vocab,  
                         seq_len=dataset.max_caption_len_all, 
                         embedding_matrix=embedding_matrix, 
@@ -76,6 +79,8 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         num_classes=args.num_classes,
                         aux_loss=args.aux_loss,
                         matcher=matcher,
+                        threshold=args.threshold,
+                        max_eseq_length=args.max_eseq_length,
                         vocab=dataset.vocab, 
                         seq_len=dataset.max_caption_len_all, 
                         embedding_matrix=embedding_matrix, 
@@ -92,6 +97,8 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
             #             num_classes=args.num_classes,
             #             aux_loss=args.aux_loss,
             #             matcher=matcher,
+            #             threshold=args.threshold,
+            #             max_eseq_length=args.max_eseq_length,
             #             vocab=dataset.vocab,  
             #             seq_len=dataset.max_caption_len_all, 
             #             embedding_matrix=embedding_matrix, 
@@ -121,14 +128,15 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                     caption_args=args.caption
                 )
 
-    weight_dict = {'loss_ce': args.cls_loss_coef, 
+    weight_dict = {'loss_ce': args.cls_loss_coef,
+                'loss_counter': args.counter_loss_coef, 
                 'loss_bbox': args.bbox_loss_coef,
                 'loss_giou': args.giou_loss_coef,
-                # 'loss_self_iou': args.self_iou_loss_coef,
-                'loss_caption': args.captions_loss_coef,
+                'loss_self_iou': args.self_iou_loss_coef,
+                'loss_caption': args.caption_loss_coef,
                 'loss_context': args.context_loss_coef,
                 'loss_mask_prediction': args.mask_prediction_coef,
-                # 'loss_corr': args.corr_coef,
+                'loss_corr': args.corr_coef,
                 }
 
     if use_differentiable_mask:
@@ -144,7 +152,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
 
     criterion = SetCriterion(len(args.input_modalities) == 2, num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
                             eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
-                            focal_alpha=0.25, focal_gamma=2)
+                            focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=args.lloss_gau_mask, lloss_beta=args.lloss_gau_mask)
 
     # # postprocessors = {'bbox': PostProcess(args)}
 
