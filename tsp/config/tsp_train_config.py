@@ -124,8 +124,8 @@ def load_config():
     # cfg.tsp.val_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/val-max-gvf.h5"
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video', 'audio']
-    cfg.tsp.backbones = ['vivit', 'ast']
+    cfg.tsp.modalities = ['video']
+    cfg.tsp.backbones = ['vivit']
 
     cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.0001
