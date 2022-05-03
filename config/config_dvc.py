@@ -25,7 +25,7 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 5    # used for val loops and submission json files
+    cfg.eval_rate = 9    # used for val loops and submission json files
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
@@ -35,7 +35,7 @@ def load_config():
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 2
+    cfg.epochs = 5
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -61,7 +61,7 @@ def load_config():
     cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with R(2+1)D feats no aux_loss"
+    cfg.wandb.notes = "Sparse DETR with R(2+1)D feats with aux_loss and no loop"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -118,7 +118,7 @@ def load_config():
 
     cfg.dvc.num_queries = 20
     cfg.dvc.d_model = 512
-    cfg.dvc.aux_loss = False    # depth for decoder and caption decoder must be the same (for now)
+    cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
     cfg.dvc.threshold=0.5
 
@@ -213,7 +213,7 @@ def load_config():
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
     cfg.dvc.sparse_detr.rho=0.5
-    cfg.dvc.sparse_detr.use_enc_aux_loss=False
+    cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.return_intermediate=True
 
     # not used
@@ -246,7 +246,7 @@ def load_config():
     cfg.dvc.caption.weight_load = False
 
     cfg.dvc.caption.emb_weights_req_grad = True
-    cfg.dvc.caption.return_intermediate = False
+    cfg.dvc.caption.return_intermediate = True
 
     # TODO - handle embedding matrix loading better
     cfg.dvc.caption.pretrained_word_embed_dim = 300

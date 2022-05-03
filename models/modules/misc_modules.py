@@ -38,6 +38,12 @@ def predict_event_num(counter, query_features):
     outputs_class0 = counter(query_features_pool)    # [batch_size, max_eseq_length + 1]
     return outputs_class0
 
+def predict_event_num_with_depth(counter, query_features):
+    # (depth, batch_size, num_queries, d_model)
+    query_features_pool = torch.max(query_features, dim=2, keepdim=False)[0]  # [depth, batch_size, d_model]
+    outputs_class0 = counter(query_features_pool)    # [depth, batch_size, max_eseq_length + 1]
+    return outputs_class0
+
 class NestedTensor(object):
     def __init__(self, tensors, mask: Optional[Tensor], duration=None):
         self.tensors = tensors

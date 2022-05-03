@@ -123,7 +123,7 @@ class MetricLogger(object):
         loss_str = []
         substring_list = [str(i) for i in range(5)]
         for name, meter in self.meters.items():
-            if all(substring not in name for substring in substring_list):
+            if all(substring not in name for substring in substring_list) or 'Bleu' in name:
                 loss_str.append(
                     "{}: {}".format(name, str(meter))
                 )

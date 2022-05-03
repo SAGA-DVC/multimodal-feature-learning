@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn.init import xavier_uniform_, constant_, normal_
-from ..modules.misc_modules import inverse_sigmoid, predict_event_num_with_depth 
+from ..modules.misc_modules import inverse_sigmoid, predict_event_num 
 from ..modules.attention import MSDeformAttn
 
 class SparseDeformableTransformer(nn.Module):
@@ -422,7 +422,6 @@ class DeformableTransformerEncoder(nn.Module):
             enc_inter_outputs_class = []
             enc_inter_outputs_count = []
             enc_inter_outputs_coords = []
-            enc_inter_tgts = []
       
       
         if sparsified_keys:
@@ -451,25 +450,24 @@ class DeformableTransformerEncoder(nn.Module):
                     output = torch.stack(outputs)
             else:
                 output = tgt
+            
+            if self.aux_heads and lid < self.num_layers - 1:
+                # feed outputs to aux. heads
+                output_class = self.class_embedding[lid](tgt)
+                output_count = predict_event_num(self.count_head[lid], tgt)
+                output_offset = self.segment_embedding[lid](tgt)
+                output_coords_unact = output_proposals + output_offset
+                # values to be used for loss compuation
+                enc_inter_outputs_class.append(output_class)
+                enc_inter_outputs_count.append(output_count)
+                enc_inter_outputs_coords.append(output_coords_unact.sigmoid())
 
-            if self.aux_heads:
-                enc_inter_tgts.append(tgt)
-
-        if self.aux_heads:
-            enc_inter_tgt = torch.stack(enc_inter_tgts)
-        
-            # feed outputs to aux. heads
-            outputs_class = self.class_embedding(enc_inter_tgt[:-1])
-            outputs_count = predict_event_num_with_depth(self.count_head, enc_inter_tgt[:-1])
-            outputs_offset = self.segment_embedding(enc_inter_tgt[:-1])
-            outputs_coords = (output_proposals.squeeze(0) + outputs_offset).sigmoid()
- 
         # Change dimension from [num_layer, batch_size, ...] to [batch_size, num_layer, ...]
         sampling_locations_enc = torch.stack(sampling_locations_enc, dim=1)
         attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.aux_heads:
-            return output, sampling_locations_enc, attn_weights_enc, outputs_class, outputs_count, outputs_coords
+            return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
         else:
             return output, sampling_locations_enc, attn_weights_enc, None, None, None
         
