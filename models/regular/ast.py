@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from timm.models.layers import trunc_normal_
 
-from .modules.encoders import AstEncoder
+from ..modules.encoders import AstEncoder
 
 
 

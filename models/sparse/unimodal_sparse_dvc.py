@@ -2,45 +2,61 @@
 DVC model for event segmentation and captioning
 """
 
+import math
 from math import floor, ceil
+import copy
 
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .unimodal_deformable_transformer import build_unimodal_deformable_transformer
-from .base_encoder import build_base_encoder
-from .unimodal_caption_decoder import build_unimodal_caption_decoder
+from .unimodal_sparse_deformable_transformer import build_sparse_deforamble_transformer
+from ..base_encoder import build_base_encoder
+from ..unimodal_caption_decoder import build_unimodal_caption_decoder
 
-from .modules.embedding_layers import PositionEmbeddingVideoSine
-from .modules.layers import FFN, ContextMaskModel
-from .modules.misc_modules import decide_two_stage
+from ..modules.embedding_layers import PositionEmbeddingVideoSine
+from ..modules.layers import FFN, ContextMaskModel
+from ..modules.misc_modules import decide_two_stage, inverse_sigmoid, predict_event_num_with_depth
 
-from .load_weights import load_positional_embeddings
+from ..load_weights import load_positional_embeddings
 
 from utils.preds_postprocess import get_src_permutation_idx, denormalize_segments
 
+
+
+def _get_clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+
+
 # TODO - check devices for tensors
-# TODO - vanishing gradients
-class UnimodalDeformableDVC(nn.Module):
-    def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, 
+# TODOD - is_sparse flag in init
+class UnimodalSparseDVC(nn.Module):
+    def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, threshold, max_eseq_length,
                 vocab, seq_len, embedding_matrix, 
-                vivit_args, ast_args, detr_args, caption_args, use_differentiable_mask=False):
+                sparse_detr_args, caption_args, use_differentiable_mask=False):
         
         """
-        UnimodalDeformableDVC model
+        UnimodalSparseDVC model
         """
 
-        super(UnimodalDeformableDVC, self).__init__()
+        super(UnimodalSparseDVC, self).__init__()
         
         self.input_modalities = input_modalities
         self.num_queries = num_queries
         self.aux_loss = aux_loss
+        self.num_classes = num_classes
+        self.threshold = threshold
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding = nn.Linear(d_model, num_classes + 1)
-        self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        self.class_embedding_encoder = nn.Linear(d_model, num_classes + 1)
+        self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
+
+        self.segment_embedding_encoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        
+        self.count_head_encoder = nn.Linear(d_model, max_eseq_length + 1)
+        self.count_head_decoder = nn.Linear(d_model, max_eseq_length + 1)
 
         self.matcher = matcher
 
@@ -48,15 +64,36 @@ class UnimodalDeformableDVC(nn.Module):
 
         self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
 
-        self.base_encoder = build_base_encoder(detr_args)
+        self.rho = sparse_detr_args.rho
+        self.use_enc_aux_loss = sparse_detr_args.use_enc_aux_loss
 
-        # TODO - return intermediate=False deos not output depth dimesntion (dim 0)
-        # Unimodal Deformable DETR
-        self.unimodal_deformable_transformer = build_unimodal_deformable_transformer(detr_args)
+        self.base_encoder = build_base_encoder(sparse_detr_args)
+
+        # TODO - do all this in init_weights()
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        self.class_embedding_encoder.bias.data = torch.ones(num_classes + 1) * bias_value
+        self.class_embedding_decoder.bias.data = torch.ones(num_classes + 1) * bias_value
+
+        nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
+        nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data, 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].weight.data, 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].bias.data[:2], 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].bias.data[2:], -2.0)
+
+
+        # Unimodal Sparse DETR
+        self.unimodal_sparse_transformer = build_sparse_deforamble_transformer(sparse_detr_args)
         
+        if sparse_detr_args.use_enc_aux_loss:
+            self.unimodal_sparse_transformer.encoder.aux_heads = True
+            self.unimodal_sparse_transformer.encoder.class_embedding = self.class_embedding_encoder
+            self.unimodal_sparse_transformer.encoder.count_head = self.count_head_encoder
+            self.unimodal_sparse_transformer.encoder.segment_embedding = self.segment_embedding_encoder
+
         # Context Module
-        self.num_feature_levels = detr_args.num_feature_levels
-        self.video_rescale_len = detr_args.video_rescale_len
+        self.num_feature_levels = sparse_detr_args.num_feature_levels
+        self.video_rescale_len = sparse_detr_args.video_rescale_len
         self.num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
         
         self.use_differentiable_mask = use_differentiable_mask
@@ -69,11 +106,7 @@ class UnimodalDeformableDVC(nn.Module):
         self.unimodal_caption_decoder = build_unimodal_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
         
 
-        # if weight_load and model_official is not None:
-        #     self.load_weights(model_official)
-
-        # elif weight_init:
-        #     self.init_weights()
+        # self.init_weights()
 
 
 
@@ -84,7 +117,7 @@ class UnimodalDeformableDVC(nn.Module):
     def forward(self, obj, is_training=True, faster_eval=False):
 
         """
-        Performs a forward pass on the UnimodalDeformableDVC model which consists of the encoders, proposal decoder and caption decoder
+        Performs a forward pass on the UnimodalSparseDVC model which consists of the encoders, proposal decoder and caption decoder
   
         Parameters:
             obj (collections.defaultdict): Consisitng of various keys including 
@@ -130,12 +163,9 @@ class UnimodalDeformableDVC(nn.Module):
         #     srcs, masks, pos = self.base_encoder(audio, audio_mask, durations, self.pos_embed)
 
         # Forword Encoder
-        src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten = self.unimodal_deformable_transformer.prepare_encoder_inputs(srcs, masks, pos)
+        src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten, backbone_output_proposals, backbone_topk_proposals, backbone_mask_prediction, sparse_token_nums = self.unimodal_sparse_transformer.prepare_encoder_inputs(srcs, masks, pos)
 
-        # (batch_size, sum of num_tokens in all levels, d_model) - Multi-scale frame features
-        memory = self.unimodal_deformable_transformer.forward_encoder(src_flatten, temporal_shapes, 
-                                                            level_start_index, valid_ratios, 
-                                                            lvl_pos_embed_flatten, mask_flatten)    
+        memory, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_segments = self.unimodal_sparse_transformer.forward_encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten, backbone_output_proposals, backbone_topk_proposals, sparse_token_nums)    
 
         # Forword Decoder
         # TODO - check proposals_mask (key_padding_mask in deformable_transformer (~mask??))
@@ -147,30 +177,66 @@ class UnimodalDeformableDVC(nn.Module):
         two_stage, disable_iterative_refine, proposals, proposals_mask = decide_two_stage(transformer_input_type, gt_boxes, gt_boxes_mask, criterion)
 
         if two_stage:
-            init_reference, tgt, reference_points, query_embedding = self.unimodal_deformable_transformer.prepare_decoder_input_proposal(proposals)
+            init_reference, tgt, reference_points, query_embed = self.unimodal_sparse_transformer.prepare_decoder_input_proposal(proposals)
         else:
             query_embedding_weight = self.query_embedding.weight
             proposals_mask = torch.ones(batch_size, query_embedding_weight.shape[0], device=query_embedding_weight.device).bool()  #   (batch_size, num_queries)
-            init_reference, tgt, reference_points, query_embedding_weight = self.unimodal_deformable_transformer.prepare_decoder_input_query(batch_size, query_embedding_weight)
+            init_reference, tgt, reference_points, query_embedding_weight = self.unimodal_sparse_transformer.prepare_decoder_input_query(batch_size, query_embedding_weight)
 
 
-        # query_features (depth, batch_size, num_queries, d_model)
-        # inter_reference = (depth, batch_size, num_queries, 1)
-        query_features, inter_references = self.unimodal_deformable_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
-                                                                level_start_index, valid_ratios, query_embedding_weight,
-                                                                mask_flatten, proposals_mask, disable_iterative_refine)
-
-
+        query_features, inter_references, sampling_locations_dec, attn_weights_dec = self.unimodal_sparse_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
+                                                                                                                                    level_start_index, valid_ratios,  query_embedding_weight, 
+                                                                                                                                    mask_flatten, proposals_mask, disable_iterative_refine)
+        
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding(query_features).softmax(dim=-1)
+        outputs_class = self.class_embedding_decoder(query_features).softmax(dim=-1)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
-        outputs_segment = self.segment_embedding(query_features).sigmoid()
+        outputs_segment = self.segment_embedding_decoder(query_features)
 
-        out = {'pred_logits': outputs_class[-1], 'pred_segments': outputs_segment[-1]}
+        # (1, batch_size, max_eseq_length + 1) OR (depth, batch_size, max_eseq_length + 1)
+        outputs_count = predict_event_num_with_depth(self.count_head_decoder, query_features)
 
+        assert init_reference is not None and inter_references is not None
+        reference = inter_references
+        reference[0] = init_reference
+        reference[1:] = inter_references[:-1].clone()    # TODO - error if removed
+        
+        reference = inverse_sigmoid(reference)
+        if reference.shape[-1] == 2:
+            outputs_segment += reference
+        else:
+            assert reference.shape[-1] == 1
+            outputs_segment[..., :2] += reference
+        
+        outputs_segment = outputs_segment.sigmoid()
 
-        # Retrieve the matching between the outputs of the last layer and the targets
+        out = {'pred_logits': outputs_class[-1], 
+                'pred_segments': outputs_segment[-1],
+                'pred_count': outputs_count[-1],
+                'sampling_locations_enc': sampling_locations_enc,
+                'attn_weights_enc': attn_weights_enc,
+                'sampling_locations_dec': sampling_locations_dec,
+                'attn_weights_dec': attn_weights_dec,
+                'temporal_shapes': temporal_shapes,
+                'level_start_index': level_start_index
+            }
+
+        if backbone_topk_proposals is not None:
+            out["backbone_topk_proposals"] = backbone_topk_proposals
+
+        if self.rho:
+            out["backbone_mask_prediction"] = backbone_mask_prediction
+
+        if self.use_enc_aux_loss:
+            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count)
+        
+        if self.rho:
+            out["sparse_token_nums"] = sparse_token_nums
+
+        out['mask_flatten'] = torch.cat([m.flatten(1) for m in masks], 1)
+    
+        # Retrieve the matching between the outputs of the last layer and the targets, has torch.no_grad() in forward call
         # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
         indices = self.matcher(out, obj['video_target']) 
 
@@ -181,7 +247,7 @@ class UnimodalDeformableDVC(nn.Module):
 
         # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
         memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
- 
+
         memory = memory.to(video.device)
 
         memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
@@ -203,7 +269,7 @@ class UnimodalDeformableDVC(nn.Module):
 
             pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
                         
-            out['pred_memory_mask'] = pred_memory_mask
+            out['pred_memory_mask'] = pred_memory_mask    # last layer value will be returned at the end
             
             assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
 
@@ -219,27 +285,29 @@ class UnimodalDeformableDVC(nn.Module):
             tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
 
+            # TODO - add pos embed for memory
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
-                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
             else:
-                outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
 
-            out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+            out["pred_captions"] = outputs_caption[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
+            outputs_caption_last_layer = torch.argmax(outputs_caption[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+            
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
-
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
 
             if self.use_differentiable_mask:
-                return out, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
-                return out, indices, indices_aux, None
+                return out, outputs_caption_last_layer, indices, indices_aux, None
 
-        # TODO - implement changes in caption decoder 
+
         # Inference
         else:
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
@@ -251,6 +319,7 @@ class UnimodalDeformableDVC(nn.Module):
             total_caption_num = memory.shape[0]
             total_caption_done = 0
             caption_done_indices = []
+            outputs_captions_val = []
 
             # Since END_TOKEN can be predicted even if the caption does not reach max_caption_length
             # range(1, max_caption_length - 1)
@@ -263,24 +332,24 @@ class UnimodalDeformableDVC(nn.Module):
 
                 # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
                 if self.use_differentiable_mask:
-                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
                 else:
-                    outputs_captions = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
 
-                out['pred_captions'] = outputs_captions[-1]
+                out['pred_captions'] = outputs_caption_val[-1]
 
-                outputs_captions_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+                outputs_caption_last_layer = torch.argmax(outputs_caption_val[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
 
                 # Update predicted word in captions
                 if faster_eval:
-                    captions[:, word_index] = outputs_captions_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
+                    captions[:, word_index] = outputs_caption_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
 
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:
-                            captions[caption_index, word_index] = outputs_captions_last_layer[caption_index, word_index]
+                            captions[caption_index, word_index] = outputs_caption_last_layer[caption_index, word_index]
 
-                            if outputs_captions_last_layer[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
+                            if outputs_caption_last_layer[caption_index, word_index] == self.vocab['<eos>']:    # if END_TOKEN predicted
                                 caption_done_indices.append(caption_index)
                                 total_caption_done += 1
 
@@ -296,13 +365,12 @@ class UnimodalDeformableDVC(nn.Module):
                 last_token = torch.tensor([self.vocab['<pad>'] if self.vocab['<eos>'] in c else self.vocab['<eos>'] for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
                 captions_with_eos = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
 
+            # TODO - check use in eval
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_captions)
-
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption_val)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
-
 
             if self.use_differentiable_mask:
                 return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
@@ -312,11 +380,16 @@ class UnimodalDeformableDVC(nn.Module):
 
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_captions):
-        return [{'pred_logits': a, 'pred_segments': b, 'pred_captions': c}
-                for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_captions[:-1])]
-                
-    
+    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, outputs_caption=None):
+        if outputs_caption is None:
+            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
+                for a, b, c in zip(outputs_class, outputs_segment, outputs_count)]
+
+        else:
+            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c, 'pred_captions': d}
+                    for a, b, c, d in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1], outputs_caption[:-1])]
+
+
     def make_tgt_mask(self, target, tgt_padding_mask):
         """
         Generates a mask that is a combination of a lookahead mask and a padding mask
@@ -432,19 +505,21 @@ class UnimodalDeformableDVC(nn.Module):
     def init_weights(self):
 
         """
-        Initialises the weights and biases of the modules in the UnimodalDeformableDVC model.
+        Initialises the weights and biases of the modules in the UnimodalSparseDVC model.
         These parameters include positional embeddings.
         """
 
-        trunc_normal_(self.positional_embedding_layer.positional_embedding, std=.02)
-        if self.vivit.model_name == 'factorised encoder':
-            trunc_normal_(self.spatial_positional_embedding_layer.positional_embedding, std=.02)
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
+        nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
+        nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
             
 
     def load_weights(self, model_official):
 
         """
-        Loads the weights and biases from the pre-trained model to the current model for modules in the UnimodalDeformableDVC model
+        Loads the weights and biases from the pre-trained model to the current model for modules in the UnimodalSparseDVC model
         These weights include positional embeddings.
 
         Parameters:

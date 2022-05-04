@@ -89,6 +89,8 @@ def main(args):
         print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # for a,b in model.named_parameters():
+    #     print(a, b.shape)
     print(f'number of params: {n_parameters / 1000000} M')
 
     param_dicts = [
@@ -113,7 +115,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
+        train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
         
         lr_scheduler.step()
 
@@ -144,6 +146,7 @@ def main(args):
             val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
 
 
+        # TODO: log encoder stats?
         train_log_stats = {'epoch': epoch,
                             **{f'train_{k}': v for k, v in train_stats.items()},
                             'n_parameters': n_parameters}
@@ -174,4 +177,6 @@ if __name__ == '__main__':
     args = load_config()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    if args.submission_dir:
+        Path(args.submission_dir).mkdir(parents=True, exist_ok=True)
     main(args)

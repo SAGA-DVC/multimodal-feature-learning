@@ -1,9 +1,10 @@
 '''
-If you want to switch between Deformable DVC and regular DVC, change all parameters having the "Switch DVC" comment.
+If you want to switch between Sparse DVC, Deformable DVC and regular DVC, change all parameters having the "Switch DVC" comment.
 
 '''
 
 import ml_collections
+import os
 
 def load_config():
 
@@ -11,12 +12,12 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cuda:0'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 16
-    cfg.num_workers = 4
+    cfg.batch_size = 3
+    cfg.num_workers = 1
 
-    cfg.print_freq = 10
+    cfg.print_freq = 1
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
@@ -24,19 +25,21 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 5
+    cfg.eval_rate = 5    # used for val loops and submission json files
         
-    cfg.output_dir = 'output'
-    # cfg.output_dir = 'output_temp'
+    # cfg.output_dir = 'output'
+    cfg.output_dir = 'output_temp'
+    cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
     # cfg.resume = 'output/checkpoint.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 30
+    cfg.epochs = 5
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
+    cfg.save_submission = True
 
 
     #-------------------------------------------------------------------------------------------------
@@ -55,11 +58,11 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "DVC v3 aux loss run"
-    cfg.wandb.run_name = 'dvc-testing'
+    cfg.wandb.notes = "Sparse DETR with R(2+1)D feats with aux_loss and no loop"
+    # cfg.wandb.run_name = 'dvc-testing'
 
 
     #-------------------------------------------------------------------------------------------------
@@ -71,8 +74,11 @@ def load_config():
 
     cfg.dataset.activity_net.anet_path = './anet_data'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-r2plus1d-34'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
+
+    cfg.dataset.activity_net.for_testing = True    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -82,7 +88,7 @@ def load_config():
     data_rescale = ['interpolate', 'uniform']    # do not use uniform for now - TODO - determine rescale length
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.video_feature_sample_rate = 2
-    cfg.dataset.activity_net.video_rescale_len = 400    # Switch DVC - avg len in train is 220
+    cfg.dataset.activity_net.video_rescale_len = 300    # Switch DVC - avg len in train is 220
     cfg.dataset.activity_net.audio_feature_sample_rate = 2
     cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
 
@@ -114,23 +120,37 @@ def load_config():
     cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
+    cfg.dvc.threshold=0.5
 
-    cfg.dvc.use_deformable_detr = True    # Switch DVC
+    cfg.dvc.max_eseq_length = 10
+    cfg.dvc.lloss_gau_mask = 1
+    cfg.dvc.lloss_beta = 1.0
 
-    cfg.dvc.smoothing = 0.3
+    cfg.dvc.use_sparse_detr = False    # Switch DVC
+    cfg.dvc.use_deformable_detr = False    # Switch DVC
+
+    cfg.dvc.smoothing = 0.5
 
     cfg.dvc.cls_loss_coef = 1
+    cfg.dvc.counter_loss_coef = 2
     cfg.dvc.bbox_loss_coef = 5
     cfg.dvc.giou_loss_coef = 2
     cfg.dvc.self_iou_loss_coef = 2
-    cfg.dvc.captions_loss_coef = 1
-    cfg.dvc.context_loss_coef = 1
+    cfg.dvc.caption_loss_coef = 1
+    cfg.dvc.context_loss_coef = 3
+    cfg.dvc.mask_prediction_coef = 2
+    cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1
 
     # TODO - handle not using some losses
     cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
+    
     if cfg.use_differentiable_mask:
         cfg.dvc.losses.append('contexts')
+    
+    if cfg.dvc.use_sparse_detr:
+        cfg.dvc.losses.append('mask_prediction')
+        # cfg.dvc.losses.append('corr')
 
 
     # Matcher args
@@ -148,11 +168,11 @@ def load_config():
 
     cfg.dvc.detr.feature_dim = cfg.dvc.d_model    # dim of frame-level feature vector
     cfg.dvc.detr.d_model = cfg.dvc.d_model 
-    
+
     cfg.dvc.detr.hidden_dropout_prob = 0.1    # previously 0.5
     cfg.dvc.detr.layer_norm_eps = 1e-12 
 
-    cfg.dvc.detr.num_heads = 8 
+    cfg.dvc.detr.num_heads = 8
 
     cfg.dvc.detr.num_feature_levels = 4    # number of feature levels in Multiscale Deformable Attention 
     cfg.dvc.detr.dec_n_points = 4    # number of sampling points per attention head per feature level for decoder
@@ -163,10 +183,42 @@ def load_config():
 
     cfg.dvc.detr.transformer_dropout_prob = 0.1
     cfg.dvc.detr.transformer_ff_dim = 2048
+    # TODO - why here?
     cfg.dvc.detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
     cfg.dvc.detr.return_intermediate = True    # TODO - check use
     
+
+    # Sparse DETR
+    cfg.dvc.sparse_detr = ml_collections.ConfigDict()
+
+    cfg.dvc.sparse_detr.feature_dim = cfg.dvc.d_model  #   dim of frame-level feature vector (default = 500)
+    cfg.dvc.sparse_detr.d_model= cfg.dvc.d_model
+    cfg.dvc.sparse_detr.hidden_dim = cfg.dvc.d_model   #   Dimensionality of the hidden layer in the feed-forward networks within the Transformer
+   
+    cfg.dvc.sparse_detr.hidden_dropout_prob = 0.1
+    cfg.dvc.sparse_detr.layer_norm_eps = 1e-12 
+
+    cfg.dvc.sparse_detr.num_heads = 8    #   the number of heads in the multiheadattention models
+    
+    cfg.dvc.sparse_detr.num_feature_levels = 4  #  number of feature levels in multiscale Deformable Attention 
+    cfg.dvc.sparse_detr.dec_n_points = 4   #   number of sampling points per attention head per feature level for decoder
+    cfg.dvc.sparse_detr.enc_n_points = 4   #   number of sampling points per attention head per feature level for encoder
+    
+    cfg.dvc.sparse_detr.enc_layers = 6 #   number of sub-encoder-layers in the encoder
+    cfg.dvc.sparse_detr.dec_layers = 6 #   number of sub-decoder-layers in the decode
+
+    cfg.dvc.sparse_detr.transformer_dropout_prob = 0.1 #   the dropout value
+    cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
+    cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
+
+    cfg.dvc.sparse_detr.rho=0.5
+    cfg.dvc.sparse_detr.use_enc_aux_loss=True
+    cfg.dvc.sparse_detr.return_intermediate=True
+
+    # not used
+    cfg.dvc.sparse_detr.eff_query_init=True
+    cfg.dvc.sparse_detr.eff_specific_head=True
 
     # Caption Decoder
     # vocab_size, seq_len, embedding_matrix - these parameters are set in /models/__init__.py
@@ -203,6 +255,34 @@ def load_config():
     cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
 
+    # Decoder
+    cfg.dvc.decoder = ml_collections.ConfigDict()
+
+    cfg.dvc.decoder.d_model = cfg.dvc.d_model
+
+    cfg.dvc.decoder.depth = 6
+
+    cfg.dvc.decoder.num_heads = 8
+    cfg.dvc.decoder.mlp_ratio = 4
+    cfg.dvc.decoder.qkv_bias = True
+
+    cfg.dvc.decoder.positional_embedding_dropout = 0.1
+    cfg.dvc.decoder.attention_dropout = 0.1
+    cfg.dvc.decoder.projection_dropout = 0.1
+    cfg.dvc.decoder.mlp_dropout_1 = 0.1
+    cfg.dvc.decoder.mlp_dropout_2 = 0.1
+
+    cfg.dvc.decoder.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
+
+    cfg.dvc.decoder.pre_norm = False
+
+    cfg.dvc.decoder.model_official = None
+    cfg.dvc.decoder.weight_init = True
+    cfg.dvc.decoder.weight_load = False
+
+    cfg.dvc.decoder.return_intermediate = True
+
+
     # ViViT
     cfg.dvc.vivit = ml_collections.ConfigDict()
 
@@ -227,7 +307,7 @@ def load_config():
     cfg.dvc.vivit.depth = 2
     cfg.dvc.vivit.temporal_depth = 4
 
-    cfg.dvc.vivit.num_heads = 12
+    cfg.dvc.vivit.num_heads = 8
     cfg.dvc.vivit.mlp_ratio = 4
     cfg.dvc.vivit.qkv_bias = True
 
@@ -265,31 +345,6 @@ def load_config():
     
     cfg.dvc.ast.return_preclassifier = True  # Set True for Feature extraction
     cfg.dvc.ast.return_prelogits = False  # Set True for TSP & GVF extraction
-
-    # Decoder
-    cfg.dvc.decoder = ml_collections.ConfigDict()
-
-    cfg.dvc.decoder.d_model = cfg.dvc.d_model
-
-    cfg.dvc.decoder.depth = 2
-
-    cfg.dvc.decoder.num_heads = 8
-    cfg.dvc.decoder.mlp_ratio = 4
-    cfg.dvc.decoder.qkv_bias = True
-
-    cfg.dvc.decoder.positional_embedding_dropout = 0.1
-    cfg.dvc.decoder.attention_dropout = 0.1
-    cfg.dvc.decoder.projection_dropout = 0.1
-    cfg.dvc.decoder.mlp_dropout_1 = 0.1
-    cfg.dvc.decoder.mlp_dropout_2 = 0.1
-
-    cfg.dvc.decoder.pre_norm = True
-
-    cfg.dvc.decoder.model_official = None
-    cfg.dvc.decoder.weight_init = True
-    cfg.dvc.decoder.weight_load = False
-
-    cfg.dvc.decoder.return_intermediate = False
 
     
     #-------------------------------------------------------------------------------------------------

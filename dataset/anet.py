@@ -61,14 +61,15 @@ class DVCdataset(Dataset):
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)
-        self.keys = self.keys[:12]
+        if args.for_testing:
+            self.keys = self.keys[:3]
 
         # self.video_features_folder = video_features_folder
 
         # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
         self.video_features = h5py.File(video_features_folder / 'video-features.h5', 'r')    
         # self.audio_features = h5py.File(video_features_folder / 'audio_features.h5', 'r')
-        self.audio_features = h5py.File('data_features/val/audio_features_512.h5', 'r')    # TODO - remove this later
+        self.audio_features = h5py.File(video_features_folder / 'video-features.h5', 'r')
 
         self.is_training = is_training
         self.max_gt_target_segments = args.max_gt_target_segments
