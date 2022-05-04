@@ -10,7 +10,7 @@ from ..load_weights import init_encoder_block_weights
 class Decoder(nn.Module):
     
     def __init__(self, d_model, depth, num_heads, mlp_ratio=4., qkv_bias=False, 
-                attention_dropout=0., projection_dropout=0., dropout_1=0., dropout_2=0., pre_norm=True,
+                attention_dropout=0., projection_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True,
                 weight_init=False, weight_load=False, model_official=None, return_intermediate=False):
 
         """
@@ -50,8 +50,8 @@ class Decoder(nn.Module):
                         qkv_bias=qkv_bias,
                         attention_dropout=attention_dropout,
                         projection_dropout=projection_dropout,
-                        dropout_1=dropout_1,
-                        dropout_2=dropout_2,
+                        mlp_dropout_1=mlp_dropout_1,
+                        mlp_dropout_2=mlp_dropout_2,
                         pre_norm=pre_norm
                     )
                     for _ in range(depth)
@@ -69,7 +69,7 @@ class Decoder(nn.Module):
         self.init_weights()
 
     
-    def forward(self, target, memory, positional_embedding_layer, query_embedding, mask=None):
+    def forward(self, target, memory, positional_embedding, query_embedding, target_mask=None, memory_mask=None):
 
         """
         Pass the inputs (and mask) through the decoder layer in turn.
@@ -91,7 +91,7 @@ class Decoder(nn.Module):
         intermediate = []
         
         for layer in self.decoder:
-            output = layer(output, memory, positional_embedding_layer, query_embedding, mask)
+            output = layer(output, memory, positional_embedding, query_embedding, target_mask, memory_mask)
 
             if self.return_intermediate:
                 intermediate.append(self.layer_norm(output))
@@ -120,8 +120,8 @@ def build_decoder(args):
                 qkv_bias=args.qkv_bias,  
                 attention_dropout=args.attention_dropout, 
                 projection_dropout=args.projection_dropout, 
-                dropout_1=args.dropout_1, 
-                dropout_2=args.dropout_2, 
+                mlp_dropout_1=args.mlp_dropout_1, 
+                mlp_dropout_2=args.mlp_dropout_2, 
                 pre_norm=args.pre_norm,
                 weight_init=args.weight_init, 
                 weight_load=args.weight_load, 

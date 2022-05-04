@@ -33,7 +33,7 @@ def _get_clones(module, N):
 class UnimodalSparseDVC(nn.Module):
     def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, threshold, max_eseq_length,
                 vocab, seq_len, embedding_matrix, 
-                vivit_args, ast_args, sparse_detr_args, caption_args, use_differentiable_mask=False):
+                sparse_detr_args, caption_args, use_differentiable_mask=False):
         
         """
         UnimodalSparseDVC model
@@ -235,8 +235,6 @@ class UnimodalSparseDVC(nn.Module):
             out["sparse_token_nums"] = sparse_token_nums
 
         out['mask_flatten'] = torch.cat([m.flatten(1) for m in masks], 1)
-
-        outputs_captions = []
     
         # Retrieve the matching between the outputs of the last layer and the targets, has torch.no_grad() in forward call
         # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
@@ -287,6 +285,7 @@ class UnimodalSparseDVC(nn.Module):
             tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
             tgt_mask = tgt_mask.to(captions.device)
 
+            # TODO - add pos embed for memory
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
                 outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)

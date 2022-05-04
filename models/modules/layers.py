@@ -414,7 +414,7 @@ class DecoderLayer(nn.Module):
                        dropout_1=mlp_dropout_1, dropout_2=mlp_dropout_2)
 
     
-    def forward(self, target, memory, positional_embedding_layer, query_embedding, mask):
+    def forward(self, target, memory, positional_embedding, query_embedding, target_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -422,7 +422,7 @@ class DecoderLayer(nn.Module):
         Parameters:
             target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            positional_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding: position embedding for encoder inputs
             query_embedding: event queries
         
         Returns:
@@ -430,12 +430,12 @@ class DecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, positional_embedding_layer, query_embedding, mask) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, memory, positional_embedding, query_embedding, target_mask, memory_mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, positional_embedding_layer, query_embedding, mask) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, memory, positional_embedding, query_embedding, target_mask, memory_mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, positional_embedding_layer, query_embedding, mask):
+    def forward_pre(self, target, memory, positional_embedding, query_embedding, target_mask, memory_mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -443,7 +443,7 @@ class DecoderLayer(nn.Module):
         Parameters:
             target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            positional_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding: position embedding for encoder inputs
             query_embedding: event queries
         
         Returns:
@@ -452,12 +452,12 @@ class DecoderLayer(nn.Module):
 
         target_after_norm = self.layer_norm_1(target) 
         q = k = target_after_norm + query_embedding
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=mask) # (batch_size, num_queries, d_model)
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=target_mask) # (batch_size, num_queries, d_model)
 
         target_after_norm = self.layer_norm_2(target)
         q = target_after_norm + query_embedding
-        k = positional_embedding_layer(memory)
-        target = target + self.cross_attention(q=q, k=k, v=memory) # (batch_size, num_queries, d_model)
+        k = positional_embedding + memory
+        target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
         
         target_after_norm = self.layer_norm_3(target)
         target = target + self.mlp(target_after_norm)
@@ -465,7 +465,7 @@ class DecoderLayer(nn.Module):
         return target
 
 
-    def forward_post(self, target, memory, positional_embedding_layer, query_embedding, mask):
+    def forward_post(self, target, memory, positional_embedding, query_embedding, target_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -473,7 +473,7 @@ class DecoderLayer(nn.Module):
         Parameters:
             target (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory: the sequence from the last layer of the encoder
-            positional_embedding_layer: position embedding layer for encoder inputs
+            positional_embedding: position embedding for encoder inputs
             query_embedding: event queries
         
         Returns:
@@ -481,11 +481,11 @@ class DecoderLayer(nn.Module):
         """
        
         q = k = target + query_embedding
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=mask)) # (batch_size, num_queries, d_model)
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=target_mask)) # (batch_size, num_queries, d_model)
 
         q = target + query_embedding
-        k = positional_embedding_layer(memory)
-        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory)) # (batch_size, num_queries, d_model)
+        k = positional_embedding + memory
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 
         target = target + self.mlp(target)
         target = self.layer_norm_3(target)

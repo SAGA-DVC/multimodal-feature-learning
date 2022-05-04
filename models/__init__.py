@@ -7,6 +7,7 @@ import timm
 from .deformable.unimodal_deformable_dvc import UnimodalDeformableDVC
 from .deformable.multimodal_deformable_dvc import MultimodalDeformableDVC
 from .sparse.unimodal_sparse_dvc import UnimodalSparseDVC
+from .sparse.multimodal_sparse_dvc import MultimodalSparseDVC
 from .regular.dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
@@ -34,7 +35,6 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
         pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
 
     if args.use_deformable_detr:
-        
         if len(args.input_modalities) == 1:
             model = UnimodalDeformableDVC(input_modalities=args.input_modalities,
                         num_queries=args.num_queries,
@@ -46,9 +46,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         max_eseq_length=args.max_eseq_length,
                         vocab=dataset.vocab, 
                         seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix, 
-                        vivit_args=args.vivit, 
-                        ast_args=args.ast, 
+                        embedding_matrix=embedding_matrix,
                         detr_args=args.detr, 
                         caption_args=args.caption,
                         use_differentiable_mask=use_differentiable_mask
@@ -63,15 +61,13 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         threshold=args.threshold,
                         vocab=dataset.vocab,  
                         seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix, 
-                        vivit_args=args.vivit, 
-                        ast_args=args.ast, 
+                        embedding_matrix=embedding_matrix,
                         detr_args=args.detr, 
                         caption_args=args.caption,
                         use_differentiable_mask=use_differentiable_mask
                     )
-    elif args.use_sparse_detr:
 
+    elif args.use_sparse_detr:
         if len(args.input_modalities) == 1:
             model = UnimodalSparseDVC(input_modalities=args.input_modalities,
                         num_queries=args.num_queries,
@@ -83,49 +79,44 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         max_eseq_length=args.max_eseq_length,
                         vocab=dataset.vocab, 
                         seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix, 
-                        vivit_args=args.vivit, 
-                        ast_args=args.ast, 
+                        embedding_matrix=embedding_matrix,
                         sparse_detr_args=args.sparse_detr, 
                         caption_args=args.caption,
                         use_differentiable_mask=use_differentiable_mask
                     )
         else:
-            # model = MultimodalSparseDVC(input_modalities=args.input_modalities,
-            #             num_queries=args.num_queries,
-            #             d_model=args.d_model, 
-            #             num_classes=args.num_classes,
-            #             aux_loss=args.aux_loss,
-            #             matcher=matcher,
-            #             threshold=args.threshold,
-            #             max_eseq_length=args.max_eseq_length,
-            #             vocab=dataset.vocab,  
-            #             seq_len=dataset.max_caption_len_all, 
-            #             embedding_matrix=embedding_matrix, 
-            #             vivit_args=args.vivit, 
-            #             ast_args=args.ast, 
-            #             detr_args=args.detr, 
-            #             caption_args=args.caption,
-            #             use_differentiable_mask=use_differentiable_mask
-            #         )
-            pass
-
-
+            model = MultimodalSparseDVC(input_modalities=args.input_modalities,
+                        num_queries=args.num_queries,
+                        d_model=args.d_model, 
+                        num_classes=args.num_classes,
+                        aux_loss=args.aux_loss,
+                        matcher=matcher,
+                        threshold=args.threshold,
+                        max_eseq_length=args.max_eseq_length,
+                        vocab=dataset.vocab,  
+                        seq_len=dataset.max_caption_len_all, 
+                        embedding_matrix=embedding_matrix,
+                        detr_args=args.detr, 
+                        caption_args=args.caption,
+                        use_differentiable_mask=use_differentiable_mask
+                    )
 
     else :
         
-        model = DVC(num_queries=args.num_queries,
+        model = DVC(input_modalities=args.input_modalities,
+                    num_queries=args.num_queries,
                     d_model=args.d_model, 
                     num_classes=args.num_classes,
                     aux_loss=args.aux_loss,
                     matcher=matcher,
-                    vocab_size=len(dataset.vocab), 
+                    threshold=args.threshold,
+                    max_eseq_length=args.max_eseq_length,
+                    vocab=dataset.vocab, 
                     seq_len=dataset.max_caption_len_all, 
                     embedding_matrix=embedding_matrix, 
-                    vivit_args=args.vivit, 
-                    ast_args=args.ast, 
                     decoder_args=args.decoder,
-                    caption_args=args.caption
+                    caption_args=args.caption,
+                    use_differentiable_mask=use_differentiable_mask
                 )
 
     weight_dict = {'loss_ce': args.cls_loss_coef,

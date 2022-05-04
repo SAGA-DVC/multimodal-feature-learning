@@ -26,7 +26,7 @@ from utils.preds_postprocess import get_src_permutation_idx, denormalize_segment
 class UnimodalDeformableDVC(nn.Module):
     def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, matcher, threshold, max_eseq_length,
                 vocab, seq_len, embedding_matrix, 
-                vivit_args, ast_args, detr_args, caption_args, use_differentiable_mask=False):
+                detr_args, caption_args, use_differentiable_mask=False):
         
         """
         UnimodalDeformableDVC model

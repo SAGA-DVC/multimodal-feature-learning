@@ -12,7 +12,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
+    cfg.device = 'cuda:0'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 3
     cfg.num_workers = 1
@@ -25,7 +25,7 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 9    # used for val loops and submission json files
+    cfg.eval_rate = 5    # used for val loops and submission json files
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
@@ -88,7 +88,7 @@ def load_config():
     data_rescale = ['interpolate', 'uniform']    # do not use uniform for now - TODO - determine rescale length
     cfg.dataset.activity_net.data_rescale = data_rescale[0]
     cfg.dataset.activity_net.video_feature_sample_rate = 2
-    cfg.dataset.activity_net.video_rescale_len = 400    # Switch DVC - avg len in train is 220
+    cfg.dataset.activity_net.video_rescale_len = 300    # Switch DVC - avg len in train is 220
     cfg.dataset.activity_net.audio_feature_sample_rate = 2
     cfg.dataset.activity_net.audio_rescale_len = 50    # Switch DVC
 
@@ -126,7 +126,7 @@ def load_config():
     cfg.dvc.lloss_gau_mask = 1
     cfg.dvc.lloss_beta = 1.0
 
-    cfg.dvc.use_sparse_detr = True    # Switch DVC
+    cfg.dvc.use_sparse_detr = False    # Switch DVC
     cfg.dvc.use_deformable_detr = False    # Switch DVC
 
     cfg.dvc.smoothing = 0.5
@@ -255,6 +255,34 @@ def load_config():
     cfg.dvc.caption.embedding_matrix_file_path = 'embedding_matrix.pkl'
 
 
+    # Decoder
+    cfg.dvc.decoder = ml_collections.ConfigDict()
+
+    cfg.dvc.decoder.d_model = cfg.dvc.d_model
+
+    cfg.dvc.decoder.depth = 6
+
+    cfg.dvc.decoder.num_heads = 8
+    cfg.dvc.decoder.mlp_ratio = 4
+    cfg.dvc.decoder.qkv_bias = True
+
+    cfg.dvc.decoder.positional_embedding_dropout = 0.1
+    cfg.dvc.decoder.attention_dropout = 0.1
+    cfg.dvc.decoder.projection_dropout = 0.1
+    cfg.dvc.decoder.mlp_dropout_1 = 0.1
+    cfg.dvc.decoder.mlp_dropout_2 = 0.1
+
+    cfg.dvc.decoder.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
+
+    cfg.dvc.decoder.pre_norm = False
+
+    cfg.dvc.decoder.model_official = None
+    cfg.dvc.decoder.weight_init = True
+    cfg.dvc.decoder.weight_load = False
+
+    cfg.dvc.decoder.return_intermediate = True
+
+
     # ViViT
     cfg.dvc.vivit = ml_collections.ConfigDict()
 
@@ -317,31 +345,6 @@ def load_config():
     
     cfg.dvc.ast.return_preclassifier = True  # Set True for Feature extraction
     cfg.dvc.ast.return_prelogits = False  # Set True for TSP & GVF extraction
-
-    # Decoder
-    cfg.dvc.decoder = ml_collections.ConfigDict()
-
-    cfg.dvc.decoder.d_model = cfg.dvc.d_model
-
-    cfg.dvc.decoder.depth = 2
-
-    cfg.dvc.decoder.num_heads = 8
-    cfg.dvc.decoder.mlp_ratio = 4
-    cfg.dvc.decoder.qkv_bias = True
-
-    cfg.dvc.decoder.positional_embedding_dropout = 0.1
-    cfg.dvc.decoder.attention_dropout = 0.1
-    cfg.dvc.decoder.projection_dropout = 0.1
-    cfg.dvc.decoder.mlp_dropout_1 = 0.1
-    cfg.dvc.decoder.mlp_dropout_2 = 0.1
-
-    cfg.dvc.decoder.pre_norm = True
-
-    cfg.dvc.decoder.model_official = None
-    cfg.dvc.decoder.weight_init = True
-    cfg.dvc.decoder.weight_load = False
-
-    cfg.dvc.decoder.return_intermediate = False
 
     
     #-------------------------------------------------------------------------------------------------
