@@ -17,7 +17,7 @@ def load_config():
     cfg.batch_size = 16
     cfg.num_workers = 1
 
-    cfg.print_freq = 1
+    cfg.print_freq = 10
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
