@@ -521,9 +521,8 @@ class SetCriterion(nn.Module):
                         # there are no captions in encoder loss
                         continue
                     l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
-                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
+                    l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
-
 
         return losses
 

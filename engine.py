@@ -287,7 +287,7 @@ def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx, substring_list):
         "loss": loss,
     }
     for key, value in loss_dict.items():
-        if all(substring not in key for substring in substring_list):    # don't log aux loss in charts
+        if all(substring not in key for substring in substring_list) or 'Bleu' in name:    # don't log aux loss in charts
             if isinstance(value, float):
                 log[key] = value
             else:

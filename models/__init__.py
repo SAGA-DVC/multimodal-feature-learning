@@ -134,11 +134,25 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
         weight_dict['loss_context'] = args.context_loss_coef
 
     # TODO this is a hack
-    if args.aux_loss:
-        aux_weight_dict = {}
-        for i in range(args.detr.dec_layers - 1):
-            aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
-        weight_dict.update(aux_weight_dict)
+    if args.use_sparse_detr:
+        if args.aux_loss:
+            aux_weight_dict = {}
+            for i in range(args.sparse_detr.dec_layers - 1):
+                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
+            weight_dict.update(aux_weight_dict)
+        
+        if args.sparse_detr.use_enc_aux_loss:
+            enc_aux_weight_dict = {}
+            for i in range(args.sparse_detr.enc_layers - 2):
+                enc_aux_weight_dict.update({k + f'_enc_{i}': v for k, v in weight_dict.items()})
+            weight_dict.update(enc_aux_weight_dict)
+    
+    elif args.use_deformable_detr:
+        if args.aux_loss:
+            aux_weight_dict = {}
+            for i in range(args.detr.dec_layers - 1):
+                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
+            weight_dict.update(aux_weight_dict)
 
 
     criterion = SetCriterion(len(args.input_modalities) == 2, num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,

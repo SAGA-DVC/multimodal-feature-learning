@@ -15,7 +15,7 @@ def load_config():
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 16
-    cfg.num_workers = 1
+    cfg.num_workers = 4
 
     cfg.print_freq = 10
 

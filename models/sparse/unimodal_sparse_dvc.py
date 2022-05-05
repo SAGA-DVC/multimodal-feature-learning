@@ -378,7 +378,6 @@ class UnimodalSparseDVC(nn.Module):
                 return out, captions_with_eos, indices, indices_aux, None
             
 
-
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, outputs_caption=None):
         if outputs_caption is None:
