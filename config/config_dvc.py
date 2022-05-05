@@ -12,9 +12,9 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda:0'    # change to 'cuda' when using distributed training
+    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 3
+    cfg.batch_size = 16
     cfg.num_workers = 1
 
     cfg.print_freq = 1
@@ -27,15 +27,15 @@ def load_config():
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
         
-    # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp'
+    cfg.output_dir = 'output'
+    # cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
     # cfg.resume = 'output/checkpoint.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 5
+    cfg.epochs = 50
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -58,10 +58,10 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = False
+    cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with R(2+1)D feats with aux_loss and no loop"
+    cfg.wandb.notes = "Sparse DETR with 512-dimensional ViViT feats with aux_loss and no loop"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -74,11 +74,14 @@ def load_config():
 
     cfg.dataset.activity_net.anet_path = './anet_data'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
+
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-epoch-1'
+
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
-    cfg.dataset.activity_net.for_testing = True    # for testing only
+    cfg.dataset.activity_net.for_testing = False    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -126,7 +129,7 @@ def load_config():
     cfg.dvc.lloss_gau_mask = 1
     cfg.dvc.lloss_beta = 1.0
 
-    cfg.dvc.use_sparse_detr = False    # Switch DVC
+    cfg.dvc.use_sparse_detr = True    # Switch DVC
     cfg.dvc.use_deformable_detr = False    # Switch DVC
 
     cfg.dvc.smoothing = 0.5
