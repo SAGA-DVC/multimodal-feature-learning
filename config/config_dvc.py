@@ -32,11 +32,11 @@ def load_config():
     # cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output/checkpoint.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output/checkpoint.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 100
+    cfg.epochs = 50
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -59,7 +59,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Sparse DETR with 512-dimensional ViViT feats with aux_loss and no loop"
@@ -82,7 +82,7 @@ def load_config():
 
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
-    cfg.dataset.activity_net.for_testing = False    # for testing only
+    cfg.dataset.activity_net.for_testing = True    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -230,7 +230,7 @@ def load_config():
 
     cfg.dvc.caption.d_model = cfg.dvc.d_model
 
-    cfg.dvc.caption.depth = 6
+    cfg.dvc.caption.depth = 12
 
     cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4
