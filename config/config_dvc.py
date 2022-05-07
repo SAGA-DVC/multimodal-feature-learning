@@ -59,10 +59,10 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = False
+    cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with 512-dimensional ViViT feats with aux_loss and no loop"
+    cfg.wandb.notes = "Sparse DETR with 512-dimensional ViViT feats with aux_loss and no loop and caption decoder depth 12"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -82,7 +82,7 @@ def load_config():
 
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
-    cfg.dataset.activity_net.for_testing = True    # for testing only
+    cfg.dataset.activity_net.for_testing = False    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
