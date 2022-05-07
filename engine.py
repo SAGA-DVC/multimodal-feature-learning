@@ -198,7 +198,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=True)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -287,7 +287,7 @@ def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx, substring_list):
         "loss": loss,
     }
     for key, value in loss_dict.items():
-        if all(substring not in key for substring in substring_list) or 'Bleu' in name:    # don't log aux loss in charts
+        if all(substring not in key for substring in substring_list) or 'Bleu' in key:    # don't log aux loss in charts
             if isinstance(value, float):
                 log[key] = value
             else:

@@ -339,11 +339,15 @@ class UnimodalSparseDVC(nn.Module):
                 out['pred_captions'] = outputs_caption_val[-1]
 
                 outputs_caption_last_layer = torch.argmax(outputs_caption_val[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
-
+                # print('----------------------', captions[0])
+                # print('----------', outputs_caption_last_layer[0])
+                # print('--------', captions_padding_mask[0])
                 # Update predicted word in captions
                 if faster_eval:
                     captions[:, word_index] = outputs_caption_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
-
+                    # print('------------wdewf', word_index, outputs_caption_last_layer[0, word_index].item())
+                    # print('------------', outputs_caption_last_layer[0])
+                    # print('------------', captions[0, word_index])
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:

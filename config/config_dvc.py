@@ -15,7 +15,7 @@ def load_config():
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 16
-    cfg.num_workers = 4
+    cfg.num_workers = 1
 
     cfg.print_freq = 10
 
@@ -26,16 +26,17 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
+    cfg.only_eval = False
         
     cfg.output_dir = 'output'
     # cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output/checkpoint.pth'
-    cfg.resume = None
+    cfg.resume = 'output/checkpoint.pth'
+    # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 50
+    cfg.epochs = 100
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True

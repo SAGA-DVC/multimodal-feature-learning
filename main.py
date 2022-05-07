@@ -109,67 +109,77 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
-    print(f"Start training from epoch {args.start_epoch}")
-    start_time = time.time()
-    for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed.is_distributed:
-            sampler_train.set_epoch(epoch)
+    if not args.only_eval:
+        print(f"Start training from epoch {args.start_epoch}")
+        start_time = time.time()
+        for epoch in range(args.start_epoch, args.epochs):
+            if args.distributed.is_distributed:
+                sampler_train.set_epoch(epoch)
 
-        train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
-        
-        lr_scheduler.step()
-
-        if args.output_dir:
-            checkpoint_paths = [output_dir / 'checkpoint.pth']
-            # extra checkpoint before LR drop and every 100 epochs
-            if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_rate == 0:
-                checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
-            for checkpoint_path in checkpoint_paths:
-                save_on_master({
-                    'model': model_without_ddp.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'lr_scheduler': lr_scheduler.state_dict(),
-                    'epoch': epoch,
-                    'args': args,
-                }, checkpoint_path)
-
-                if args.wandb.on and is_main_process():
-                    # versioning on wandb
-                    artifact = wandb.Artifact("dvc-v2-bs-16", type="model", description="Unimodal-DVC v2 batch size 16 checkpoint")
-                    artifact.add_file(checkpoint_path)
-                    wandb.log_artifact(artifact)
-
-
-        # Validation
-        val_stats = {}
-        if (epoch + 1) % args.eval_rate == 0:
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
-
-
-        # TODO: log encoder stats?
-        train_log_stats = {'epoch': epoch,
-                            **{f'train_{k}': v for k, v in train_stats.items()},
-                            'n_parameters': n_parameters}
-
-        val_log_stats = {'epoch': epoch,
-                        **{f'val_{k}': v for k, v in val_stats.items()}}
-                        
-
-        if args.output_dir and is_main_process():
-            with (output_dir / "train_log.txt").open("a") as f:
-                f.write(json.dumps(train_log_stats) + "\n")
+            train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
             
-            with (output_dir / "val_log.txt").open("a") as f:
-                f.write(json.dumps(val_log_stats) + "\n")
+            lr_scheduler.step()
 
-            if args.wandb.on:
-                wandb.save(os.path.join(output_dir, "train_log.txt"))
-                wandb.save(os.path.join(output_dir, "val_log.txt"))
+            if args.output_dir:
+                checkpoint_paths = [output_dir / 'checkpoint.pth']
+                # extra checkpoint before LR drop and every 100 epochs
+                if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_rate == 0:
+                    checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
+                for checkpoint_path in checkpoint_paths:
+                    save_on_master({
+                        'model': model_without_ddp.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'lr_scheduler': lr_scheduler.state_dict(),
+                        'epoch': epoch,
+                        'args': args,
+                    }, checkpoint_path)
+
+                    if args.wandb.on and is_main_process():
+                        # versioning on wandb
+                        artifact = wandb.Artifact("dvc-v2-bs-16", type="model", description="Unimodal-DVC v2 batch size 16 checkpoint")
+                        artifact.add_file(checkpoint_path)
+                        wandb.log_artifact(artifact)
 
 
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f"Total training time for {args.epochs - args.start_epoch} epochs:", total_time_str)
+            # Validation
+            val_stats = {}
+            if (epoch + 1) % args.eval_rate == 0:
+                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+
+
+            # TODO: log encoder stats?
+            train_log_stats = {'epoch': epoch,
+                                **{f'train_{k}': v for k, v in train_stats.items()},
+                                'n_parameters': n_parameters}
+
+            val_log_stats = {'epoch': epoch,
+                            **{f'val_{k}': v for k, v in val_stats.items()}}
+                            
+
+            if args.output_dir and is_main_process():
+                with (output_dir / "train_log.txt").open("a") as f:
+                    f.write(json.dumps(train_log_stats) + "\n")
+                
+                with (output_dir / "val_log.txt").open("a") as f:
+                    f.write(json.dumps(val_log_stats) + "\n")
+
+                if args.wandb.on:
+                    wandb.save(os.path.join(output_dir, "train_log.txt"))
+                    wandb.save(os.path.join(output_dir, "val_log.txt"))
+
+
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Total training time for {args.epochs - args.start_epoch} epochs:", total_time_str)
+    
+    else:
+        print(f"Start eval from epoch {args.start_epoch}")
+        start_time = time.time()
+        for epoch in range(args.start_epoch, args.epochs):
+            if args.distributed.is_distributed:
+                sampler_train.set_epoch(epoch)
+
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
 
     
 
