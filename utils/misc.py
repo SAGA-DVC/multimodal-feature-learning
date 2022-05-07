@@ -121,7 +121,7 @@ class MetricLogger(object):
 
     def __str__(self):
         loss_str = []
-        substring_list = [str(i) for i in range(5)]
+        substring_list = [str(i) for i in range(12)]
         for name, meter in self.meters.items():
             if all(substring not in name for substring in substring_list) or 'Bleu' in name:
                 loss_str.append(

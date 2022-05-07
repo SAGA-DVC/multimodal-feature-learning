@@ -138,13 +138,22 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
         if args.aux_loss:
             aux_weight_dict = {}
             for i in range(args.sparse_detr.dec_layers - 1):
-                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
-            weight_dict.update(aux_weight_dict)
+                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items() if k != 'loss_caption'})
+
+            caption_aux_weight_dict = {}
+            for i in range(args.caption.depth - 1):
+                caption_aux_weight_dict.update({'loss_caption' + f'_{i}': weight_dict['loss_caption']})
         
         if args.sparse_detr.use_enc_aux_loss:
             enc_aux_weight_dict = {}
-            for i in range(args.sparse_detr.enc_layers - 2):
+            for i in range(args.sparse_detr.enc_layers - 1):
                 enc_aux_weight_dict.update({k + f'_enc_{i}': v for k, v in weight_dict.items()})
+
+        if args.aux_loss:
+            weight_dict.update(aux_weight_dict)
+            weight_dict.update(caption_aux_weight_dict)
+        
+        if args.sparse_detr.use_enc_aux_loss:
             weight_dict.update(enc_aux_weight_dict)
     
     elif args.use_deformable_detr:

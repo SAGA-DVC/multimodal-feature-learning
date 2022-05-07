@@ -250,7 +250,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         if wandb_log and is_main_process():
             loss_dict_reduced_scaled.update(avg_scores)
-            substring_list = [str(i) for i in range(args.dvc.detr.dec_layers - 1)]
+            substring_list = [str(i) for i in range(12)]
             wandb_log_metrics(
                 phase="val",
                 loss=loss_value,

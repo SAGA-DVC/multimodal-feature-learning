@@ -495,7 +495,8 @@ class SetCriterion(nn.Module):
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
                 # index_aux = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
-                    if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                    if loss == 'captions' or loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                        # captions are computed in another loop
                         # Intermediate masks losses are too costly to compute, we ignore them.
                         continue
                     kwargs = {}
@@ -505,6 +506,14 @@ class SetCriterion(nn.Module):
                     l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
+        
+        if 'aux_outputs_caption' in outputs:
+            for i, aux_outputs_caption in enumerate(outputs['aux_outputs_caption']):
+                if 'captions' in self.losses:
+                    l_dict = self.get_loss('captions', aux_outputs_caption, targets, None, None, num_tokens_without_pad, None, **kwargs)
+                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
+                    losses.update(l_dict)
+
         
         if 'aux_outputs_enc' in outputs:
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):

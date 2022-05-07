@@ -200,7 +200,7 @@ class UnimodalSparseDVC(nn.Module):
         assert init_reference is not None and inter_references is not None
         reference = inter_references
         reference[0] = init_reference
-        reference[1:] = inter_references[:-1].clone()    # TODO - error if removed
+        reference[1:] = inter_references[:-1].clone()    # TODO - clone() - error if removed
         
         reference = inverse_sigmoid(reference)
         if reference.shape[-1] == 2:
@@ -229,7 +229,7 @@ class UnimodalSparseDVC(nn.Module):
             out["backbone_mask_prediction"] = backbone_mask_prediction
 
         if self.use_enc_aux_loss:
-            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count)
+            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
         
         if self.rho:
             out["sparse_token_nums"] = sparse_token_nums
@@ -286,7 +286,7 @@ class UnimodalSparseDVC(nn.Module):
             tgt_mask = tgt_mask.to(captions.device)
 
             # TODO - add pos embed for memory
-            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (caption_decoder_depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
                 outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
             else:
@@ -298,9 +298,11 @@ class UnimodalSparseDVC(nn.Module):
             
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption)
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+                
+                out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption)    # caption depth could be different
 
             if self.use_differentiable_mask:
                 return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
@@ -372,9 +374,11 @@ class UnimodalSparseDVC(nn.Module):
             # TODO - check use in eval
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption_val)
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+                
+                out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption_val)
 
             if self.use_differentiable_mask:
                 return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
@@ -383,14 +387,19 @@ class UnimodalSparseDVC(nn.Module):
             
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, outputs_caption=None):
-        if outputs_caption is None:
+    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, is_enc_aux=False):
+        if is_enc_aux:
             return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
                 for a, b, c in zip(outputs_class, outputs_segment, outputs_count)]
-
+        
         else:
-            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c, 'pred_captions': d}
-                    for a, b, c, d in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1], outputs_caption[:-1])]
+            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
+                for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1])]
+    
+
+    @torch.jit.unused
+    def _set_aux_loss_caption(self, outputs_caption):
+        return [{'pred_captions': a} for a in outputs_caption[:-1]]
 
 
     def make_tgt_mask(self, target, tgt_padding_mask):
