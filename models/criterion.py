@@ -123,7 +123,7 @@ class SetCriterion(nn.Module):
         
         # losses = {'loss_ce': loss_ce}
 
-        losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py)
+        losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
 
         # used in pdvc (event counter)
         pred_count = outputs['pred_count']
