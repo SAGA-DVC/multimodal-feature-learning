@@ -87,27 +87,28 @@ class SetCriterion(nn.Module):
         """
         
         assert 'pred_logits' in outputs, "Outputs does not have the key 'pred_logits'."
+        assert 'pred_count' in outputs, "Outputs does not have the key 'pred_count'."
 
         src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
 
-        # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
-        # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
-        # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
-        idx = self._get_src_permutation_idx(indices) 
+        # # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
+        # # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
+        # # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
+        # idx = self._get_src_permutation_idx(indices) 
 
-        # tensor (nb_target_segments) contains class labels
-        # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
+        # # tensor (nb_target_segments) contains class labels
+        # # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
+        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
 
-        # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
+        # # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
+        # target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
         
-        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
-        target_classes[idx] = target_classes_o
+        # # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
+        # target_classes[idx] = target_classes_o
 
-        # used in detr
-        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {'loss_ce': loss_ce}
+        # # used in detr
+        # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+        # losses = {'loss_ce': loss_ce}
 
         # used in pdvc
         # # (batch_size, num_queries, num_classes + 1)
@@ -122,6 +123,8 @@ class SetCriterion(nn.Module):
         
         # losses = {'loss_ce': loss_ce}
 
+        losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py)
+
         # used in pdvc (event counter)
         pred_count = outputs['pred_count']
         max_length = pred_count.shape[1] - 1
@@ -134,11 +137,11 @@ class SetCriterion(nn.Module):
         counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, weight, self.lloss_gau_mask, self.lloss_beta)
         losses['loss_counter'] = counter_loss
 
-        if log:
-            # TODO this should probably be a separate loss, not hacked in this one here
-            # only takes top-1 accuracy for now
-            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+        # if log:
+        #     # TODO this should probably be a separate loss, not hacked in this one here
+        #     # only takes top-1 accuracy for now
+        #     # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+        #     losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
         
         return losses
 
