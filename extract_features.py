@@ -60,6 +60,10 @@ def main(cfg):
 
     device = torch.device(cfg.device)
 
+    print(f"Using metadata CSV: {cfg.metadata_csv_filename}")
+    print(f"Reading videos from: {cfg.data_dir}/{cfg.subdir}")
+    print(f"Saving features to: {cfg.output_dir}")
+
     os.makedirs(cfg.output_dir, exist_ok=True)
 
     # Video Transforms
@@ -82,7 +86,7 @@ def main(cfg):
     # Start and end idxs for current process
     start_idx, end_idx = shards[cfg.shard_id], shards[cfg.shard_id+1]
     print(f'shard: {cfg.shard_id + 1} of {cfg.num_shards}, (ID: {cfg.shard_id}) '
-        f'total number of videos: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
+        f'Total number of videos in CSV: {len(metadata_df)}, shard size {end_idx-start_idx} videos')
 
     # Keep current process' shard only
     metadata_df = metadata_df.iloc[start_idx:end_idx].reset_index()

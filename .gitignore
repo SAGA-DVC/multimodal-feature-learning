@@ -8,6 +8,7 @@ wandb
 tsp-output
 *-output*
 tsp-features*
+checkpoints
 
 # Don't ignore GVF
 !tsp/dataset/val-gvf.h5
