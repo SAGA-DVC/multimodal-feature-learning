@@ -94,7 +94,8 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         metric_logger.meters['clips/s'].update(
             list(clip.values())[0].shape[0] / (time.time() - start_time))
         
-    lr_scheduler.step(metric_logger.meters['loss'].global_avg)
+    if lr_scheduler:
+        lr_scheduler.step(metric_logger.meters['loss'].global_avg)
 
 
 def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir, wandb_log):
@@ -178,7 +179,7 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
 
     if optimizer:
         for g in optimizer.param_groups:
-            log[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
+            log[f"{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
 
     if wandb_log and utils.is_main_process():
         log_dict = {

@@ -315,29 +315,12 @@ def main(cfg):
     ]
 
     # Optimizer
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.Adam(
         params,
-        momentum=cfg.momentum,
-        weight_decay=cfg.weight_decay
     )
 
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1)
-    # Scheduler per iteration, not per epoch for warmup that lasts between epochs
-    # warmup_iters = cfg.lr_warmup_epochs * len(train_dataloader)
-    # lr_milestones = [len(train_dataloader) * m for m in cfg.lr_milestones]
-
-
-    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, cfg.lr_drop, cfg.lr_gamma)
-
-
-    # lr_scheduler = WarmupMultiStepLR(
-    #     optimizer,
-    #     milestones=lr_milestones,
-    #     gamma=cfg.lr_gamma,
-    #     warmup_iters=warmup_iters,
-    #     warmup_factor=cfg.lr_warmup_factor
-    # )
-
+    # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1)
+    lr_scheduler = None
 
     model_without_ddp = tsp_model
     if cfg.distributed.on:
@@ -345,10 +328,10 @@ def main(cfg):
             tsp_model, device_ids=[cfg.distributed.rank], find_unused_parameters=True)
         model_without_ddp = tsp_model.module
 
-    # if cfg.wandb.on:
-        # wandb.watch(model_without_ddp, log_freq=1, log='all')
-        # for (i, backbone) in enumerate(cfg.tsp.backbones):
-        #     wandb.watch(model_without_ddp.backbones[i], log_freq=1, log='all')
+    if utils.is_main_process() and cfg.wandb.on:
+        wandb.watch(model_without_ddp, log_freq=100, log='all')
+        for (i, backbone) in enumerate(cfg.tsp.backbones):
+            wandb.watch(model_without_ddp.backbones[i], log_freq=100, log='all')
 
     if cfg.resume:
         print(f'Resuming from checkpoint {cfg.resume}')
