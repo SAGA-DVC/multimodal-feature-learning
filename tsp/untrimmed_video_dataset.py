@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import torch
 import h5py
+from sklearn.utils import shuffle
 
 from torch.utils.data import Dataset
 from torchvision.io import read_video
@@ -60,8 +61,8 @@ class UntrimmedVideoDataset(Dataset):
         UntrimmedVideoDataset._check_files_exist(self.df)
 
         
-        # self.df = UntrimmedVideoDataset._append_root_dir_to_filenames_and_check_files_exist(df, root_dir)
-
+        self.df = shuffle(self.df, random_state=42).reset_index(drop=True)
+        
         self.clip_length = clip_length
         self.frame_rate = frame_rate
         self.clips_per_segment = clips_per_segment
@@ -93,7 +94,7 @@ class UntrimmedVideoDataset(Dataset):
 
     def __len__(self):
         num_clips = len(self.df) * self.clips_per_segment
-        return num_clips if not self.debug else min(num_clips, 300)
+        return num_clips if not self.debug else min(num_clips, 30)
 
     def __getitem__(self, idx):
         sample = {}

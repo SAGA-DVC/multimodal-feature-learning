@@ -129,7 +129,7 @@ def load_config():
 
     cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
     cfg.tsp.fc_lr = 0.0001
-    cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
+    cfg.tsp.loss_alphas = [1.0, 2.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
 
@@ -140,29 +140,29 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = '/home/arnavshah/tsp/tsp-output-vivit-nogvf-512'  # Path for saving checkpoints and results output
+    cfg.output_dir = 'tsp-output-tspv129-val'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
     cfg.batch_size = 8  # Batch size per GPU
-    cfg.val_batch_size = 16  # Batch size per GPU
+    cfg.val_batch_size = 32  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     cfg.momentum = 0.9
     cfg.weight_decay = 0.005
-    cfg.lr_drop = 200
-    cfg.lr_gamma = 0.1
+    # cfg.lr_drop = 200
+    # cfg.lr_gamma = 0.1
 
     # cfg.lr_warmup_epochs = 0 # Number of warmup epochs
     # cfg.lr_milestones = [4, 6]  # Decrease lr on milestone epoch
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    # cfg.resume = "/home/arnavshah/tsp/temp/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
-    cfg.resume = None
+    cfg.resume = "/home/arnavshah/tsp/checkpoints/tspv129.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    # cfg.resume = None
     cfg.start_epoch = 0  # not used when resume is specified
 
-    cfg.valid_only = False  # Test the model on the validation subset and exit
+    cfg.valid_only = True  # Test the model on the validation subset and exit
 
     cfg.print_freq = 100  # Print frequency in number of batches
 
@@ -170,8 +170,8 @@ def load_config():
     if cfg.debug:
         # Set debug cfg here, e.g. number of samples, batch size
         cfg.epochs = 3
-        cfg.batch_size=8
-        cfg.print_freq = 5
+        cfg.batch_size=2
+        cfg.print_freq = 1
 
     #-------------------------------------------------------------------------------------------------
     # Distributed Processing 
@@ -192,9 +192,9 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = True 
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "VIVIT 512 | Without GVF"
+    cfg.wandb.notes = "TSPv129 validation"
 
     return cfg

@@ -8,8 +8,8 @@ def load_config():
     cfg.dataset = ConfigDict()
     cfg.dataset.unavailable_videos = 'tsp/dataset/unavailable-videos.json'
 
-    cfg.metadata_csv_filename = "tsp/dataset/train-metadata.csv"
-    # cfg.metadata_csv_filename = "tsp/dataset/val-metadata.csv"
+    # cfg.metadata_csv_filename = "tsp/dataset/train-metadata.csv"
+    cfg.metadata_csv_filename = "tsp/dataset/val-metadata.csv"
     # cfg.metadata_csv_filename = "tsp/dataset/test-metadata.csv"
     
     #-------------------------------------------------------------------------------------------------
@@ -112,8 +112,8 @@ def load_config():
     cfg.tsp = ConfigDict()
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video', 'audio']
-    cfg.tsp.backbones = ['vivit', 'ast']
+    cfg.tsp.modalities = ['video']
+    cfg.tsp.backbones = ['vivit']
 
     #-------------------------------------------------------------------------------------------------
 
@@ -122,8 +122,8 @@ def load_config():
     # cfg.device = 'cpu'
 
     cfg.data_dir = '/home/arnavshah/activity-net/30fps_splits'  # Path to root directory containing the videos files
-    cfg.subdir = 'train'
-    cfg.output_dir = '/home/arnavshah/tsp/temp'  # Path for saving checkpoints and results output
+    cfg.subdir = 'val'
+    cfg.output_dir = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133/val'  # Path for storing features (subdirectories will be created)
 
     cfg.batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
@@ -133,7 +133,7 @@ def load_config():
     cfg.shard_id = 3
     # cfg.r2plus1d_34_weights = '/home/arnavshah/pretrained-weights/r2plus1d_34_max_gvf_anet.pth'
 
-    cfg.local_checkpoint = None
-    # cfg.local_checkpoint = "/home/arnavshah/tsp/temp/epoch_0.pth"
+    # cfg.local_checkpoint = None
+    cfg.local_checkpoint = "/home/arnavshah/tsp/checkpoints/tspv133.pth"
 
     return cfg

@@ -11,13 +11,13 @@ from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from utils import plots
 
 
-def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log, output_dir):
+def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log, output_dir):
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter=' ')
-    # for g in optimizer.param_groups:
-    #     metric_logger.add_meter(
-    #         f'{g["name"]}-lr', utils.SmoothedValue(window_size=1, fmt='{value:.2e}'))
+    for g in optimizer.param_groups:
+        metric_logger.add_meter(
+            f'{g["name"]}-lr', utils.SmoothedValue(window_size=1, fmt='{value:.2e}'))
     metric_logger.add_meter(
         'clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.2f}'))
     header = f'Train Epoch {epoch}:'
@@ -45,23 +45,33 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
 
         # compute losses for each label column
         head_losses, loss = [], 0
+
         for output, target, alpha in zip(outputs, targets, loss_alphas):
+            is_loss_na = False
             head_loss = criterion(output, target)
+            if np.isnan(head_loss.item()):
+                is_loss_na = True
             head_losses.append(head_loss)
+            
+            if is_loss_na:
+                continue
             loss += alpha * head_loss
 
         # backprop
         optimizer.zero_grad()
         loss.backward()
 
-        if utils.is_main_process() and batch_idx % print_freq == 0:
-            if utils.is_dist_avail_and_initialized():
-                module = model.module
-            else:
-                module = model
-            plots.plot_grad_flow_bar(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir, wandb_log=wandb_log)
-            for (modality, backbone) in zip(module.input_modalities, module.backbones):
-                plots.plot_grad_flow_bar(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir, wandb_log=wandb_log)
+        try:
+            if utils.is_main_process() and batch_idx % print_freq == 0:
+                if utils.is_dist_avail_and_initialized():
+                    module = model.module
+                else:
+                    module = model
+                plots.plot_grad_flow_bar(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir, wandb_log=wandb_log)
+                for (modality, backbone) in zip(module.input_modalities, module.backbones):
+                    plots.plot_grad_flow_bar(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir, wandb_log=wandb_log)
+        except ValueError:
+            pass
 
         optimizer.step()
 
@@ -79,12 +89,12 @@ def epoch_loop(model: TSPModel, criterion, optimizer, dataloader, device, epoch,
             wandb_log=wandb_log
         )
 
-        # for g in optimizer.param_groups:
-        #     metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
+        for g in optimizer.param_groups:
+            metric_logger.meters[f'{g["name"]}-lr'].update(g['lr'])
         metric_logger.meters['clips/s'].update(
             list(clip.values())[0].shape[0] / (time.time() - start_time))
-
-    # lr_scheduler.step()
+        
+    lr_scheduler.step(metric_logger.meters['loss'].global_avg)
 
 
 def evaluate(model: TSPModel, criterion, dataloader, device, epoch, print_freq, label_columns, loss_alphas, output_dir, wandb_log):
@@ -163,7 +173,12 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
                 head_acc.item(), n=head_num_samples)
 
         log[f"loss-{label_column}"] = head_loss.item()
-        metric_logger.meters[f'loss-{label_column}'].update(head_loss.item())
+        if not np.isnan(head_loss.item()):
+            metric_logger.meters[f'loss-{label_column}'].update(head_loss.item())
+
+    if optimizer:
+        for g in optimizer.param_groups:
+            log[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
 
     if wandb_log and utils.is_main_process():
         log_dict = {
@@ -171,9 +186,6 @@ def compute_and_log_metrics(metric_logger, phase, loss, outputs, targets, head_l
             for key, value in log.items()
             if not np.isnan(value)
         }
-        # if optimizer:
-        #     for g in optimizer.param_groups:
-        #         log_dict[f"{phase}/{g['name']}-lr"] = getattr(metric_logger, f"{g['name']}-lr").global_avg
 
         wandb.log(log_dict)
     pprint(log)

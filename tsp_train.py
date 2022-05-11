@@ -321,6 +321,7 @@ def main(cfg):
         weight_decay=cfg.weight_decay
     )
 
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1)
     # Scheduler per iteration, not per epoch for warmup that lasts between epochs
     # warmup_iters = cfg.lr_warmup_epochs * len(train_dataloader)
     # lr_milestones = [len(train_dataloader) * m for m in cfg.lr_milestones]
@@ -341,7 +342,7 @@ def main(cfg):
     model_without_ddp = tsp_model
     if cfg.distributed.on:
         tsp_model = torch.nn.parallel.DistributedDataParallel(
-            tsp_model, device_ids=[cfg.distributed.rank])
+            tsp_model, device_ids=[cfg.distributed.rank], find_unused_parameters=True)
         model_without_ddp = tsp_model.module
 
     # if cfg.wandb.on:
@@ -359,7 +360,7 @@ def main(cfg):
             print(f"Loaded {backbone} weights from checkpoint")
 
         optimizer.load_state_dict(checkpoint['optimizer'])
-        # lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         cfg.start_epoch = checkpoint['epoch'] + 1
 
     print("Start epoch: ", cfg.start_epoch)
@@ -395,7 +396,7 @@ def main(cfg):
             model=tsp_model,
             criterion=criterion,
             optimizer=optimizer,
-            # lr_scheduler=lr_scheduler,
+            lr_scheduler=lr_scheduler,
             dataloader=train_dataloader,
             device=device,
             epoch=epoch,
@@ -412,7 +413,7 @@ def main(cfg):
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                # 'lr_scheduler': lr_scheduler.state_dict(),
+                'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'cfg': cfg
             }
@@ -445,7 +446,7 @@ def main(cfg):
             break
         else:
             # Validation
-          evaluate(
+            evaluate(
                 model=tsp_model,
                 criterion=criterion,
                 dataloader=valid_dataloader,
