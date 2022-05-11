@@ -343,7 +343,8 @@ def main(cfg):
             print(f"Loaded {backbone} weights from checkpoint")
 
         optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        if lr_scheduler:
+            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         cfg.start_epoch = checkpoint['epoch'] + 1
 
     print("Start epoch: ", cfg.start_epoch)
@@ -396,10 +397,11 @@ def main(cfg):
             checkpoint = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'cfg': cfg
             }
+            if lr_scheduler:
+                checkpoint['lr_scheduler'] = lr_scheduler.state_dict()
 
             for (key, backbone) in zip(cfg.tsp.backbones, model_without_ddp.backbones):
                 checkpoint[key] = backbone.state_dict()
