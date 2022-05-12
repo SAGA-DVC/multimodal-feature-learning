@@ -15,6 +15,7 @@ import torch.nn as nn
 import torchvision
 import wandb
 import timm
+import numpy as np
 
 from tsp.vivit_wrapper import VivitWrapper
 from models.ast import AudioSpectrogramTransformer
@@ -29,6 +30,9 @@ from tsp.engine import epoch_loop, evaluate
 def main(cfg):
     print('TORCH VERSION: ', torch.__version__)
     print('TORCHVISION VERSION: ', torchvision.__version__)
+    torch.manual_seed(0)
+    torch.use_deterministic_algorithms(True)
+    np.random.seed(0)
     print(f"Training dataset CSV: {cfg.dataset.train_csv_filename}")
     print(f"Validation dataset CSV: {cfg.dataset.valid_csv_filename}")
 
@@ -193,6 +197,9 @@ def main(cfg):
             backbone.load_weights_from_state_dict(state_dict)
 
         backbone.to(device)
+        if cfg.vivit_freeze_first_n_encoder_blocks:
+            for i in range(cfg.vivit_freeze_first_n_encoder_blocks):
+                backbone.vivit.vivitEncoder.encoder[i].requires_grad_(False)
         feature_backbones.append(backbone)
         d_feats.append(backbone.d_model)
     

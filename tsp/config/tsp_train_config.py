@@ -110,6 +110,8 @@ def load_config():
     cfg.pretrained_models.ast_audioset = "/home/arnavshah/pretrained-weights/ast-weights.pth"
 
     cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
+    # cfg.pretrained_models.vivit = None
+    cfg.vivit_freeze_first_n_encoder_blocks = 6
     
     #-------------------------------------------------------------------------------------------------
 
@@ -127,8 +129,8 @@ def load_config():
     cfg.tsp.modalities = ['video']
     cfg.tsp.backbones = ['vivit']
 
-    cfg.tsp.backbone_lr = 0.0001  # Backbone layers learning rate
-    cfg.tsp.fc_lr = 0.0001
+    cfg.tsp.backbone_lr = 0.0005  # Backbone layers learning rate
+    cfg.tsp.fc_lr = 0.0005
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
@@ -140,12 +142,12 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'tsp-output-adam'  # Path for saving checkpoints and results output
+    cfg.output_dir = 'tsp-output-adam-lr-5e-4'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
     cfg.batch_size = 8  # Batch size per GPU
-    cfg.val_batch_size = 32  # Batch size per GPU
+    cfg.val_batch_size = 64  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
     # cfg.momentum = 0.9
@@ -158,7 +160,7 @@ def load_config():
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    # cfg.resume = "/home/arnavshah/tsp/checkpoints/tspv129.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    # cfg.resume = "/home/arnavshah/tsp/tsp-output-adam/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
     cfg.resume = None
     cfg.start_epoch = 0  # not used when resume is specified
 
