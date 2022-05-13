@@ -322,12 +322,13 @@ def main(cfg):
     ]
 
     # Optimizer
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.SGD(
         params,
+        momentum=cfg.momentum,
+        weight_decay=cfg.weight_decay
     )
 
-    # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1)
-    lr_scheduler = None
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1)
 
     model_without_ddp = tsp_model
     if cfg.distributed.on:

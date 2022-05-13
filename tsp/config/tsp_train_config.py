@@ -111,7 +111,8 @@ def load_config():
 
     cfg.pretrained_models.vivit = "/home/arnavshah/pretrained-weights/vivit-weights-tempPatch2-numTokens1569.pt"
     # cfg.pretrained_models.vivit = None
-    cfg.vivit_freeze_first_n_encoder_blocks = 6
+    # cfg.vivit_freeze_first_n_encoder_blocks = 6
+    cfg.vivit_freeze_first_n_encoder_blocks = None
     
     #-------------------------------------------------------------------------------------------------
 
@@ -126,11 +127,11 @@ def load_config():
     # cfg.tsp.val_global_video_features = "/home/arnavshah/tsp/video-features-vivit-gvf/val-max-gvf.h5"
 
     # One to one matching between modalities and backbones
-    cfg.tsp.modalities = ['video']
-    cfg.tsp.backbones = ['vivit']
+    cfg.tsp.modalities = ['video', 'audio']
+    cfg.tsp.backbones = ['vivit', 'ast']
 
-    cfg.tsp.backbone_lr = 0.0005  # Backbone layers learning rate
-    cfg.tsp.fc_lr = 0.0005
+    cfg.tsp.backbone_lr = 0.00025  # Backbone layers learning rate
+    cfg.tsp.fc_lr = 0.00025
     cfg.tsp.loss_alphas = [1.0, 1.0]  # A list of the scalar alpha with which to weight each label loss
 
     #-------------------------------------------------------------------------------------------------
@@ -142,16 +143,16 @@ def load_config():
     
     cfg.train_subdir = 'train'  # Training subdirectory inside the data directory
     cfg.valid_subdir = 'val'  # Validation subdirectory inside the data directory
-    cfg.output_dir = 'tsp-output-adam-lr-5e-4'  # Path for saving checkpoints and results output
+    cfg.output_dir = 'tsp-output-vivit-ast-512'  # Path for saving checkpoints and results output
 
     cfg.epochs = 8
     cfg.train_only_one_epoch = False  # Train the model for only one epoch without testing on validation subset
     cfg.batch_size = 8  # Batch size per GPU
-    cfg.val_batch_size = 64  # Batch size per GPU
+    cfg.val_batch_size = 32  # Batch size per GPU
     cfg.num_workers = 8  # Number of data loading workers
 
-    # cfg.momentum = 0.9
-    # cfg.weight_decay = 0.005
+    cfg.momentum = 0.9
+    cfg.weight_decay = 0.005
     # cfg.lr_drop = 200
     # cfg.lr_gamma = 0.1
 
@@ -194,9 +195,9 @@ def load_config():
     
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True 
+    cfg.wandb.on = True
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "TSP VIVIT with Adam Optimizer"
+    cfg.wandb.notes = "TSP VIVIT + AST, dim 512"
 
     return cfg
