@@ -47,7 +47,7 @@ def main(cfg):
     # Setup wandb
     if cfg.wandb.on and utils.is_main_process():
         wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity,
-                   config=cfg.to_dict(), notes=cfg.wandb.notes)
+                   config=cfg.to_dict(), notes=cfg.wandb.notes, id=cfg.wandb.resume_id)
 
     device = torch.device(cfg.device)
     

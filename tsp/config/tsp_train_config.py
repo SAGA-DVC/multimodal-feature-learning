@@ -168,7 +168,7 @@ def load_config():
     cfg.valid_only = False  # Test the model on the validation subset and exit
 
     cfg.print_freq = 100  # Print frequency in number of batches
-    cfg.plot_grads = True
+    cfg.plot_grads = False
 
     cfg.debug = False
     if cfg.debug:
@@ -200,5 +200,7 @@ def load_config():
     cfg.wandb.project = "tsp"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "TSP VIVIT + AST, dim 512"
+    cfg.wandb.resume_id = "2mr7int7"
+    # cfg.wandb.resume_id = None
 
     return cfg
