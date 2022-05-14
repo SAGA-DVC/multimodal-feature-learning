@@ -161,13 +161,14 @@ def load_config():
     # cfg.lr_gamma = 0.01  # Decrease lr by a factor of lr-gamma at each milestone epoch
     # cfg.lr_warmup_factor = 1e-5
 
-    # cfg.resume = "/home/arnavshah/tsp/tsp-output-adam/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
-    cfg.resume = None
+    cfg.resume = "/home/arnavshah/tsp/tsp-output-vivit-ast-512/checkpoint.pth"    # Resume from checkpoint (path to checkpoint .pth)
+    # cfg.resume = None
     cfg.start_epoch = 0  # not used when resume is specified
 
     cfg.valid_only = False  # Test the model on the validation subset and exit
 
     cfg.print_freq = 100  # Print frequency in number of batches
+    cfg.plot_grads = True
 
     cfg.debug = False
     if cfg.debug:

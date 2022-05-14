@@ -396,7 +396,8 @@ def main(cfg):
             label_columns=cfg.dataset.label_columns,
             loss_alphas=cfg.tsp.loss_alphas,
             wandb_log=cfg.wandb.on,
-            output_dir=cfg.output_dir
+            output_dir=cfg.output_dir,
+            plot_grads=cfg.plot_grads
         )
 
 

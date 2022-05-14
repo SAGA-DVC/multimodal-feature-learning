@@ -38,6 +38,7 @@ def plot_grad_flow_line(named_parameters, epoch, batch_idx, prefix=None, output_
     plt.savefig(f'{output_dir}/grads/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png', bbox_inches="tight")
     if wandb_log and is_main_process():
         wandb.save(f'{output_dir}/grads/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png')
+    plt.clf()
     
 
 def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_dir="output", wandb_log=False):
@@ -78,3 +79,4 @@ def plot_grad_flow_bar(named_parameters, epoch, batch_idx, prefix=None, output_d
     plt.savefig(f'{output_dir}/grads/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png')
     if wandb_log and is_main_process():
         wandb.save(f'{output_dir}/grads/{prefix}_epoch_{epoch}_batch_{batch_idx}_grad.png')
+    plt.clf()

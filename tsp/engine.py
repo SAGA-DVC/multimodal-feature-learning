@@ -11,7 +11,7 @@ from tsp.tsp_model import TSPModel, add_combiner, concat_combiner
 from utils import plots
 
 
-def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log, output_dir):
+def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, device, epoch, print_freq, label_columns, loss_alphas, wandb_log, output_dir, plot_grads=False):
     model.train()
 
     metric_logger = utils.MetricLogger(delimiter=' ')
