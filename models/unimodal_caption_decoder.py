@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.embedding_layers import PositionEmbeddingCaptionSine, VocabularyEmbedder
+from .modules.embedding_layers import PositionalEncoding, PositionEmbeddingCaptionSine, VocabularyEmbedder
 from .modules.layers import UnimodalCaptionDecoderLayer
 from .modules.misc_modules import NestedTensor
 
@@ -30,7 +30,8 @@ class UnimodalCaptionDecoder(nn.Module):
         
         self.vocab_size = vocab_size
         self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
-        self.word_positional_embedding_layer = PositionEmbeddingCaptionSine(d_model, normalize=True)
+        # self.word_positional_embedding_layer = PositionEmbeddingCaptionSine(d_model, normalize=True)
+        self.positional_encoding = PositionalEncoding(d_model, dropout=positional_embedding_dropout)
         
         self.d_model = d_model
         self.depth = depth
@@ -57,18 +58,14 @@ class UnimodalCaptionDecoder(nn.Module):
         # self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         
         self.head = nn.Linear(d_model, vocab_size)
-        
-        if weight_load and model_official is not None:
-            self.load_weights(model_official)
 
-        elif weight_init:
-            self.init_weights(embedding_matrix, emb_weights_req_grad)
+        self.init_weights(embedding_matrix, emb_weights_req_grad)
         
-    # TODO - add <start> and <end> token
-    # TODO - change ordering of pos embed and query embed parameters 
+
+
     # TODO - check if pos embed should be given at every decoder layer to word and video
     # TODO - use log softmax?
-    def forward(self, captions, memory, tgt_mask, padding_mask, memory_mask):
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
 
         """
         Performs a forward pass on the Unimodal Caption Decoder
@@ -85,28 +82,29 @@ class UnimodalCaptionDecoder(nn.Module):
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
         """
 
-        target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
+        tgt = self.target_embedding(tgt)    # (batch_size, seq_len, embed_dim)
+        tgt = self.positional_encoding(tgt)
 
-        target = target + self.word_positional_embedding_layer(NestedTensor(target, padding_mask)).transpose(1, 2)
+        # tgt = tgt + self.word_positional_embedding_layer(NestedTensor(tgt, padding_mask)).transpose(1, 2)
         # memory = memory + memory_positional_embedding_layer(NestedTensor(memory, torch.squeeze(memory_mask), durations)).transpose(1,2)
 
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, memory, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
+            target = layer(tgt, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
-                intermediate.append(target)
+                intermediate.append(tgt)
 
         if self.return_intermediate:
-            target = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
+            tgt = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
         else:
-            target = target.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
+            tgt = tgt.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
         
         # (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
-        target = self.head(target).softmax(dim=-1)
+        tgt = self.head(tgt).softmax(dim=-1)
 
-        return target
+        return tgt
     
 
     def init_weights(self, embedding_matrix, emb_weights_req_grad):
@@ -119,20 +117,6 @@ class UnimodalCaptionDecoder(nn.Module):
         self.target_embedding.init_word_embeddings(embedding_matrix, emb_weights_req_grad)
         # trunc_normal_(self.word_positional_embedding_layer.positional_embedding, std=.02)
         self.decoder.apply(init_encoder_block_weights)
-            
-
-    def load_weights(self, model_official):
-
-        """
-        Loads the weights and biases from the pre-trained model to the current model
-        These weights include positional embeddings.
-
-        Parameters:
-            `model_custom`: The current ViViT model
-            `model_official`: The model which would be used to load the pre-trained weights
-        """
-
-        load_positional_embeddings(self, model_official)
     
 
 

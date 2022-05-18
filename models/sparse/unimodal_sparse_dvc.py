@@ -6,6 +6,8 @@ import math
 from math import floor, ceil
 import copy
 
+from pprint import pprint
+
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
@@ -105,9 +107,7 @@ class UnimodalSparseDVC(nn.Module):
         self.vocab = vocab
         self.unimodal_caption_decoder = build_unimodal_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
         
-
         # self.init_weights()
-
 
 
     # TODO - use log softmax?
@@ -249,9 +249,7 @@ class UnimodalSparseDVC(nn.Module):
         memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
 
         memory = memory.to(video.device)
-
-        memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-        memory_mask = memory_mask.to(video.device)
+        memory_mask = memory_mask.to(video.device)    # (nb_target_segments, num_tokens)
 
         # Differentiable Mask
         if self.use_differentiable_mask:
@@ -267,30 +265,28 @@ class UnimodalSparseDVC(nn.Module):
             # Gating mechanism for memory_mask TODO: scores
             seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
 
-            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
+            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * memory_mask
                         
             out['pred_memory_mask'] = pred_memory_mask    # last layer value will be returned at the end
             
-            assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
+            assert out['pred_memory_mask'].shape == memory_mask.shape
 
-            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
-            pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)    # (nb_target_segments, num_tokens)
         
         # Caption Decoder
         if is_training:
-            captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
+            tgt_captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
             
-            padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
+            tgt_padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
 
-            tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-            tgt_mask = tgt_mask.to(captions.device)
+            tgt_mask = self.make_tgt_mask(tgt_captions, tgt_padding_mask.device)    # (max_caption_length - 1, max_caption_length - 1)
 
             # TODO - add pos embed for memory
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (caption_decoder_depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
-                outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, pred_memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(tgt=tgt_captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=pred_memory_mask)
             else:
-                outputs_caption = self.unimodal_caption_decoder(captions, memory, tgt_mask, padding_mask, memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(tgt=tgt_captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=memory_mask)
 
             out["pred_captions"] = outputs_caption[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -305,7 +301,7 @@ class UnimodalSparseDVC(nn.Module):
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption)    # caption depth could be different
 
             if self.use_differentiable_mask:
-                return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, outputs_caption_last_layer, indices, indices_aux, memory_mask.float()
             else:
                 return out, outputs_caption_last_layer, indices, indices_aux, None
 
@@ -313,7 +309,7 @@ class UnimodalSparseDVC(nn.Module):
         # Inference
         else:
             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
-            captions = torch.ones([memory.shape[0], self.seq_len - 1], dtype=torch.int32)    # PAD_TOKEN
+            captions = torch.ones([memory.shape[0], self.seq_len], dtype=torch.int32)    # PAD_TOKEN
             captions[:, 0] = self.vocab['<bos>']    # START_TOKEN
             captions = captions.to(memory_mask.device)
 
@@ -325,31 +321,25 @@ class UnimodalSparseDVC(nn.Module):
 
             # Since END_TOKEN can be predicted even if the caption does not reach max_caption_length
             # range(1, max_caption_length - 1)
-            for word_index in range(1, self.seq_len - 1):
-                captions_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
-                captions_padding_mask = captions_padding_mask.to(memory_mask.device)
+            for word_index in range(1, self.seq_len):
+                tgt_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
+                tgt_padding_mask = tgt_padding_mask.to(memory_mask.device)
                 
-                tgt_mask = self.make_tgt_mask(captions, captions_padding_mask)  # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-                tgt_mask = tgt_mask.to(captions.device)
+                tgt_mask = self.make_tgt_mask(captions, tgt_padding_mask.device)  # (max_caption_length - 1, max_caption_length - 1)
 
                 # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
                 if self.use_differentiable_mask:
-                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, pred_memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=pred_memory_mask)
                 else:
-                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, captions_padding_mask, memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=memory_mask)
 
                 out['pred_captions'] = outputs_caption_val[-1]
 
                 outputs_caption_last_layer = torch.argmax(outputs_caption_val[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
-                # print('----------------------', captions[0])
-                # print('----------', outputs_caption_last_layer[0])
-                # print('--------', captions_padding_mask[0])
+                
                 # Update predicted word in captions
                 if faster_eval:
-                    captions[:, word_index] = outputs_caption_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
-                    # print('------------wdewf', word_index, outputs_caption_last_layer[0, word_index].item())
-                    # print('------------', outputs_caption_last_layer[0])
-                    # print('------------', captions[0, word_index])
+                    captions[:, word_index] = outputs_caption_last_layer[:, -1] # if it doesn't matter whether the predicted token is END_TOKEN
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:
@@ -381,7 +371,7 @@ class UnimodalSparseDVC(nn.Module):
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption_val)
 
             if self.use_differentiable_mask:
-                return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
+                return out, captions_with_eos, indices, indices_aux, memory_mask.float()
             else:
                 return out, captions_with_eos, indices, indices_aux, None
             
@@ -402,7 +392,7 @@ class UnimodalSparseDVC(nn.Module):
         return [{'pred_captions': a} for a in outputs_caption[:-1]]
 
 
-    def make_tgt_mask(self, target, tgt_padding_mask):
+    def make_tgt_mask(self, target, device):
         """
         Generates a mask that is a combination of a lookahead mask and a padding mask
         
@@ -416,12 +406,9 @@ class UnimodalSparseDVC(nn.Module):
 
         batch_size, seq_len = target.shape
 
-        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len)))
-        look_ahead_mask = look_ahead_mask.to(tgt_padding_mask.device)
+        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len), device=device))
 
-        tgt_mask = torch.maximum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask).bool()
-
-        return tgt_mask    # (batch_size, 1, seq_len, seq_len)
+        return look_ahead_mask.bool()    # (seq_len, seq_len)
 
 
     def make_memory_mask(self):

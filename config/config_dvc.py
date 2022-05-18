@@ -14,7 +14,7 @@ def load_config():
     cfg.seed = 0
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 16
+    cfg.batch_size = 8
     cfg.num_workers = 1
 
     cfg.print_freq = 10
@@ -28,15 +28,15 @@ def load_config():
     cfg.eval_rate = 5    # used for val loops and submission json files
     cfg.only_eval = False
         
-    cfg.output_dir = 'output'
-    # cfg.output_dir = 'output_temp'
+    # cfg.output_dir = 'output'
+    cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output/checkpoint.pth'
+    # cfg.resume = 'output_temp/checkpoint0029.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 50
+    cfg.epochs = 20
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -62,7 +62,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with 512-dimensional ViViT feats no classification loss and caption decoder depth 12"
+    cfg.wandb.notes = "Sparse DETR with diff pos embed"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -230,7 +230,7 @@ def load_config():
 
     cfg.dvc.caption.d_model = cfg.dvc.d_model
 
-    cfg.dvc.caption.depth = 12
+    cfg.dvc.caption.depth = 6
 
     cfg.dvc.caption.num_heads = 8
     cfg.dvc.caption.mlp_ratio = 4

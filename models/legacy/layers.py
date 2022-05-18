@@ -12,7 +12,6 @@ import numpy as np
 import torch
 import torchvision
 import torch.nn as nn
-from torch.nn import MultiheadAttention
 from torch import Tensor
 from torch.nn.init import xavier_uniform_, constant_
 import torch.nn.functional as F
@@ -56,10 +55,8 @@ class EncoderLayer(nn.Module):
         #eps for compatibility with ViT pretrained weights??
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6) 
 
-        self.attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
-                                            bias=qkv_bias, batch_first=True)
-
-        self.projection_dropout = nn.Dropout(projection_dropout)
+        self.attention = Attention(d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                   attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
@@ -67,7 +64,7 @@ class EncoderLayer(nn.Module):
         self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
                        dropout_1=mlp_dropout_1, dropout_2=mlp_dropout_2)
 
-    def forward(self, x, src_mask=None, src_padding_mask=None):
+    def forward(self, x):
 
         """
         Performs a forward pass on the Factorised Encoder block.
@@ -81,13 +78,13 @@ class EncoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(x, src_mask, src_padding_mask)
+            return self.forward_pre(x)
         
         else:
-            return self.forward_post(x, src_mask, src_padding_mask)
+            return self.forward_post(x)
 
 
-    def forward_pre(self, x, src_mask=None, src_padding_mask=None):
+    def forward_pre(self, x):
 
         """
         Performs a forward pass with pre-norm on the Factorised Encoder block.
@@ -100,13 +97,13 @@ class EncoderLayer(nn.Module):
 
         """
 
-        x = x + self._sa_block(self.layer_norm_1(x), attn_mask=src_mask, key_padding_mask=src_padding_mask)    # (batch_size, num_tokens, d_model)
-        x = x + self.mlp(self.layer_norm_2(x))    # (batch_size, num_tokens, d_model)
+        x = x + self.attention(self.layer_norm_1(x)) # (batch_size, num_tokens, d_model)
+        x = x + self.mlp(self.layer_norm_2(x)) # (batch_size, num_tokens, d_model)
 
         return x
     
     
-    def forward_post(self, x, src_mask=None, src_padding_mask=None):
+    def forward_post(self, x):
 
         """
         Performs a forward pass with post-norm on the Factorised Encoder block.
@@ -119,18 +116,10 @@ class EncoderLayer(nn.Module):
 
         """
 
-        x = self.layer_norm_1(x + self._sa_block(self.layer_norm_1(x), attn_mask=src_mask, key_padding_mask=src_padding_mask))    # (batch_size, num_tokens, d_model)
-        x = self.layer_norm_2(x + self.mlp(x))    # (batch_size, num_tokens, d_model)
+        x = self.layer_norm_1(x + self.attentio(x)) # (batch_size, num_tokens, d_model)
+        x = self.layer_norm_2(x + self.mlp(x)) # (batch_size, num_tokens, d_model)
 
         return x
-
-    
-    def _sa_block(self, x, attn_mask, key_padding_mask):
-        x = self.attention(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask,
-                           need_weights=False)[0]
-        return self.projection_dropout(x)
 
 
 # TODO - forward pre-post
@@ -506,6 +495,7 @@ class DecoderLayer(nn.Module):
 
 
 # TODO - dropout before/after each layer_norm?
+# TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class UnimodalCaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., bridge_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
@@ -529,14 +519,11 @@ class UnimodalCaptionDecoderLayer(nn.Module):
 
         self.pre_norm=pre_norm
         
-        self.self_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
-                                                bias=qkv_bias, batch_first=True)
-        
-        self.cross_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
-                                                bias=qkv_bias, batch_first=True)
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
-        self.projection_dropout_1 = nn.Dropout(projection_dropout)
-        self.projection_dropout_2 = nn.Dropout(projection_dropout)
+        self.cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
 
         self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
@@ -547,7 +534,7 @@ class UnimodalCaptionDecoderLayer(nn.Module):
                        dropout_1=mlp_dropout_1, dropout_2=mlp_dropout_2)
 
     
-    def forward(self, target, memory, tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
+    def forward(self, target, memory, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -565,12 +552,12 @@ class UnimodalCaptionDecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask) # (batch_size, num_tokens_tgt, d_model)
+            return self.forward_pre(target, memory, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
         else:
-            return self.forward_post(target, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask) # (batch_size, num_tokens_tgt, d_model)
+            return self.forward_post(target, memory, tgt_mask, memory_mask) # (batch_size, num_queries, d_model)
 
     
-    def forward_pre(self, target, memory, tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
+    def forward_pre(self, target, memory, tgt_mask, memory_mask):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -587,16 +574,25 @@ class UnimodalCaptionDecoderLayer(nn.Module):
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
 
-        x = target
+        target_after_norm = self.layer_norm_1(target) 
+        # q = k = word_positional_embedding_layer(target_after_norm)
+        q = k = target_after_norm
+        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask) # (batch_size, num_queries, d_model)
 
-        x = x + self._sa_block(self.layer_norm_1(x), tgt_mask, tgt_padding_mask)
-        x = x + self._ca_block(self.layer_norm_2(x), memory, memory_mask, memory_padding_mask)
-        x = x + self.mlp(self.layer_norm_3(x))
+        target_after_norm = self.layer_norm_2(target)
+        # q = word_positional_embedding_layer(target_after_norm)
+        q = target_after_norm
+        # k = positional_embedding_layer(memory)
+        k = memory
+        target = target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask) # (batch_size, num_queries, d_model)
+        
+        target_after_norm = self.layer_norm_3(target)
+        target = target + self.mlp(target_after_norm)
 
-        return x
+        return target
 
 
-    def forward_post(self, target, memory, tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
+    def forward_post(self, target, memory, tgt_mask, memory_mask):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -612,32 +608,21 @@ class UnimodalCaptionDecoderLayer(nn.Module):
         Returns:
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
+       
+        # q = k = word_positional_embedding_layer(target)
+        q = k = target
+        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=tgt_mask)) # (batch_size, num_queries, d_model)
 
-        x = target
+        # q = word_positional_embedding_layer(target)
+        q = target
+        # k = positional_embedding_layer(memory)
+        k = memory
+        target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=memory, mask=memory_mask)) # (batch_size, num_queries, d_model)
 
-        x = self.layer_norm_1(x + self._sa_block(x, tgt_mask, tgt_padding_mask))
-        x = self.layer_norm_2(x + self._ca_block(x, memory, memory_mask, memory_padding_mask))
-        x = self.layer_norm_3(x + self.mlp(x))
+        target = target + self.mlp(target)
+        target = self.layer_norm_3(target)
 
-        return x
-
-
-    def _sa_block(self, x, attn_mask, key_padding_mask):
-        x = self.self_attention(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask,
-                           need_weights=False)[0]
-        return self.projection_dropout_1(x)
-
-
-    def _ca_block(self, x, mem, attn_mask, key_padding_mask):
-        x = self.cross_attention(x, mem, mem,
-                                attn_mask=attn_mask,
-                                key_padding_mask=key_padding_mask,
-                                need_weights=False)[0]
-        return self.projection_dropout_2(x)
-
-
+        return target
 
 
 

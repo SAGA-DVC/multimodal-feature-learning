@@ -119,9 +119,8 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
                 with (train_caption_path / "train_caption.json").open("a") as f:
                     json.dump(captions_string, f, indent=4)
                 
-                # if args.wandb.on:
-                #     wandb.save(os.path.join(train_caption_path, "train_log.json"))
-
+                if args.wandb.on:
+                    wandb.save(os.path.join(train_caption_path, "train_caption.json"))
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
@@ -171,7 +170,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     model.eval()
     criterion.eval()
 
-    submission_json_epoch = get_sample_submission()
+    # submission_json_epoch = get_sample_submission()
 
     metric_logger = MetricLogger(delimiter="\t")
     # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
@@ -189,7 +188,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=True)
+            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -239,7 +238,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         for i, batch_id in enumerate(idx[0]):
             video_id = obj['video_key'][batch_id]
             append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
-            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
+            # append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
         scores = run_eval(args.eval, submission_json_batch)
         avg_scores = pprint_eval_scores(scores, debug=False)
@@ -265,12 +264,20 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     print(f"\nAveraged val stats for epoch [{epoch}]: ", metric_logger, "\n")
 
     # TODO - check if run_eval can be removed and we can instead avg scores in above loop
-    scores = run_eval(args.eval, submission_json_epoch)
+    # scores = run_eval(args.eval, submission_json_epoch)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    print(return_dict)
     return_dict.update(scores)
 
+    val_caption_path = Path(os.path.join(args.submission_dir, 'val'))
+    if not os.path.exists(val_caption_path):
+        val_caption_path.mkdir(parents=True, exist_ok=True)
+
     if args.save_submission:
-        save_submission(submission_json_epoch, os.path.join(args.submission_dir, f"E{epoch}_submission.json"))
+        save_submission(submission_json_epoch, os.path.join(val_caption_path, f"E{epoch}_submission.json"))
+    
+    if wandb_log:
+        wandb.save(os.path.join(args.submission_dir, "val", f"E{epoch}_submission.json"))
 
     return return_dict
      
