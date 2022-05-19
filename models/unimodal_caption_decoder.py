@@ -91,7 +91,7 @@ class UnimodalCaptionDecoder(nn.Module):
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(tgt, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask)    # (batch_size, seq_len, embed_dim)
+            tgt = layer(tgt, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(tgt)
