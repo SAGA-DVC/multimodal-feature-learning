@@ -1,7 +1,5 @@
 import argparse
 import os
-from ssl import ALERT_DESCRIPTION_BAD_CERTIFICATE_STATUS_RESPONSE
-import time
 import json
 
 import torch
@@ -52,6 +50,7 @@ def main(args):
             
             start = int((start * args.fps) / args.frames_per_clip)
             end = int((end * args.fps) / args.frames_per_clip)
+            end = min(sim_matrix.shape[0]-1, end+1) if end == start else end
             action_segment = sim_matrix[start:end, start:end]
 
             action_numel += action_segment.numel()
@@ -88,8 +87,6 @@ if __name__ == '__main__':
         " metric for evaluating the temporal sensitivity of video features")
 
     parser.add_argument("--h5", type=str, required=True, help="TSP features h5 file")
-    # parser.add_argument("--set", type=str, choices=["train", "training", "val", 
-    #     "validation", "test", "testing"])
     parser.add_argument("--annotations-file", type=str, help="Annotations JSON file",
         default="/home/arnavshah/tsp/tsp/dataset/activity_net.v1-3.min.json")
     parser.add_argument("--fps", type=int, default=30, help="FPS used while extraction")
