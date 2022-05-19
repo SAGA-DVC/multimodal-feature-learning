@@ -165,55 +165,20 @@ class PositionalEmbedding(nn.Module):
         return x
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout, maxlen = 5000):
+    def __init__(self, d_model, dropout, maxlen = 100):
         super(PositionalEncoding, self).__init__()
         den = torch.exp(- torch.arange(0, d_model, 2) * math.log(10000) / d_model)
         pos = torch.arange(0, maxlen).reshape(maxlen, 1)
         pos_embedding = torch.zeros((maxlen, d_model))
         pos_embedding[:, 0::2] = torch.sin(pos * den)
         pos_embedding[:, 1::2] = torch.cos(pos * den)
-        pos_embedding = pos_embedding.unsqueeze(-2)
+        pos_embedding = pos_embedding.unsqueeze(0)
 
         self.dropout = nn.Dropout(dropout)
         self.register_buffer('pos_embedding', pos_embedding)
 
     def forward(self, token_embedding):
-        return self.dropout(token_embedding + self.pos_embedding[:token_embedding.size(0),:])
-        
-
-# TODO - check permute
-class PositionEmbeddingCaptionSine(nn.Module):
-    """
-    This is a more standard version of the position embedding, very similar to the one
-    used by the Attention is all you need paper, generalized to work on images.
-    """
-    def __init__(self, num_pos_feats, temperature=10000, normalize=False, scale=None):
-        super().__init__()
-        self.num_pos_feats = num_pos_feats
-        self.temperature = temperature
-        self.normalize = normalize
-        if scale is not None and normalize is False:
-            raise ValueError("normalize should be True if scale is passed")
-        if scale is None:
-            scale = 2 * math.pi
-        self.scale = scale
-
-    def forward(self, tensor_list: NestedTensor):
-        x = tensor_list.tensors
-        mask = tensor_list.mask
-        assert mask is not None
-        not_mask = ~mask
-        x_embed = not_mask.cumsum(1, dtype=torch.float32)
-        if self.normalize:
-            eps = 1e-6
-            x_embed = (x_embed - 0.5) / (x_embed[:, -1:] + eps) * self.scale
-        
-        dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=x.device)
-        dim_t = self.temperature ** (2 * torch.div(dim_t, 2, rounding_mode='trunc') / self.num_pos_feats)
-        pos_x = x_embed[:, :, None] / dim_t
-        pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
-        pos = pos_x.permute(0, 2, 1)
-        return pos
+        return self.dropout(token_embedding + self.pos_embedding[:, :token_embedding.size(1),:])
 
 
 
@@ -294,3 +259,40 @@ class VocabularyEmbedder(nn.Module):
                 )
                 self.embedder[0].weight.requires_grad = emb_weights_req_grad
                 print(f'Glove embedding dimension is {pretrained_embed_dim} and d_model is {self.d_model}')
+
+
+
+
+# TODO - check permute
+class PositionEmbeddingCaptionSine(nn.Module):
+    """
+    This is a more standard version of the position embedding, very similar to the one
+    used by the Attention is all you need paper, generalized to work on images.
+    """
+    def __init__(self, num_pos_feats, temperature=10000, normalize=False, scale=None):
+        super().__init__()
+        self.num_pos_feats = num_pos_feats
+        self.temperature = temperature
+        self.normalize = normalize
+        if scale is not None and normalize is False:
+            raise ValueError("normalize should be True if scale is passed")
+        if scale is None:
+            scale = 2 * math.pi
+        self.scale = scale
+
+    def forward(self, tensor_list: NestedTensor):
+        x = tensor_list.tensors
+        mask = tensor_list.mask
+        assert mask is not None
+        not_mask = ~mask
+        x_embed = not_mask.cumsum(1, dtype=torch.float32)
+        if self.normalize:
+            eps = 1e-6
+            x_embed = (x_embed - 0.5) / (x_embed[:, -1:] + eps) * self.scale
+        
+        dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=x.device)
+        dim_t = self.temperature ** (2 * torch.div(dim_t, 2, rounding_mode='trunc') / self.num_pos_feats)
+        pos_x = x_embed[:, :, None] / dim_t
+        pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
+        pos = pos_x.permute(0, 2, 1)
+        return pos

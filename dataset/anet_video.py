@@ -62,7 +62,7 @@ class DVCdataset(Dataset):
 
         # for testing purposes (remove later)
         if args.for_testing:
-            self.keys = self.keys[:3]
+            self.keys = self.keys[:args.num_samples]
 
         # self.video_features_folder = video_features_folder
 

@@ -3,6 +3,7 @@
 Train and eval functions used in main.py
 """
 import math
+import time, datetime
 import os
 import json
 from pathlib import Path
@@ -113,11 +114,16 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             if not os.path.exists(train_caption_path):
                 train_caption_path.mkdir(parents=True, exist_ok=True)
 
-            captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+            src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
+            tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
             
+            res = {}
+            for src, tgt in zip(src_captions_string, tgt_captions_string):
+                res[src] = tgt
+
             if args.output_dir and is_main_process():
                 with (train_caption_path / "train_caption.json").open("a") as f:
-                    json.dump(captions_string, f, indent=4)
+                    json.dump(res, f, indent=4)
                 
                 if args.wandb.on:
                     wandb.save(os.path.join(train_caption_path, "train_caption.json"))
@@ -170,7 +176,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     model.eval()
     criterion.eval()
 
-    # submission_json_epoch = get_sample_submission()
+    submission_json_epoch = get_sample_submission()
 
     metric_logger = MetricLogger(delimiter="\t")
     # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
@@ -238,7 +244,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         for i, batch_id in enumerate(idx[0]):
             video_id = obj['video_key'][batch_id]
             append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
-            # append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
         scores = run_eval(args.eval, submission_json_batch)
         avg_scores = pprint_eval_scores(scores, debug=False)
@@ -266,7 +272,6 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     # TODO - check if run_eval can be removed and we can instead avg scores in above loop
     # scores = run_eval(args.eval, submission_json_epoch)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    print(return_dict)
     return_dict.update(scores)
 
     val_caption_path = Path(os.path.join(args.submission_dir, 'val'))

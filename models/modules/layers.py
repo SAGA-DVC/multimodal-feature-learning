@@ -638,11 +638,7 @@ class UnimodalCaptionDecoderLayer(nn.Module):
         return self.projection_dropout_2(x)
 
 
-
-
-
 # TODO - dropout before/after each layer_norm?
-# TODO - check forward_pre sequence for self_attention (which one of q, k, v should have layer_norm?)
 class MultimodalCaptionDecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
                 attention_dropout=0., projection_dropout=0., bridge_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
@@ -662,18 +658,22 @@ class MultimodalCaptionDecoderLayer(nn.Module):
             `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
         """
 
-        super(MultimodalCaptionDecoderLayer, self).__init__()
+        super(UnimodalCaptionDecoderLayer, self).__init__()
 
         self.pre_norm=pre_norm
         
-        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
-                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
-
-        self.video_cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
-                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+        self.self_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
+                                                bias=qkv_bias, batch_first=True)
         
-        self.audio_cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
-                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+        self.video_cross_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
+                                                bias=qkv_bias, batch_first=True)
+        
+        self.audio_cross_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
+                                                bias=qkv_bias, batch_first=True)
+
+        self.projection_dropout_1 = nn.Dropout(projection_dropout)
+        self.projection_dropout_2 = nn.Dropout(projection_dropout)
+        self.projection_dropout_3 = nn.Dropout(projection_dropout)
 
         self.linear_layer = nn.Linear(2 * d_model, d_model)
         self.activation_layer = nn.GELU()
@@ -690,7 +690,9 @@ class MultimodalCaptionDecoderLayer(nn.Module):
                        dropout_1=mlp_dropout_1, dropout_2=mlp_dropout_2)
 
     
-    def forward(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+    def forward(self, target, video_memory, audio_memory, 
+                tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
 
         """
         Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
@@ -708,12 +710,18 @@ class MultimodalCaptionDecoderLayer(nn.Module):
         """
 
         if self.pre_norm:
-            return self.forward_pre(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_pre(target, video_memory, audio_memory, 
+                                    tgt_mask, video_memory_mask, audio_memory_mask, 
+                                    tgt_padding_mask, video_memory_padding_mask, audio_memory_padding_mask) # (batch_size, num_tokens_tgt, d_model)
         else:
-            return self.forward_post(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask) # (batch_size, num_queries, d_model)
+            return self.forward_post(target, video_memory, audio_memory, 
+                                    tgt_mask, video_memory_mask, audio_memory_mask, 
+                                    tgt_padding_mask, video_memory_padding_mask, audio_memory_padding_mask) # (batch_size, num_tokens_tgt, d_model)
 
     
-    def forward_pre(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+    def forward_pre(self, target, video_memory, audio_memory, 
+                    tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                    tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
         
         """
         Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
@@ -730,39 +738,29 @@ class MultimodalCaptionDecoderLayer(nn.Module):
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
 
-        target_after_norm = self.layer_norm_1(target) 
-        # q = k = word_positional_embedding_layer(target_after_norm)
-        q = k = target_after_norm
-        target = target + self.self_attention(q=q, k=k, v=target_after_norm, mask=tgt_mask)    # (batch_size, num_queries, d_model)
+        x = target
 
-        target_after_norm = self.layer_norm_2(target)
-        # q = word_positional_embedding_layer(target_after_norm)
-        q = target_after_norm
-        
-        # video
-        # k = positional_embedding_layer(video_memory)
-        k = video_memory
-        video_target = target + self.video_cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)    # (batch_size, num_queries, d_model)
+        x = x + self._sa_block(self.layer_norm_1(x), tgt_mask, tgt_padding_mask)
 
-        # audio
-        # k = positional_embedding_layer(audio_memory)
-        k = audio_memory
-        audio_target = target + self.audio_cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)    # (batch_size, num_queries, d_model)
+        x = self.layer_norm_2(x)
+        vid_x = x + self._ca_video_block(x, video_memory, video_memory_mask, video_memory_padding_mask)
+        aud_x = x + self._ca_audio_block(x, audio_memory, audio_memory_mask, audio_memory_padding_mask)
 
         # bridge
-        target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
-        target = self.layer_norm_3(target)
-        target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
-        target = self.dropout(target)
-        target = self.activation(target)
+        x = torch.cat([vid_x, aud_x], dim=-1)    # (batch_size, num_queries, 2*d_model)
+        x = self.layer_norm_3(x)
+        x = self.linear_layer(x)    # (batch_size, num_queries, d_model)
+        x = self.dropout(x)
+        x = self.activation(x)
 
-        target_after_norm = self.layer_norm_4(target)
-        target = target + self.mlp(target_after_norm)
+        x = x + self.mlp(self.layer_norm_4(x))
 
-        return target
+        return x
 
 
-    def forward_post(self, target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask):
+    def forward_post(self, target, video_memory, audio_memory, 
+                    tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                    tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
 
         """
         Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
@@ -778,33 +776,45 @@ class MultimodalCaptionDecoderLayer(nn.Module):
         Returns:
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
-       
-        # q = k = word_positional_embedding_layer(target)
-        q = k = target
-        target = self.layer_norm_1(target + self.self_attention(q=q, k=k, v=target, mask=tgt_mask)) # (batch_size, num_queries, d_model)
 
-        # q = word_positional_embedding_layer(target)
-        q = target
+        x = target
 
-        # k = positional_embedding_layer(memory)
-        k = video_memory
-        video_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=video_memory, mask=video_memory_mask)) # (batch_size, num_queries, d_model)
+        x = self.layer_norm_1(x + self._sa_block(x, tgt_mask, tgt_padding_mask))
 
-        # k = positional_embedding_layer(memory)
-        k = audio_memory
-        audio_target = self.layer_norm_2(target + self.cross_attention(q=q, k=k, v=audio_memory, mask=audio_memory_mask)) # (batch_size, num_queries, d_model)
+        vid_x = self.layer_norm_2(x + self._ca_video_block(x, video_memory, video_memory_mask, video_memory_padding_mask))
+        aud_x = self.layer_norm_2(x + self._ca_audio_block(x, audio_memory, audio_memory_mask, audio_memory_padding_mask))
 
         # bridge
-        target = torch.cat([video_target, audio_target], dim=-1)    # (batch_size, num_queries, 2*d_model)
-        target = self.linear_layer(target)    # (batch_size, num_queries, d_model)
-        target = self.dropout(target)
-        target = self.layer_norm_3(target)
-        target = self.activation(target)
+        x = torch.cat([vid_x, aud_x], dim=-1)    # (batch_size, num_queries, 2*d_model)
+        x = self.linear_layer(x)    # (batch_size, num_queries, d_model)
+        x = self.dropout(x)
+        x = self.layer_norm_3(x)
+        x = self.activation(x)
+        
+        x = self.layer_norm_4(x + self.mlp(x))
 
-        target = target + self.mlp(target)
-        target = self.layer_norm_4(target)
+        return x
 
-        return target
+    def _sa_block(self, x, attn_mask, key_padding_mask):
+        x = self.self_attention(x, x, x,
+                           attn_mask=attn_mask,
+                           key_padding_mask=key_padding_mask,
+                           need_weights=False)[0]
+        return self.projection_dropout_1(x)
+
+    def _ca_video_block(self, x, mem, attn_mask, key_padding_mask):
+        x = self.video_cross_attention(x, mem, mem,
+                                attn_mask=attn_mask,
+                                key_padding_mask=key_padding_mask,
+                                need_weights=False)[0]
+        return self.projection_dropout_2(x)
+    
+    def _ca_audio_block(self, x, mem, attn_mask, key_padding_mask):
+        x = self.cross_attention(x, mem, mem,
+                                attn_mask=attn_mask,
+                                key_padding_mask=key_padding_mask,
+                                need_weights=False)[0]
+        return self.audio_projection_dropout_3(x)
 
 
 
