@@ -54,7 +54,7 @@ def main(args):
             action_segment = sim_matrix[start:end, start:end]
 
             action_numel += action_segment.numel()
-            action_sum += action_segment.sum()
+            action_sum += action_segment.sum().item()
         
         non_action_numel = total_numel - action_numel
         non_action_sum = total_sum - action_sum

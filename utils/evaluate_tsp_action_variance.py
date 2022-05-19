@@ -6,6 +6,7 @@ import torch
 import h5py
 from tqdm import tqdm
 import numpy as np
+import scipy.stats as stats
 
 
 def cosine_similarity_matrix(x1: torch.Tensor, x2:torch.Tensor=None, eps=1e-8) -> torch.Tensor:
@@ -33,13 +34,15 @@ def main(args):
     with open(args.annotations_file, "r") as f:
         annotations_file = json.load(f)['database']
 
+    pre_action_var_list = []
+    tsp_action_var_list = []
     pre_sum_action_var = 0.
     tsp_sum_action_var = 0.
     sum_var_diff = 0.
     num_segments = 0
     errors = 0
 
-    for video in enumerate(tqdm(tsp_h5.keys())):
+    for video in tqdm(tsp_h5.keys()):
         try:
             pre_features = pre_h5[video]
             tsp_features = tsp_h5[video]
@@ -67,13 +70,16 @@ def main(args):
                 print(f"Error in video {video} segment start={start} end={end}. Numel = 0")
                 continue
 
-            pre_action_var = pre_action_segment.var()
-            tsp_action_var = tsp_action_segment.var()
+            pre_action_var = pre_action_segment.var().item()
+            tsp_action_var = tsp_action_segment.var().item()
 
             if(np.isnan(pre_action_var) or np.isnan(tsp_action_var)):
                 print(f"Error in video {video} segment start={start} end={end}")
                 errors += 1
                 continue
+
+            pre_action_var_list.append(pre_action_var)
+            tsp_action_var_list.append(tsp_action_var)
 
             pre_sum_action_var += pre_action_var
             tsp_sum_action_var += tsp_action_var
@@ -90,6 +96,15 @@ def main(args):
     print(f"Avg TSP action segments similarity variance: {tsp_avg_action_var}")
     print(f"Avg difference between action segment similarity variance: {avg_var_diff}")
     print(f"Error in processing {errors} segments")
+
+    print(f"T-score: {stats.ttest_rel(pre_action_var_list, tsp_action_var_list)}")
+
+    with open("pre-action-var.json", "w") as f:
+        json.dump(pre_action_var_list, f)
+    
+    with open("tsp-action-var.json", "w") as f:
+        json.dump(tsp_action_var_list, f)
+
     pre_h5.close()
     tsp_h5.close()
 
