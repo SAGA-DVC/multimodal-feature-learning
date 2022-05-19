@@ -192,7 +192,7 @@ def main(cfg):
         # Use return_prelogits=True for VideoVisionTransformer
         backbone = VivitWrapper(**cfg.vivit)
 
-        if cfg.pretrained_models.vivit:
+        if not cfg.resume and cfg.pretrained_models.vivit:
             state_dict = torch.load(cfg.pretrained_models.vivit)
             backbone.load_weights_from_state_dict(state_dict)
 
@@ -246,7 +246,7 @@ def main(cfg):
         backbone = AudioSpectrogramTransformer(
             model_official=model_official, **cfg.ast)
         
-        if cfg.pretrained_models.ast_audioset:
+        if not cfg.resume and cfg.pretrained_models.ast_audioset:
                 state_dict = torch.load(cfg.pretrained_models.ast_audioset)
                 backbone.load_state_dict(state_dict)
 

@@ -61,17 +61,18 @@ def epoch_loop(model: TSPModel, criterion, optimizer, lr_scheduler, dataloader, 
         optimizer.zero_grad()
         loss.backward()
 
-        try:
-            if utils.is_main_process() and batch_idx % print_freq == 0:
-                if utils.is_dist_avail_and_initialized():
-                    module = model.module
-                else:
-                    module = model
-                plots.plot_grad_flow_bar(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir, wandb_log=wandb_log)
-                for (modality, backbone) in zip(module.input_modalities, module.backbones):
-                    plots.plot_grad_flow_bar(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir, wandb_log=wandb_log)
-        except ValueError:
-            pass
+        if plot_grads:
+            try:
+                if utils.is_main_process() and batch_idx % print_freq == 0:
+                    if utils.is_dist_avail_and_initialized():
+                        module = model.module
+                    else:
+                        module = model
+                    plots.plot_grad_flow_bar(module.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix='fc', output_dir=output_dir, wandb_log=wandb_log)
+                    for (modality, backbone) in zip(module.input_modalities, module.backbones):
+                        plots.plot_grad_flow_bar(backbone.named_parameters(), epoch=epoch, batch_idx=batch_idx, prefix=modality, output_dir=output_dir, wandb_log=wandb_log)
+            except ValueError:
+                pass
 
         optimizer.step()
 
