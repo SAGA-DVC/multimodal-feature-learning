@@ -390,9 +390,9 @@ def build_vocab(annotation, tokenizer, min_freq):
         captions = []
         for value in list(annotation.values()):
             captions += value['sentences']
-
+        
         for caption in captions:
-            counter.update(tokenizer(caption))
+            counter.update(tokenizer(caption.lower()))
 
         return vocab(counter, min_freq=min_freq, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 
@@ -437,7 +437,6 @@ def build_dataset(video_set, args):
     else:
         vocab = build_vocab(json.load(open(PATHS_ANNOTATION['train'], 'r')), tokenizer, args.min_freq)
         pickle.dump(vocab, open(vocab_file, 'wb'))
-    
 
     dataset = ActivityNet(annotation_file=annotation_file, 
                           video_features_folder=video_features_folder,

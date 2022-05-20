@@ -32,8 +32,8 @@ def load_config():
     cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output_temp/checkpoint.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output_temp/checkpoint.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
     cfg.epochs = 50
@@ -62,7 +62,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with diff pos embed and modified attention (like nn.MultiHeadAttention)"
+    cfg.wandb.notes = "Sparse DETR with diff pos embed, modified attention (like nn.MultiHeadAttention) and lower case captions"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -78,7 +78,7 @@ def load_config():
 
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-epoch-1'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133'
 
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
@@ -148,7 +148,7 @@ def load_config():
     cfg.dvc.eos_coef = 0.1
 
     # TODO - handle not using some losses
-    cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
+    cfg.dvc.losses = ['labels', 'segments', 'captions']
     
     if cfg.use_differentiable_mask:
         cfg.dvc.losses.append('contexts')

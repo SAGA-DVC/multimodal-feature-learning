@@ -61,23 +61,17 @@ class HungarianMatcher(nn.Module):
                 len(index_i) = len(index_j) = min(num_queries, num_target_segments)
         """
 
-        batch_size, num_queries = outputs["pred_logits"].shape[:2]
+        batch_size, num_queries = outputs["pred_segments"].shape[:2]
 
         # We flatten to compute the cost matrices in a batch
-        out_prob = outputs["pred_logits"].flatten(0, 1).softmax(-1)  # (batch_size * num_queries, num_classes)
         out_segments = outputs["pred_segments"].flatten(0, 1)  # (batch_size * num_queries, 2)
 
         # Also concat the target labels and segments
-        tgt_ids = torch.cat([v["labels"] for v in targets]) # (nb_target_segments)
         tgt_segments = torch.cat([v["segments"] for v in targets]) # (nb_target_segments, 2)
 
         # Compute the classification cost.
         alpha = self.cost_alpha
         gamma = self.cost_gamma
-
-        neg_cost_class = (1 - alpha) * (out_prob ** gamma) * (-(1 - out_prob + 1e-8).log())
-        pos_cost_class = alpha * ((1 - out_prob) ** gamma) * (-(out_prob + 1e-8).log())
-        cost_class = pos_cost_class[:, tgt_ids] - neg_cost_class[:, tgt_ids] # (batch_size * num_queries, nb_target_segments)
 
         # Compute the L1 cost between segments
         cost_segment = torch.cdist(out_segments, tgt_segments, p=1) # (batch_size * num_queries, nb_target_segments)
@@ -86,7 +80,7 @@ class HungarianMatcher(nn.Module):
         cost_giou = -generalized_box_iou(segment_cl_to_xy(out_segments), segment_cl_to_xy(tgt_segments)) # (batch_size * num_queries, nb_target_segments)
 
         # Final cost matrix
-        cost_matrix = self.cost_segment * cost_segment + self.cost_class * cost_class + self.cost_giou * cost_giou # (batch_size * num_queries, nb_target_segments)
+        cost_matrix = self.cost_segment * cost_segment + self.cost_giou * cost_giou # (batch_size * num_queries, nb_target_segments)
 
         # Why CPU???
         cost_matrix = cost_matrix.view(batch_size, num_queries, -1).cpu() # (batch_size, num_queries, nb_target_segments)

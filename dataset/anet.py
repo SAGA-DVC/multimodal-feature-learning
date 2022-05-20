@@ -424,7 +424,7 @@ def build_vocab(annotation, tokenizer, min_freq):
             captions += value['sentences']
 
         for caption in captions:
-            counter.update(tokenizer(caption))
+            counter.update(tokenizer(caption.lower()))
 
         return vocab(counter, min_freq=min_freq, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 

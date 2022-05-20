@@ -182,7 +182,6 @@ class UnimodalSparseDVC(nn.Module):
                                                                                                                                     level_start_index, valid_ratios,  query_embedding_weight, 
                                                                                                                                     mask_flatten, proposals_mask, disable_iterative_refine)
 
-
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
         outputs_segment = self.segment_embedding_decoder(query_features)
 
