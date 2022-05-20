@@ -219,7 +219,6 @@ class SparseDeformableTransformer(nn.Module):
             
         else:
             backbone_topk_proposals = None
-            backbone_outputs_class = None
             backbone_outputs_coord_unact = None
             backbone_mask_prediction = None
             sparse_token_nums= None
@@ -245,10 +244,10 @@ class SparseDeformableTransformer(nn.Module):
         """
         # encoder
         output_proposals = backbone_output_proposals if self.use_enc_aux_loss else None 
-        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
+        output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_count, enc_inter_outputs_coords = self.encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten,
                                 mask_flatten, backbone_topk_proposals, output_proposals, sparse_token_nums)
 
-        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_coords
+        return output, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_count, enc_inter_outputs_coords
 
     def prepare_decoder_input_query(self, batch_size, query_embed):
         '''
@@ -369,7 +368,6 @@ class DeformableTransformerEncoder(nn.Module):
         self.num_layers = num_layers
          # hack implementation
         self.aux_heads = False
-        self.class_embedding = None
         self.count_head = None
         self.segment_embedding = None
 
@@ -419,7 +417,6 @@ class DeformableTransformerEncoder(nn.Module):
         sampling_locations_enc = []
         attn_weights_enc = []
         if self.aux_heads:
-            enc_inter_outputs_class = []
             enc_inter_outputs_count = []
             enc_inter_outputs_coords = []
             enc_inter_tgts = []
@@ -459,7 +456,6 @@ class DeformableTransformerEncoder(nn.Module):
             enc_inter_tgt = torch.stack(enc_inter_tgts)
         
             # feed outputs to aux. heads
-            outputs_class = self.class_embedding(enc_inter_tgt[:-1])
             outputs_count = predict_event_num_with_depth(self.count_head, enc_inter_tgt[:-1])
             outputs_offset = self.segment_embedding(enc_inter_tgt[:-1])
             outputs_coords = (output_proposals.squeeze(0) + outputs_offset).sigmoid()
@@ -469,9 +465,9 @@ class DeformableTransformerEncoder(nn.Module):
         attn_weights_enc = torch.stack(attn_weights_enc, dim=1)
 
         if self.aux_heads:
-            return output, sampling_locations_enc, attn_weights_enc, outputs_class, outputs_count, outputs_coords
+            return output, sampling_locations_enc, attn_weights_enc, outputs_count, outputs_coords
         else:
-            return output, sampling_locations_enc, attn_weights_enc, None, None, None
+            return output, sampling_locations_enc, attn_weights_enc, None, None
         
 
 
@@ -564,7 +560,6 @@ class DeformableTransformerDecoder(nn.Module):
         # hack implementation for iterative bounding box refinement and two-stage Deformable DETR
         self.bbox_head = None
         # self.segment_embedding = None
-        # self.class_embedding = None
         # self.count_head= None
 
     def forward(self, tgt, reference_points, src, src_temporal_shapes, src_level_start_index, src_valid_ratios,

@@ -51,9 +51,6 @@ class UnimodalSparseDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding_encoder = nn.Linear(d_model, num_classes + 1)
-        self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
-
         self.segment_embedding_encoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
         self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
         
@@ -74,8 +71,6 @@ class UnimodalSparseDVC(nn.Module):
         # TODO - do all this in init_weights()
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding_encoder.bias.data = torch.ones(num_classes + 1) * bias_value
-        self.class_embedding_decoder.bias.data = torch.ones(num_classes + 1) * bias_value
 
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data, 0.)
@@ -89,7 +84,6 @@ class UnimodalSparseDVC(nn.Module):
         
         if sparse_detr_args.use_enc_aux_loss:
             self.unimodal_sparse_transformer.encoder.aux_heads = True
-            self.unimodal_sparse_transformer.encoder.class_embedding = self.class_embedding_encoder
             self.unimodal_sparse_transformer.encoder.count_head = self.count_head_encoder
             self.unimodal_sparse_transformer.encoder.segment_embedding = self.segment_embedding_encoder
 
@@ -165,7 +159,7 @@ class UnimodalSparseDVC(nn.Module):
         # Forword Encoder
         src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten, backbone_output_proposals, backbone_topk_proposals, backbone_mask_prediction, sparse_token_nums = self.unimodal_sparse_transformer.prepare_encoder_inputs(srcs, masks, pos)
 
-        memory, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_class, enc_inter_outputs_count, enc_inter_outputs_segments = self.unimodal_sparse_transformer.forward_encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten, backbone_output_proposals, backbone_topk_proposals, sparse_token_nums)    
+        memory, sampling_locations_enc, attn_weights_enc, enc_inter_outputs_count, enc_inter_outputs_segments = self.unimodal_sparse_transformer.forward_encoder(src_flatten, temporal_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten, backbone_output_proposals, backbone_topk_proposals, sparse_token_nums)    
 
         # Forword Decoder
         # TODO - check proposals_mask (key_padding_mask in deformable_transformer (~mask??))
@@ -187,9 +181,7 @@ class UnimodalSparseDVC(nn.Module):
         query_features, inter_references, sampling_locations_dec, attn_weights_dec = self.unimodal_sparse_transformer.forward_decoder(tgt, reference_points, memory, temporal_shapes,
                                                                                                                                     level_start_index, valid_ratios,  query_embedding_weight, 
                                                                                                                                     mask_flatten, proposals_mask, disable_iterative_refine)
-        
-        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding_decoder(query_features).softmax(dim=-1)
+
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
         outputs_segment = self.segment_embedding_decoder(query_features)
@@ -211,8 +203,7 @@ class UnimodalSparseDVC(nn.Module):
         
         outputs_segment = outputs_segment.sigmoid()
 
-        out = {'pred_logits': outputs_class[-1], 
-                'pred_segments': outputs_segment[-1],
+        out = {'pred_segments': outputs_segment[-1],
                 'pred_count': outputs_count[-1],
                 'sampling_locations_enc': sampling_locations_enc,
                 'attn_weights_enc': attn_weights_enc,
@@ -229,7 +220,7 @@ class UnimodalSparseDVC(nn.Module):
             out["backbone_mask_prediction"] = backbone_mask_prediction
 
         if self.use_enc_aux_loss:
-            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
+            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
         
         if self.rho:
             out["sparse_token_nums"] = sparse_token_nums
@@ -294,7 +285,7 @@ class UnimodalSparseDVC(nn.Module):
             
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
+                out['aux_outputs'] = self._set_aux_loss(outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
                 
@@ -364,7 +355,7 @@ class UnimodalSparseDVC(nn.Module):
             # TODO - check use in eval
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
+                out['aux_outputs'] = self._set_aux_loss(outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
                 
@@ -377,14 +368,14 @@ class UnimodalSparseDVC(nn.Module):
             
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, is_enc_aux=False):
+    def _set_aux_loss(self, outputs_segment, outputs_count, is_enc_aux=False):
         if is_enc_aux:
-            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
-                for a, b, c in zip(outputs_class, outputs_segment, outputs_count)]
+            return [{'pred_segments': a, 'pred_count': b}
+                for a, b in zip(outputs_segment, outputs_count)]
         
         else:
-            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
-                for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1])]
+            return [{'pred_segments': a, 'pred_count': b}
+                for a, b in zip(outputs_segment[:-1], outputs_count[:-1])]
     
 
     @torch.jit.unused
@@ -510,6 +501,5 @@ class UnimodalSparseDVC(nn.Module):
 
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
         nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
         nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
