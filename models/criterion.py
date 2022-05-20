@@ -69,7 +69,7 @@ class SetCriterion(nn.Module):
 
 
 
-    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, log=True):
+    def loss_labels(self, outputs, targets, indices, num_segments, log=True):
 
         """
         Classification loss (Negative Log Likelihood)
@@ -92,24 +92,24 @@ class SetCriterion(nn.Module):
 
         src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
 
-        # # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
-        # # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
-        # # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
-        # idx = self._get_src_permutation_idx(indices) 
+        # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
+        # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
+        # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
+        idx = self._get_src_permutation_idx(indices) 
 
-        # # tensor (nb_target_segments) contains class labels
-        # # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
+        # tensor (nb_target_segments) contains class labels
+        # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
 
-        # # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
-        # target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
+        # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
         
-        # # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
-        # target_classes[idx] = target_classes_o
+        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
+        target_classes[idx] = target_classes_o
 
-        # # used in detr
-        # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        # losses = {'loss_ce': loss_ce}
+        # used in detr
+        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+        losses = {'loss_ce': loss_ce}
 
         # used in pdvc
         # # (batch_size, num_queries, num_classes + 1)
@@ -138,17 +138,17 @@ class SetCriterion(nn.Module):
         counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, weight, self.lloss_gau_mask, self.lloss_beta)
         losses['loss_counter'] = counter_loss
 
-        # if log:
-        #     # TODO this should probably be a separate loss, not hacked in this one here
-        #     # only takes top-1 accuracy for now
-        #     # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-        #     losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+        if log:
+            # TODO this should probably be a separate loss, not hacked in this one here
+            # only takes top-1 accuracy for now
+            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
         
         return losses
 
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_cardinality(self, outputs, targets, indices, num_segments):
 
         """ 
         Compute the cardinality error, ie the absolute error in the number of predicted non-empty segments
@@ -182,7 +182,7 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_segments(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_segments(self, outputs, targets, indices, num_segments):
 
         """
         Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss.
@@ -243,7 +243,7 @@ class SetCriterion(nn.Module):
         return losses
 
     
-    def loss_mask_prediction(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_mask_prediction(self, outputs, targets, indices, num_segments):
         assert "backbone_mask_prediction" in outputs
         assert "sampling_locations_dec" in outputs
         assert "attn_weights_dec" in outputs
@@ -281,7 +281,7 @@ class SetCriterion(nn.Module):
 
 
     @torch.no_grad()
-    def corr(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def corr(self, outputs, targets, indices, num_segments):
         if "backbone_topk_proposals" not in outputs.keys():
             return {}
 
@@ -309,87 +309,6 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_captions(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
-
-        """
-        Compute the losses related to the captions, KL Divergence using Label Smoothing.
-        targets dicts must contain the key "cap_tensor" containing a tensor of dim (total_caption_num, max_caption_length)
-        
-        Parameters:
-            `outputs` (dict) : Output of the model. See forward() for the format.
-            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
-            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
-            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
-            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 0 if num_token useless, else 1 (nb_target_segments, num_tokens)
-        
-        Returns: dict {loss : value} where loss is 'loss_caption'.
-        """
-
-        assert 'pred_captions' in outputs, "Outputs does not have the key 'pred_captions'."
-
-        losses = {}
-        loss_caption = self.labelSmoothing(outputs['pred_captions'], targets['cap_tensor'][:, 1:])
-        # print('----------------------------', loss_caption, num_tokens_without_pad)
-        losses['loss_caption'] = loss_caption / num_tokens_without_pad
-        return losses
-
-    # TODO - focal loss and dice loss for masks
-    def unimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
-
-        """
-        Compute the losses related to the context_mask using BCE.
-        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
-        
-        Parameters:
-            `outputs` (dict) : Output of the model. See forward() for the format.
-            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
-            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
-            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
-            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
-        
-        Returns: dict {loss : value} where loss is 'loss_context'.
-        """
-
-        assert 'pred_memory_mask' in outputs, "Outputs does not have the key 'pred_memory_mask'."
-
-        losses = {}
-        loss_context = F.binary_cross_entropy_with_logits(outputs['pred_memory_mask'], memory_mask)
-        losses['loss_context'] = loss_context
-        return losses
-
-    # TODO - check avg or sum of video/audio contexts
-    def multimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
-
-        """
-        Compute the losses related to the context_mask using BCE.
-        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
-        
-        Parameters:
-            `outputs` (dict) : Output of the model. See forward() for the format.
-            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
-            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
-            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
-            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
-        
-        Returns: dict {loss : value} where loss is 'loss_context'.
-        """
-        
-        assert 'video_pred_memory_mask' in outputs, "Outputs does not have the key 'video_pred_memory_mask'."
-        assert 'audio_pred_memory_mask' in outputs, "Outputs does not have the key 'audio_pred_memory_mask'."
-
-        losses = {}
-        video_memory_mask, audio_memory_mask = memory_mask
-
-        video_loss_context = F.binary_cross_entropy_with_logits(outputs['video_pred_memory_mask'], video_memory_mask)
-        audio_loss_context = F.binary_cross_entropy_with_logits(outputs['audio_pred_memory_mask'], audio_memory_mask)
-
-        losses['loss_context'] = (video_loss_context + audio_loss_context) / 2
-        return losses
-
-
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
@@ -403,7 +322,7 @@ class SetCriterion(nn.Module):
         return batch_idx, tgt_idx
 
 
-    def get_loss(self, loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs):
+    def get_loss(self, loss, outputs, targets, indices, num_segments, **kwargs):
 
         """
         Calculates a specific loss of the outputs w.r.t. the targets. 
@@ -425,13 +344,11 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
             'segments': self.loss_segments,
-            'captions': self.loss_captions,
-            'contexts': self.multimodal_loss_contexts if self.is_multimodal else self.unimodal_loss_contexts,
             "mask_prediction": self.loss_mask_prediction,
             "corr": self.corr,
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
-        return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
+        return loss_map[loss](outputs, targets, indices, num_segments, **kwargs)
 
     def forward(self, outputs, targets, indices, indices_aux, memory_mask):
 
@@ -481,18 +398,10 @@ class SetCriterion(nn.Module):
             torch.distributed.all_reduce(num_segments)
         num_segments = torch.clamp(num_segments / get_world_size(), min=1).item()
 
-        # Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-        # ignore <bos> token as it is not predicted as part of the output
-        num_tokens_without_pad = (targets['cap_tensor'][:, 1:] != self.pad_idx).sum()
-        num_tokens_without_pad = torch.as_tensor([num_tokens_without_pad], dtype=torch.float, device=next(iter(outputs.values())).device)
-        if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_tokens_without_pad)
-        num_tokens_without_pad = torch.clamp(num_tokens_without_pad / get_world_size(), min=1).item()
-
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments))
 
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
@@ -500,7 +409,7 @@ class SetCriterion(nn.Module):
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
                 # index_aux = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
-                    if loss == 'captions' or loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                    if loss == 'mask_prediction' or loss == 'corr':
                         # captions are computed in another loop
                         # Intermediate masks losses are too costly to compute, we ignore them.
                         continue
@@ -508,14 +417,7 @@ class SetCriterion(nn.Module):
                     if loss == 'labels':
                         # Logging is enabled only for the last layer (class error)
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
-                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
-                    losses.update(l_dict)
-        
-        if 'aux_outputs_caption' in outputs:
-            for i, aux_outputs_caption in enumerate(outputs['aux_outputs_caption']):
-                if 'captions' in self.losses:
-                    l_dict = self.get_loss('captions', aux_outputs_caption, targets, None, None, num_tokens_without_pad, None, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -524,56 +426,18 @@ class SetCriterion(nn.Module):
             for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):
                 # index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
-                    if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                    if loss == 'mask_prediction' or loss == 'corr':
                         # Intermediate masks losses are too costly to compute, we ignore them.
                         continue
                     kwargs = {}
                     if loss == 'labels':
                         # Logging is enabled only for the last layer (class error)
                         kwargs = {'log': False}
-                    if loss == 'captions':
-                        # there are no captions in encoder loss
-                        continue
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
         return losses
-
-
-
-class LabelSmoothing(nn.Module):
-    
-    def __init__(self, smoothing, pad_idx):
-        super(LabelSmoothing, self).__init__()
-        self.smoothing = smoothing
-        self.pad_idx = pad_idx
-        
-    def forward(self, pred, target):  # pred (B, S, V), target (B, S)
-
-        # Note: preds are expected to be after log
-        B, S, V = pred.shape
-        # (B, S, V) -> (B * S, V); (B, S) -> (B * S)
-        pred = pred.contiguous().view(-1, V)
-        target = target.contiguous().view(-1)
-        
-        # prior (uniform)
-        dist = self.smoothing * torch.ones_like(pred) / (V - 2)
-        # add smoothed ground-truth to prior (args: dim, index, src (value))
-        dist.scatter_(1, target.unsqueeze(-1).long(), 1-self.smoothing)
-        # make the padding token to have zero probability
-        dist[:, self.pad_idx] = 0
-        # ?? mask: 1 if target == pad_idx; 0 otherwise
-        mask = torch.nonzero(target == self.pad_idx)
-        
-        if mask.sum() > 0 and len(mask) > 0:
-            # dim, index, val
-            dist.index_fill_(0, mask.squeeze(), 0)
-        
-        loss = F.kl_div(pred.log(), dist, reduction='sum')
-
-        return loss
-
 
 
 

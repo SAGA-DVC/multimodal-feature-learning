@@ -73,14 +73,16 @@ def load_config():
     # ActivityNet
     cfg.dataset.activity_net = ml_collections.ConfigDict()
 
-    cfg.dataset.activity_net.anet_path = './anet_data'
+    cfg.dataset.activity_net.anet_path = './anet_data/action_recognition'
     cfg.dataset.activity_net.raw_video_folder = '../activity-net/30fps_splits'
 
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
     cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-epoch-1'
 
-    cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
+    cfg.dataset.activity_net.action_labels_dict = './anet_data/action_recognition/action_labels_dict'
+    cfg.dataset.activity_net.inverted_action_labels_dict = './anet_data/action_recognition/inverted_action_labels_dict'
+    cfg.dataset.activity_net.invalid_videos_json = './anet_data/action_recognition/invalid_ids.json'
 
     cfg.dataset.activity_net.for_testing = False    # for testing only
     cfg.dataset.activity_net.num_samples = 6    # for testing only
@@ -148,7 +150,7 @@ def load_config():
     cfg.dvc.eos_coef = 0.1
 
     # TODO - handle not using some losses
-    cfg.dvc.losses = ['labels', 'segments', 'cardinality', 'captions']
+    cfg.dvc.losses = ['labels', 'segments', 'cardinality']
     
     if cfg.use_differentiable_mask:
         cfg.dvc.losses.append('contexts')

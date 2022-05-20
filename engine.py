@@ -59,7 +59,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
+            outputs = model(obj)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -68,7 +68,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions, indices, indices_aux, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
+            outputs = model(obj)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -194,7 +194,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs = model(obj)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -203,7 +203,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=True)
+            outputs = model(obj)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -239,7 +239,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         # print("Video_DUR: ",video_durations, outputs['pred_segments'][idx], denormalized_segments, denormalized_segments.shape)
 
         # captions
-        captions_string = captions_to_string(captions_with_eos, vocab)
+        # captions_string = captions_to_string(captions_with_eos, vocab)
 
         for i, batch_id in enumerate(idx[0]):
             video_id = obj['video_key'][batch_id]
