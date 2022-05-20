@@ -249,7 +249,9 @@ class UnimodalSparseDVC(nn.Module):
         memory, memory_mask = self.get_segment_features(memory, denormalized_segments, idx, video_durations)
 
         memory = memory.to(video.device)
-        memory_mask = memory_mask.to(video.device)    # (nb_target_segments, num_tokens)
+
+        memory_mask = memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
+        memory_mask = memory_mask.to(video.device)
 
         # Differentiable Mask
         if self.use_differentiable_mask:
@@ -265,13 +267,14 @@ class UnimodalSparseDVC(nn.Module):
             # Gating mechanism for memory_mask TODO: scores
             seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
 
-            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * memory_mask
+            pred_memory_mask = seg_confidence * pred_memory_mask + (1 - seg_confidence) * torch.squeeze(memory_mask)
                         
             out['pred_memory_mask'] = pred_memory_mask    # last layer value will be returned at the end
             
-            assert out['pred_memory_mask'].shape == memory_mask.shape
-
-            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)    # (nb_target_segments, num_tokens)
+            assert out['pred_memory_mask'].shape == torch.squeeze(memory_mask).shape
+            
+            pred_memory_mask = (pred_memory_mask.sigmoid() > 0.5)
+            pred_memory_mask = pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
         
         # Caption Decoder
         if is_training:
@@ -279,14 +282,15 @@ class UnimodalSparseDVC(nn.Module):
             
             tgt_padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
 
-            tgt_mask = self.make_tgt_mask(tgt_captions, tgt_padding_mask.device)    # (max_caption_length - 1, max_caption_length - 1)
+            tgt_mask = self.make_tgt_mask(tgt_captions, tgt_padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
+            tgt_mask = tgt_mask.to(tgt_captions.device)
 
             # TODO - add pos embed for memory
             # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (caption_decoder_depth, total_caption_num, max_caption_length - 1, vocab_size)
             if self.use_differentiable_mask:
-                outputs_caption = self.unimodal_caption_decoder(tgt=tgt_captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=pred_memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(tgt_captions, memory, tgt_mask, tgt_padding_mask, pred_memory_mask)
             else:
-                outputs_caption = self.unimodal_caption_decoder(tgt=tgt_captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=memory_mask)
+                outputs_caption = self.unimodal_caption_decoder(tgt_captions, memory, tgt_mask, tgt_padding_mask, memory_mask)
 
             out["pred_captions"] = outputs_caption[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
 
@@ -301,7 +305,7 @@ class UnimodalSparseDVC(nn.Module):
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption)    # caption depth could be different
 
             if self.use_differentiable_mask:
-                return out, outputs_caption_last_layer, indices, indices_aux, memory_mask.float()
+                return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
                 return out, outputs_caption_last_layer, indices, indices_aux, None
 
@@ -325,13 +329,13 @@ class UnimodalSparseDVC(nn.Module):
                 tgt_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
                 tgt_padding_mask = tgt_padding_mask.to(memory_mask.device)
                 
-                tgt_mask = self.make_tgt_mask(captions, tgt_padding_mask.device)  # (max_caption_length - 1, max_caption_length - 1)
+                tgt_mask = self.make_tgt_mask(captions, tgt_padding_mask)  # (max_caption_length - 1, max_caption_length - 1)
 
                 # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
                 if self.use_differentiable_mask:
-                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=pred_memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, tgt_padding_mask, pred_memory_mask)
                 else:
-                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, memory=memory, tgt_mask=tgt_mask, memory_mask=None, tgt_padding_mask=tgt_padding_mask, memory_padding_mask=memory_mask)
+                    outputs_caption_val = self.unimodal_caption_decoder(captions, memory, tgt_mask, tgt_padding_mask, memory_mask)
 
                 out['pred_captions'] = outputs_caption_val[-1]
 
@@ -371,7 +375,7 @@ class UnimodalSparseDVC(nn.Module):
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption_val)
 
             if self.use_differentiable_mask:
-                return out, captions_with_eos, indices, indices_aux, memory_mask.float()
+                return out, captions_with_eos, indices, indices_aux, torch.squeeze(memory_mask).float()
             else:
                 return out, captions_with_eos, indices, indices_aux, None
             
@@ -392,7 +396,7 @@ class UnimodalSparseDVC(nn.Module):
         return [{'pred_captions': a} for a in outputs_caption[:-1]]
 
 
-    def make_tgt_mask(self, target, device):
+    def make_tgt_mask(self, target, tgt_padding_mask):
         """
         Generates a mask that is a combination of a lookahead mask and a padding mask
         
@@ -405,10 +409,13 @@ class UnimodalSparseDVC(nn.Module):
         """
 
         batch_size, seq_len = target.shape
+        
+        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len)))
+        look_ahead_mask = look_ahead_mask.to(tgt_padding_mask.device)
 
-        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len), device=device))
+        tgt_mask = torch.maximum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask).bool()
 
-        return look_ahead_mask.bool()    # (seq_len, seq_len)
+        return tgt_mask    # (batch_size, 1, seq_len, seq_len)
 
 
     def make_memory_mask(self):
@@ -513,3 +520,17 @@ class UnimodalSparseDVC(nn.Module):
         self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
         nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
         nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
+            
+
+    def load_weights(self, model_official):
+
+        """
+        Loads the weights and biases from the pre-trained model to the current model for modules in the UnimodalSparseDVC model
+        These weights include positional embeddings.
+
+        Parameters:
+            `model_custom`: The current ViViT model
+            `model_official`: The model which would be used to load the pre-trained weights
+        """
+
+        load_positional_embeddings(self, model_official)

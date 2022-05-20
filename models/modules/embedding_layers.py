@@ -165,7 +165,7 @@ class PositionalEmbedding(nn.Module):
         return x
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout, maxlen = 100):
+    def __init__(self, d_model, dropout, maxlen = 5000):
         super(PositionalEncoding, self).__init__()
         den = torch.exp(- torch.arange(0, d_model, 2) * math.log(10000) / d_model)
         pos = torch.arange(0, maxlen).reshape(maxlen, 1)

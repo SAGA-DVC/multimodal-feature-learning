@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -329,6 +330,7 @@ class SetCriterion(nn.Module):
 
         losses = {}
         loss_caption = self.labelSmoothing(outputs['pred_captions'], targets['cap_tensor'][:, 1:])
+        # print('----------------------------', loss_caption, num_tokens_without_pad)
         losses['loss_caption'] = loss_caption / num_tokens_without_pad
         return losses
 
@@ -548,6 +550,7 @@ class LabelSmoothing(nn.Module):
         self.pad_idx = pad_idx
         
     def forward(self, pred, target):  # pred (B, S, V), target (B, S)
+
         # Note: preds are expected to be after log
         B, S, V = pred.shape
         # (B, S, V) -> (B * S, V); (B, S) -> (B * S)
@@ -566,8 +569,10 @@ class LabelSmoothing(nn.Module):
         if mask.sum() > 0 and len(mask) > 0:
             # dim, index, val
             dist.index_fill_(0, mask.squeeze(), 0)
-            
-        return F.kl_div(pred.log(), dist, reduction='sum')
+        
+        loss = F.kl_div(pred.log(), dist, reduction='sum')
+
+        return loss
 
 
 

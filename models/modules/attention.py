@@ -54,10 +54,10 @@ class Attention(nn.Module):
         self.attention_dropout = nn.Dropout(attention_dropout)
 
         self.projection_layer = nn.Linear(d_model, d_model)
-        self.projection_dropout = nn.Dropout(projection_dropout)
+        # self.projection_dropout = nn.Dropout(projection_dropout)
 
-    # src_mask not yet added
-    def forward(self, x, mask=None):
+    # add q, k ,v
+    def forward(self, x, attn_mask=None, key_padding_mask=None, need_weights=False):
 
         """
         Performs a forward pass on the multi-headed attention block followed by a linear (projection) layer.
@@ -83,8 +83,14 @@ class Attention(nn.Module):
         # -> (batch_size, num_heads, num_tokens, num_tokens)
         self_attention = torch.matmul(query, key.transpose(-2, -1))
 
-        if mask is not None:
-            self_attention = self_attention.masked_fill(mask, float("-1e20"))
+        # if mask is not None:
+        #     self_attention = self_attention.masked_fill(mask, float("-1e20"))
+
+        if attn_mask is not None:
+            self_attention = self_attention.masked_fill(attn_mask, float("-1e20"))
+        
+        if key_padding_mask is not None:
+            self_attention = self_attention.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(1), float("-1e20"))
             
         self_attention = (self_attention * self.scale).softmax(dim=-1)
         self_attention = self.attention_dropout(self_attention)
@@ -93,9 +99,13 @@ class Attention(nn.Module):
         weighted_attention = weighted_attention.transpose(1, 2).flatten(2) # (batch_size, num_tokens, d_model)
         
         x = self.projection_layer(weighted_attention) # (batch_size, num_tokens, d_model)
-        x = self.projection_dropout(x)
+        # x = self.projection_dropout(x)
 
-        return x
+        if need_weights:
+            return x, self_attention
+        else:
+            return x, None
+        
 
 # TODO - add mask
 class DotProductAttention(nn.Module):
@@ -231,10 +241,10 @@ class CrossAttention(nn.Module):
         self.attention_dropout = nn.Dropout(attention_dropout)
 
         self.projection_layer = nn.Linear(d_model, d_model)
-        self.projection_dropout = nn.Dropout(projection_dropout)
+        # self.projection_dropout = nn.Dropout(projection_dropout)
 
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q, k, v, attn_mask=None, key_padding_mask=None, need_weights=False):
 
         """
         Performs a forward pass on the cross attention block followed by a linear (projection) layer.
@@ -271,9 +281,15 @@ class CrossAttention(nn.Module):
         # (batch_size, num_heads, num_tokens_q, head_dim) * (batch_size, num_heads, head_dim, num_tokens_k) 
         # -> (batch_size, num_heads, num_tokens_q, num_tokens_k)
         cross_attention = torch.matmul(q, k.transpose(-2, -1))
+        
+        # if mask is not None:
+        #     cross_attention = cross_attention.masked_fill(mask, float("-1e20"))
 
-        if mask is not None:
-            cross_attention = cross_attention.masked_fill(mask, float("-1e20"))
+        if attn_mask is not None:
+            cross_attention = cross_attention.masked_fill(attn_mask, float("-1e20"))
+        
+        if key_padding_mask is not None:
+            cross_attention = cross_attention.masked_fill(key_padding_mask.unsqueeze(1).unsqueeze(1), float("-1e20"))
 
         cross_attention = (cross_attention * self.scale).softmax(dim=-1)
         cross_attention = self.attention_dropout(cross_attention)
@@ -282,9 +298,12 @@ class CrossAttention(nn.Module):
         weighted_cross_attention = weighted_cross_attention.transpose(1, 2).flatten(2) # (batch_size, num_tokens_q, d_model)
         
         x = self.projection_layer(weighted_cross_attention) # (batch_size, num_tokens_q, d_model)
-        x = self.projection_dropout(x)
+        # x = self.projection_dropout(x)
 
-        return x
+        if need_weights:
+            return x, cross_attention
+        else:
+            return x, None
 
 
 

@@ -529,11 +529,17 @@ class UnimodalCaptionDecoderLayer(nn.Module):
 
         self.pre_norm=pre_norm
         
-        self.self_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
-                                                bias=qkv_bias, batch_first=True)
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.cross_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        # self.self_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
+        #                                         bias=qkv_bias, batch_first=True)
         
-        self.cross_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
-                                                bias=qkv_bias, batch_first=True)
+        # self.cross_attention = MultiheadAttention(embed_dim=d_model, num_heads=num_heads, dropout=attention_dropout, 
+        #                                         bias=qkv_bias, batch_first=True)
 
         self.projection_dropout_1 = nn.Dropout(projection_dropout)
         self.projection_dropout_2 = nn.Dropout(projection_dropout)

@@ -277,17 +277,16 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     val_caption_path = Path(os.path.join(args.submission_dir, 'val'))
     if not os.path.exists(val_caption_path):
         val_caption_path.mkdir(parents=True, exist_ok=True)
-
-    if args.save_submission:
-        save_submission(submission_json_epoch, os.path.join(val_caption_path, f"E{epoch}_submission.json"))
     
-    if wandb_log:
-        wandb.save(os.path.join(args.submission_dir, "val", f"E{epoch}_submission.json"))
+    if args.output_dir and is_main_process():
+        if args.save_submission:
+            save_submission(submission_json_epoch, os.path.join(val_caption_path, f"E{epoch}_submission.json"))
+        
+        if wandb_log:
+            wandb.save(os.path.join(val_caption_path, f"E{epoch}_submission.json"))
 
     return return_dict
-     
 
-    # return scores
 
 
 # TODO - no grad reqd??

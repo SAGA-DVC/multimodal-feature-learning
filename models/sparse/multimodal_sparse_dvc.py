@@ -49,11 +49,14 @@ class MultimodalSparseDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding = nn.Linear(d_model, num_classes + 1)
-        self.segment_embedding = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        self.class_embedding_encoder = nn.Linear(d_model, num_classes + 1)
+        self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
+
+        self.segment_embedding_encoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
         
-        # TODO - +1 ??
-        self.count_head = nn.Linear(d_model, max_eseq_length + 1)
+        self.count_head_encoder = nn.Linear(d_model, max_eseq_length + 1)
+        self.count_head_decoder = nn.Linear(d_model, max_eseq_length + 1)
 
         self.matcher = matcher
 
@@ -69,57 +72,30 @@ class MultimodalSparseDVC(nn.Module):
         # TODO - do all this in init_weights()
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding.bias.data = torch.ones(num_classes + 1) * bias_value
-        nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
-        nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
+        self.class_embedding_encoder.bias.data = torch.ones(num_classes + 1) * bias_value
+        self.class_embedding_decoder.bias.data = torch.ones(num_classes + 1) * bias_value
 
+        nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
+        nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data, 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].weight.data, 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].bias.data[:2], 0.)
+        nn.init.constant_(self.segment_embedding_decoder.layers[-1].bias.data[2:], -2.0)
 
-        # Unimodal Sparse DETR
+        # Multimodal Sparse DETR
         self.multimodal_sparse_transformer = build_multimodal_sparse_deforamble_transformer(sparse_detr_args)
         
-        num_pred = sparse_detr_args.dec_layers
-
         if sparse_detr_args.use_enc_aux_loss:
-            # at each layer of encoder (excl. the last)
-            num_pred += sparse_detr_args.enc_layers - 1 
-
-            # individual heads with the same initialization
-            # self.class_embedding = _get_clones(self.class_embedding, num_pred)
-            # self.count_head = _get_clones(self.count_head, num_pred)
-            # self.segment_embedding = _get_clones(self.segment_embedding, num_pred)
-            # nn.init.constant_(self.segment_embedding[0].layers[-1].bias.data[2:], -2.0)
-
-            # shared heads
-            nn.init.constant_(self.segment_embedding.layers[-1].bias.data[2:], -2.0)
-            self.class_embedding = nn.ModuleList([self.class_embedding for _ in range(num_pred)])
-            self.count_head = nn.ModuleList([self.count_head for _ in range(num_pred)])
-            self.segment_embedding = nn.ModuleList([self.segment_embedding for _ in range(num_pred)])
-
-        else:
-            # shared heads
-            nn.init.constant_(self.segment_embedding.layers[-1].bias.data[2:], -2.0)
-            self.class_embedding = nn.ModuleList([self.class_embedding for _ in range(num_pred)])
-            self.count_head = nn.ModuleList([self.count_head for _ in range(num_pred)])
-            self.segment_embedding = nn.ModuleList([self.segment_embedding for _ in range(num_pred)])
-
-        
-        if sparse_detr_args.use_enc_aux_loss:
-            # the output from the last layer should be specially treated as an input of decoder
-            num_layers_excluding_the_last = sparse_detr_args.enc_layers - 1
-            self.multimodal_sparse_transformer.encoder.aux_heads = True
-            self.multimodal_sparse_transformer.encoder.class_embedding = self.class_embedding[-num_layers_excluding_the_last:]
-            self.multimodal_sparse_transformer.encoder.count_head = self.count_head[-num_layers_excluding_the_last:]
-            self.multimodal_sparse_transformer.encoder.segment_embedding = self.segment_embedding[-num_layers_excluding_the_last:] 
-            for segment_embed in self.multimodal_sparse_transformer.encoder.segment_embedding:
-                nn.init.constant_(segment_embed.layers[-1].bias.data[2:], 0.0)
-
+            self.unimodal_sparse_transformer.encoder.aux_heads = True
+            self.unimodal_sparse_transformer.encoder.class_embedding = self.class_embedding_encoder
+            self.unimodal_sparse_transformer.encoder.count_head = self.count_head_encoder
+            self.unimodal_sparse_transformer.encoder.segment_embedding = self.segment_embedding_encoder
 
         # Context Module
         self.num_feature_levels = sparse_detr_args.num_feature_levels
         self.video_rescale_len = sparse_detr_args.video_rescale_len
         self.audio_rescale_len = detr_args.audio_rescale_len
 
-        self.num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
+        self.video_num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.video_rescale_len)
         self.audio_num_tokens = ceil(((2**self.num_feature_levels - 1) / 2**(self.num_feature_levels - 1)) * self.audio_rescale_len)
 
         self.use_differentiable_mask = use_differentiable_mask
@@ -132,7 +108,6 @@ class MultimodalSparseDVC(nn.Module):
         self.vocab = vocab
         self.multimodal_caption_decoder = build_multimodal_caption_decoder(caption_args, len(vocab), seq_len, embedding_matrix)
         
-
         # self.init_weights()
 
 
@@ -213,47 +188,34 @@ class MultimodalSparseDVC(nn.Module):
         query_features, inter_references, video_sampling_locations_dec, video_attn_weights_dec, audio_sampling_locations_dec, audio_attn_weights_dec = self.multimodal_sparse_transformer.forward_decoder(tgt, reference_points, 
                                                                                                                                                                                                         video_memory, video_input, audio_memory, audio_input, 
                                                                                                                                                                                                         query_embed, proposals_mask, disable_iterative_refine)
-        
+
         # no aux loss
         if not self.aux_loss:
             query_features, inter_references, sampling_locations_dec, attn_weights_dec = query_features[-1:], inter_references[-1:], sampling_locations_dec[:, -1:], attn_weights_dec[:, -1:]
 
-        outputs_class = []
-        outputs_counts = []
-        outputs_segment = []
+
+        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
+        outputs_class = self.class_embedding_decoder(query_features).softmax(dim=-1)
+
+        # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
+        outputs_segment = self.segment_embedding_decoder(query_features)
+
+        # (1, batch_size, max_eseq_length + 1) OR (depth, batch_size, max_eseq_length + 1)
+        outputs_count = predict_event_num_with_depth(self.count_head_decoder, query_features)
+
+        assert init_reference is not None and inter_references is not None
+        reference = inter_references
+        reference[0] = init_reference
+        reference[1:] = inter_references[:-1].clone()    # TODO - clone() - error if removed
         
-        num_pred = query_features.shape[0]
-        for lvl in range(num_pred):
-            # (batch_size, num_queries, num_classes + 1)
-            output_class = self.class_embedding[lvl](query_features[lvl]).softmax(dim=-1)
-
-            # (batch_size, num_queries, 2)
-            output_segment = self.segment_embedding[lvl](query_features[lvl])
-
-            # (batch_size, max_eseq_length + 1)
-            output_count = predict_event_num(self.count_head[lvl], query_features[lvl])
-
-            assert init_reference is not None and inter_references is not None
-            if lvl == 0:
-                reference = init_reference
-            else:
-                reference = inter_references[lvl - 1]
-            reference = inverse_sigmoid(reference)
-            if reference.shape[-1] == 2:
-                output_segment += reference
-            else:
-                assert reference.shape[-1] == 1
-                output_segment[..., :2] += reference
-            
-            output_segment = output_segment.sigmoid()
-
-            outputs_class.append(output_class)
-            outputs_counts.append(output_count)
-            outputs_segment.append(output_segment)
+        reference = inverse_sigmoid(reference)
+        if reference.shape[-1] == 2:
+            outputs_segment += reference
+        else:
+            assert reference.shape[-1] == 1
+            outputs_segment[..., :2] += reference
         
-        outputs_class = torch.stack(outputs_class)    # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_count = torch.stack(outputs_counts)    # (1, batch_size, max_eseq_length + 1) OR (depth, batch_size, max_eseq_length + 1)
-        outputs_segment = torch.stack(outputs_segment)    # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
+        outputs_segment = outputs_segment.sigmoid()
 
         out = {'pred_logits': outputs_class[-1], 
                 'pred_segments': outputs_segment[-1],
@@ -265,7 +227,7 @@ class MultimodalSparseDVC(nn.Module):
                 'temporal_shapes': temporal_shapes,
                 'level_start_index': level_start_index
             }
-
+        
         if backbone_topk_proposals is not None:
             out["backbone_topk_proposals"] = backbone_topk_proposals
 
@@ -273,152 +235,123 @@ class MultimodalSparseDVC(nn.Module):
             out["backbone_mask_prediction"] = backbone_mask_prediction
 
         if self.use_enc_aux_loss:
-            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count)
+            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
         
         if self.rho:
             out["sparse_token_nums"] = sparse_token_nums
 
         out['mask_flatten'] = torch.cat([m.flatten(1) for m in masks], 1)
+        
 
-        outputs_captions = []
-        video_memory_list = []
-        video_memory_mask_list = []
-        video_pred_memory_mask_list = []
-        audio_memory_list = []
-        audio_memory_mask_list = []
-        audio_pred_memory_mask_list = []
+        # Retrieve the matching between the outputs of the last layer and the targets, has torch.no_grad() in forward call
+        # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
+        indices = self.matcher(out, obj['video_target']) 
 
-        for lvl in range(num_pred):
-            out_aux = {'pred_logits': outputs_class[lvl], 'pred_segments': outputs_segment[lvl], 'pred_count': outputs_count[lvl]}
+        # Context Features
+        video_durations = list(obj['video_length'][:, 1])
+        idx = get_src_permutation_idx(indices)
+        denormalized_segments = denormalize_segments(out['pred_segments'][idx], video_durations, idx[0])
+
+        # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
+        video_memory, video_memory_mask = self.get_segment_features(video_memory, denormalized_segments, idx, video_durations)
+        audio_memory, audio_memory_mask = self.get_segment_features(audio_memory, denormalized_segments, idx, video_durations)
+
+        video_memory, audio_memory = video_memory.to(video.device), audio_memory.to(video.device)
+        video_memory_mask, audio_memory_mask = video_memory_mask.to(video.device), audio_memory_mask.to(video.device)
+
+        if self.use_differentiable_mask:
+            # TODO - use outputs_segment and use [-1] for pred_memory_mask
+            # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
+            # input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
+
+            query_features_selected_segments = query_features[-1][idx]  # (nb_target_segments, d_model)
+
+            input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
+
+            video_pred_memory_mask = self.video_context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens_v)
+            audio_pred_memory_mask = self.audio_context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens_a)
+
+            # Gating mechanism for memory_mask TODO: scores
+            seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
+
+            video_pred_memory_mask = seg_confidence * video_pred_memory_mask + (1 - seg_confidence) * video_memory_mask
+            audio_pred_memory_mask = seg_confidence * audio_pred_memory_mask + (1 - seg_confidence) * audio_memory_mask
             
-            # Retrieve the matching between the outputs of the last layer and the targets
-            # list (len=batch_size) of tuple of tensors (tuple dimensions=(2, gt_target_segments))
-            indices = self.matcher(out_aux, obj['video_target']) 
+            out['video_pred_memory_mask'] = video_pred_memory_mask
+            out['audio_pred_memory_mask'] = audio_pred_memory_mask
+            
+            assert out['video_pred_memory_mask'].shape == video_memory_mask.shape
+            assert out['audio_pred_memory_mask'].shape == audio_memory_mask.shape
 
-            # Context Features
-            video_durations = list(obj['video_length'][:, 1])
-            idx = get_src_permutation_idx(indices)
-            denormalized_segments = denormalize_segments(out['pred_segments'][idx], video_durations, idx[0])
+            video_pred_memory_mask = (video_pred_memory_mask.sigmoid() > 0.5)    # (nb_target_segments, num_tokens)
+            audio_pred_memory_mask = (audio_pred_memory_mask.sigmoid() > 0.5)    # (nb_target_segments, num_tokens)
 
-            # (nb_target_segments, num_tokens, d_model), (nb_target_segments, num_tokens)
-            video_memory, video_memory_mask = self.get_segment_features(video_memory, denormalized_segments, idx, video_durations)
-            audio_memory, audio_memory_mask = self.get_segment_features(audio_memory, denormalized_segments, idx, video_durations)
-
-            video_memory = video_memory.to(video.device)
-            audio_memory = audio_memory.to(audio.device)
-
-            video_memory_mask = video_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-            video_memory_mask = video_memory_mask.to(video.device)
-            audio_memory_mask = audio_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-            audio_memory_mask = audio_memory_mask.to(audio.device)
-
-            # Differentiable Mask
-            if self.use_differentiable_mask:
-                # TODO - use outputs_segment and use [-1] for pred_memory_mask
-                # input_to_context_mask = torch.cat([out['pred_segments'], torch.squeeze(query_features)], 2).reshape(batch_size, -1)
-                # input_to_context_mask = out['pred_segments'].reshape(batch_size, -1)    # (batch_size, num_queries*2)
-
-                query_features_selected_segments = query_features[-1][idx]  # (nb_target_segments, d_model)
-
-                input_to_context_mask = torch.cat([denormalized_segments.to(video.device), query_features_selected_segments], 1)
-                
-                video_pred_memory_mask = self.video_context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens_v)
-                audio_pred_memory_mask = self.audio_context_mask_model(input_to_context_mask)   # (nb_target_segments, num_tokens_a)
-
-                # Gating mechanism for memory_mask TODO: scores
-                seg_confidence = torch.ones([memory.shape[0], 1]).to(video.device)   # (nb_target_segments, 1)
-
-                video_pred_memory_mask = seg_confidence * video_pred_memory_mask + (1 - seg_confidence) * torch.squeeze(video_memory_mask)
-                audio_pred_memory_mask = seg_confidence * audio_pred_memory_mask + (1 - seg_confidence) * torch.squeeze(audio_memory_mask)
-                            
-                out['video_pred_memory_mask'] = video_pred_memory_mask
-                out['audio_pred_memory_mask'] = audio_pred_memory_mask
-                
-                assert out['video_pred_memory_mask'].shape == torch.squeeze(video_memory_mask).shape
-                assert out['audio_pred_memory_mask'].shape == torch.squeeze(audio_memory_mask).shape
-
-                video_pred_memory_mask = (video_pred_memory_mask.sigmoid() > 0.5)
-                video_pred_memory_mask = video_pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-
-                audio_pred_memory_mask = (audio_pred_memory_mask.sigmoid() > 0.5)
-                audio_pred_memory_mask = audio_pred_memory_mask.unsqueeze(1).unsqueeze(1)    # (nb_target_segments, 1, 1, num_tokens)
-
-            video_memory_list.append(video_memory)
-            video_memory_mask_list.append(video_memory_mask)
-            video_pred_memory_mask_list.append(video_pred_memory_mask)
-
-            audio_memory_list.append(audio_memory)
-            audio_memory_mask_list.append(audio_memory_mask)
-            audio_pred_memory_mask_list.append(audio_pred_memory_mask)
-
-            # Caption Decoder
-            if is_training:
-                captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
-                
-                padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
-
-                tgt_mask = self.make_tgt_mask(captions, padding_mask)    # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-                tgt_mask = tgt_mask.to(captions.device)
-
-                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-                if self.use_differentiable_mask:
-                    output_caption = self.multimodal_caption_decoder(captions, video_memory, audio_memory, tgt_mask, padding_mask, video_pred_memory_mask, audio_pred_memory_mask)
-                else:
-                    output_caption = self.multimodal_caption_decoder(captions, video_memory, audio_memory, tgt_mask, padding_mask, video_memory_mask, audio_memory_mask)
-
-                outputs_captions.append(output_caption[-1])
-
+        # Caption Decoder
         if is_training:
-            outputs_caption = torch.stack(outputs_captions)    # (1, batch_size, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            tgt_captions = obj['cap_tensor'][:, :-1]    # (total_caption_num, max_caption_length - 1) - <eos> token should be the last predicted token 
+        
+            tgt_padding_mask = obj['cap_mask'][:, :-1]    # (total_caption_num, max_caption_len - 1)
 
-            out["pred_captions"] = outputs_captions[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+            tgt_mask = self.make_tgt_mask(tgt_captions, tgt_padding_mask.device)    # (max_caption_length - 1, max_caption_length - 1)
 
-            outputs_caption_last_layer = torch.argmax(outputs_captions[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
-            
+            # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+            if self.use_differentiable_mask:
+                outputs_caption = self.multimodal_caption_decoder(tgt=tgt_captions, video_memory=video_memory, audio_memory=audio_memory, 
+                                                                tgt_mask=tgt_mask, video_memory_mask=None, audio_memory_mask=None, 
+                                                                tgt_padding_mask=tgt_padding_mask, video_memory_padding_mask=video_pred_memory_mask, audio_memory_padding_mask=audio_pred_memory_mask)
+            else:
+                outputs_caption = self.multimodal_caption_decoder(tgt=tgt_captions, video_memory=video_memory, audio_memory=audio_memory, 
+                                                                tgt_mask=tgt_mask, video_memory_mask=None, audio_memory_mask=None, 
+                                                                tgt_padding_mask=tgt_padding_mask, video_memory_padding_mask=video_memory_mask, audio_memory_padding_mask=audio_memory_mask)
+
+            out["pred_captions"] = outputs_caption[-1]    # (total_caption_num, max_caption_length - 1, vocab_size)
+
+            outputs_caption_last_layer = torch.argmax(outputs_caption[-1], dim=2)    # (total_caption_num, max_caption_length - 1)
+
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption)
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+                
+                out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption)    # caption depth could be different
 
             if self.use_differentiable_mask:
-                return out, outputs_caption_last_layer, indices, indices_aux, torch.squeeze(video_memory_mask_list[-1]).float(), torch.squeeze(audio_memory_mask_list[-1]).float()
+                return out, outputs_caption_last_layer, indices, indices_aux, video_memory_mask.float(), audio_memory_mask.float()
             else:
                 return out, outputs_caption_last_layer, indices, indices_aux, None, None
 
-
         # Inference
         else:
-            # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
-            captions = torch.ones([memory_list[-1].shape[0], self.seq_len - 1], dtype=torch.int32)    # PAD_TOKEN
+
+             # Initialize the captions with the `START_TOKEN` and `PAD_TOKEN`    # (total_caption_num, max_caption_length - 1)
+            captions = torch.ones([memory.shape[0], self.seq_len], dtype=torch.int32)    # PAD_TOKEN
             captions[:, 0] = self.vocab['<bos>']    # START_TOKEN
-            captions = captions.to(memory_mask_list[-1].device)
+            captions = captions.to(video_memory_mask.device)
 
             # Loop control Variables
-            total_caption_num = memory_list[-1].shape[0]
+            total_caption_num = video_memory.shape[0]
             total_caption_done = 0
             caption_done_indices = []
             outputs_captions_val = []
 
             # Since END_TOKEN can be predicted even if the caption does not reach max_caption_length
             # range(1, max_caption_length - 1)
-            for word_index in range(1, self.seq_len - 1):
-                captions_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
-                captions_padding_mask = captions_padding_mask.to(memory_mask_list[-1].device)
+            for word_index in range(1, self.seq_len):
+                tgt_padding_mask = self.make_padding_mask(captions)    # (total_caption_num, max_caption_length - 1)
+                tgt_padding_mask = tgt_padding_mask.to(video_memory_mask.device)
                 
-                tgt_mask = self.make_tgt_mask(captions, captions_padding_mask)  # (total_caption_num, 1, max_caption_length - 1, max_caption_length - 1)
-                tgt_mask = tgt_mask.to(captions.device)
+                tgt_mask = self.make_tgt_mask(captions, tgt_padding_mask.device)  # (max_caption_length - 1, max_caption_length - 1)
 
-                for lvl in range(num_pred):
-                    # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
-                    if self.use_differentiable_mask:
-                        output_caption_val = self.multimodal_caption_decoder(captions, video_memory_list[lvl], audio_memory_list[lvl], tgt_mask, captions_padding_mask, video_pred_memory_mask_list[lvl], audio_pred_memory_mask_list[lvl])
-                    else:
-                        output_caption_val = self.multimodal_caption_decoder(captions, video_memory_list[lvl], audio_memory_list[lvl], tgt_mask, captions_padding_mask, video_memory_mask_list[lvl], audio_memory_mask_list[lvl])
-
-                    outputs_captions_val.append(output_caption_val[-1])
-
-                outputs_caption_val = torch.stack(outputs_captions_val)
+                # (1, total_caption_num, max_caption_length - 1, vocab_size) OR (depth, total_caption_num, max_caption_length - 1, vocab_size)
+                if self.use_differentiable_mask:
+                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, video_memory=video_memory, audio_memory=audio_memory, 
+                                                                        tgt_mask=tgt_mask, video_memory_mask=None, audio_memory_mask=None, 
+                                                                        tgt_padding_mask=tgt_padding_mask, video_memory_padding_mask=video_pred_memory_mask, audio_memory_padding_mask=audio_pred_memory_mask)
+                else:
+                    outputs_caption_val = self.unimodal_caption_decoder(tgt=captions, video_memory=video_memory, audio_memory=audio_memory, 
+                                                                        tgt_mask=tgt_mask, video_memory_mask=None, audio_memory_mask=None, 
+                                                                        tgt_padding_mask=tgt_padding_mask, video_memory_padding_mask=video_memory_mask, audio_memory_padding_mask=audio_memory_mask)
 
                 out['pred_captions'] = outputs_caption_val[-1]
 
@@ -427,7 +360,6 @@ class MultimodalSparseDVC(nn.Module):
                 # Update predicted word in captions
                 if faster_eval:
                     captions[:, word_index] = outputs_caption_last_layer[:, word_index] # if it doesn't matter whether the predicted token is END_TOKEN
-
                 else:
                     for caption_index in range(total_caption_num):
                         if caption_index not in caption_done_indices:
@@ -449,32 +381,40 @@ class MultimodalSparseDVC(nn.Module):
                 last_token = torch.tensor([self.vocab['<pad>'] if self.vocab['<eos>'] in c else self.vocab['<eos>'] for c in captions], dtype=torch.int32).reshape([-1, 1]).to(captions.device)    # (total_caption_num, 1)
                 captions_with_eos = torch.cat((captions, last_token), 1)  # (total_caption_num, max_caption_length)
 
+
             # TODO - check use in eval
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count, outputs_caption_val)
+                out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
+                
+                out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption_val)
 
             if self.use_differentiable_mask:
-                return out, captions_with_eos, indices, indices_aux, torch.squeeze(video_memory_mask_list[-1]).float(), torch.squeeze(audio_memory_mask_list[-1]).float()
+                return out, captions_with_eos, indices, indices_aux, video_memory_mask.float(), audio_memory_mask.float()
             else:
-                return out, captions_with_eos, indices, indices_aux, None, None
+                return out, captions_with_eos, indices, indices_aux, None
             
 
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, outputs_caption=None):
-        if outputs_caption is None:
+    def _set_aux_loss(self, outputs_class, outputs_segment, outputs_count, is_enc_aux=False):
+        if is_enc_aux:
             return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
                 for a, b, c in zip(outputs_class, outputs_segment, outputs_count)]
-
+        
         else:
-            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c, 'pred_captions': d}
-                    for a, b, c, d in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1], outputs_caption[:-1])]
+            return [{'pred_logits': a, 'pred_segments': b, 'pred_count': c}
+                for a, b, c in zip(outputs_class[:-1], outputs_segment[:-1], outputs_count[:-1])]
+    
+
+    @torch.jit.unused
+    def _set_aux_loss_caption(self, outputs_caption):
+        return [{'pred_captions': a} for a in outputs_caption[:-1]]
 
 
-    def make_tgt_mask(self, target, tgt_padding_mask):
+    def make_tgt_mask(self, target, device):
         """
         Generates a mask that is a combination of a lookahead mask and a padding mask
         
@@ -488,12 +428,9 @@ class MultimodalSparseDVC(nn.Module):
 
         batch_size, seq_len = target.shape
 
-        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len)))
-        look_ahead_mask = look_ahead_mask.to(tgt_padding_mask.device)
+        look_ahead_mask = 1 - torch.tril(torch.ones((seq_len, seq_len), device=device))
 
-        tgt_mask = torch.maximum(tgt_padding_mask.unsqueeze(1).unsqueeze(1), look_ahead_mask).bool()
-
-        return tgt_mask    # (batch_size, 1, seq_len, seq_len)
+        return look_ahead_mask.bool()    # (seq_len, seq_len)
 
 
     def make_memory_mask(self):
@@ -589,7 +526,7 @@ class MultimodalSparseDVC(nn.Module):
     def init_weights(self):
 
         """
-        Initialises the weights and biases of the modules in the MultimodalSparseDVC model.
+        Initialises the weights and biases of the modules in the UnimodalSparseDVC model.
         These parameters include positional embeddings.
         """
 
@@ -598,17 +535,4 @@ class MultimodalSparseDVC(nn.Module):
         self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
         nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
         nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
-            
-
-    def load_weights(self, model_official):
-
-        """
-        Loads the weights and biases from the pre-trained model to the current model for modules in the MultimodalSparseDVC model
-        These weights include positional embeddings.
-
-        Parameters:
-            `model_custom`: The current ViViT model
-            `model_official`: The model which would be used to load the pre-trained weights
-        """
-
-        load_positional_embeddings(self, model_official)
+        

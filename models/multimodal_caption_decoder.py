@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from .modules.embedding_layers import PositionEmbeddingCaptionSine, VocabularyEmbedder
+from .modules.embedding_layers import PositionalEncoding, PositionEmbeddingCaptionSine, VocabularyEmbedder
 from .modules.layers import MultimodalCaptionDecoderLayer
 from .modules.misc_modules import NestedTensor
 
@@ -30,7 +30,8 @@ class MultimodalCaptionDecoder(nn.Module):
         
         self.vocab_size = vocab_size
         self.target_embedding = VocabularyEmbedder(vocab_size, d_model)
-        self.word_positional_embedding_layer = PositionEmbeddingCaptionSine(d_model, normalize=True)
+        # self.word_positional_embedding_layer = PositionEmbeddingCaptionSine(d_model, normalize=True)
+        self.positional_encoding = PositionalEncoding(d_model, dropout=positional_embedding_dropout)
         
         self.d_model = d_model
         self.depth = depth
@@ -53,58 +54,55 @@ class MultimodalCaptionDecoder(nn.Module):
                 ]
             )
         
-        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+        # self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         
         self.head = nn.Linear(d_model, vocab_size)
         
-        if weight_load and model_official is not None:
-            self.load_weights(model_official)
-
-        elif weight_init:
-            self.init_weights(embedding_matrix, emb_weights_req_grad)
+        self.init_weights(embedding_matrix, emb_weights_req_grad)
         
 
     # TODO - check if pos embed should be given at every decoder layer to word and video
     # TODO - use log softmax?
-    def forward(self, captions, video_memory, audio_memory, tgt_mask, padding_mask, video_memory_mask, audio_memory_mask):
+    def forward(self, tgt, video_memory, audio_memory, tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
 
         """
         Performs a forward pass on the Bimodal caption decoder model
   
         Parameters:
-            captions (Tensor): Tensor of dimension (batch_size, seq_len)
+            tgt (Tensor): Tensor of dimension (batch_size, seq_len)
             memory (Tensor): Tensor of dimension (batch_size, num_tokens, d_model)
             **memory_positional_embedding_layer (nn.Module): position embedding layer for encoder inputs
             tgt_mask (Tensor): Tensor of dimension (batch_size, 1, seq_len, seq_len). Combination of the lookahead mask and padding mask for the target/captions
-            padding_mask (Tensor): Tensor of dimension (batch_size, seq_len). Used for position embeddings
+            tgt_padding_mask (Tensor): Tensor of dimension (batch_size, seq_len). Used for position embeddings
             memory_mask (Tensor): Tensor of dimension (batch_size, 1, 1, num_tokens). Memory padding mask to be used in the cross attention block of the decoder.
             durations (Tensor): Tensor of dimension (batch_size) representing the duration of each video in the batch in seconds
         Returns:
             x (tensor): Tensor of dimension (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
         """
 
-        target = self.target_embedding(captions)    # (batch_size, seq_len, embed_dim)
+        tgt = self.target_embedding(tgt)    # (batch_size, seq_len, embed_dim)
+        tgt = self.positional_encoding(tgt)
 
-        target = target + self.word_positional_embedding_layer(NestedTensor(target, padding_mask)).transpose(1, 2)
+        # tgt = tgt + self.word_positional_embedding_layer(NestedTensor(tgt, tgt_padding_mask)).transpose(1, 2)
         # memory = memory + memory_positional_embedding_layer(NestedTensor(memory, torch.squeeze(memory_mask), durations)).transpose(1,2)
 
         intermediate = []
         
         for layer in self.decoder:
-            target = layer(target, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask)    # (batch_size, seq_len, embed_dim)
+            tgt = layer(tgt, video_memory, audio_memory, tgt_mask, video_memory_mask, audio_memory_mask, tgt_padding_mask, video_memory_padding_mask, audio_memory_padding_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
-                intermediate.append(self.layer_norm(target))
+                intermediate.append(tgt)
 
         if self.return_intermediate:
-            target = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
+            tgt = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
         else:
-            target = target.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
+            tgt = tgt.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
         
         # (1, batch_size, seq_len, vocab_size) OR (depth, batch_size, seq_len, vocab_size)
-        target = self.head(target).softmax(dim=-1)
+        tgt = self.head(tgt).softmax(dim=-1)
 
-        return target
+        return tgt
     
 
     def init_weights(self, embedding_matrix, emb_weights_req_grad):
@@ -117,20 +115,6 @@ class MultimodalCaptionDecoder(nn.Module):
         self.target_embedding.init_word_embeddings(embedding_matrix, emb_weights_req_grad)
         # trunc_normal_(self.word_positional_embedding_layer.positional_embedding, std=.02)
         self.decoder.apply(init_encoder_block_weights)
-            
-
-    def load_weights(self, model_official):
-
-        """
-        Loads the weights and biases from the pre-trained model to the current model
-        These weights include positional embeddings.
-
-        Parameters:
-            `model_custom`: The current ViViT model
-            `model_official`: The model which would be used to load the pre-trained weights
-        """
-
-        load_positional_embeddings(self, model_official)
     
 
 

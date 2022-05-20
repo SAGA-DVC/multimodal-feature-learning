@@ -65,7 +65,7 @@ class UnimodalCaptionDecoder(nn.Module):
 
     # TODO - check if pos embed should be given at every decoder layer to word and video
     # TODO - use log softmax?
-    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
+    def forward(self, tgt, memory, tgt_mask, tgt_padding_mask, memory_mask):
 
         """
         Performs a forward pass on the Unimodal Caption Decoder
@@ -91,7 +91,7 @@ class UnimodalCaptionDecoder(nn.Module):
         intermediate = []
         
         for layer in self.decoder:
-            tgt = layer(tgt, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask)    # (batch_size, seq_len, embed_dim)
+            tgt = layer(tgt, memory, tgt_mask, memory_mask)    # (batch_size, seq_len, embed_dim)
 
             if self.return_intermediate:
                 intermediate.append(tgt)
