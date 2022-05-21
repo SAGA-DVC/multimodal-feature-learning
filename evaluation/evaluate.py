@@ -106,8 +106,9 @@ class ANETcaptions(object):
 
     def get_gt_vid_ids(self):
         vid_ids = set([])
-        for gt in self.ground_truths:
-            vid_ids |= set(gt.keys())
+        # for gt in self.ground_truths:
+        #     vid_ids |= set(gt.keys())
+        vid_ids |= set(self.prediction.keys())
         return list(vid_ids)
 
     def evaluate(self):
