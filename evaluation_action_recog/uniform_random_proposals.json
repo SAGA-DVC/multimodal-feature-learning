@@ -1,0 +1,21 @@
+{
+    "version": "VERSION 1.3",
+    "results": {
+      "5n7NCViB5TU": [
+        {
+        "label": "Discus throw",
+        "score": 0.64,
+        "segment": [24.25,38.08]
+        },
+        {
+        "label": "Shot put",
+        "score": 0.77,
+        "segment": [11.25, 19.37]
+        }
+      ]
+    },
+    "external_data": {
+      "used": true,
+      "details": "First fully-connected layer from VGG-16 pre-trained on ILSVRC-2012 training set"
+    }
+  }

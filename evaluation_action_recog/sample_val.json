@@ -1,0 +1,31 @@
+{"database": {
+    "5n7NCViB5TU":{
+       "duration":121.44,
+       "subset":"training",
+       "resolution":"320x240",
+       "url":"https://www.youtube.com/watch?v=5n7NCViB5TU",
+       "annotations":[
+          {
+             "segment":[
+                24.250181653524645,
+                38.08036312324492
+             ],
+             "label":"Discus throw"
+          },
+          {
+             "segment":[
+                62.14109007176286,
+                71.61381721684867
+             ],
+             "label":"Shot put"
+          },
+          {
+             "segment":[
+                97.00072596567863,
+                106.28399856786271
+             ],
+             "label":"Discus throw"
+          }
+       ]
+    }
+ }}

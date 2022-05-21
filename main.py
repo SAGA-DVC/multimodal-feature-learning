@@ -14,6 +14,8 @@ from config.config_dvc import load_config
 from utils.misc import *
 from engine import train_one_epoch, evaluate
 
+from evaluation.evaluate import run_eval
+
 # from dataset.anet import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
 from dataset.anet_video import build_dataset as build_dataset_without_raw_videos, collate_fn as collate_fn_without_raw_videos
 
@@ -175,11 +177,16 @@ def main(args):
     else:
         print(f"Start eval from epoch {args.start_epoch}")
         start_time = time.time()
-        for epoch in range(args.start_epoch, args.epochs):
-            if args.distributed.is_distributed:
-                sampler_train.set_epoch(epoch)
+        # for epoch in range(args.start_epoch, args.epochs):
+        #     if args.distributed.is_distributed:
+        #         sampler_train.set_epoch(epoch)
 
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+        #     val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+
+        with open('sample_submission_testing.json', 'r') as f:
+            sample_submission_testing = json.load(f)
+        scores = run_eval(args.eval, sample_submission_testing)
+        print("Scores: ", scores)
 
     
 
