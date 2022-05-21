@@ -18,7 +18,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and segments)
     """
     # TODO - check __init__() attributes
-    def __init__(self, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
+    def __init__(self, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, smoothing=0.7, 
                 focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=1, lloss_beta=1.):
 
         """ 
@@ -53,10 +53,6 @@ class SetCriterion(nn.Module):
 
         self.lloss_gau_mask = lloss_gau_mask
         self.lloss_beta = lloss_beta
-
-        self.pad_idx = pad_idx
-
-        self.labelSmoothing = LabelSmoothing(smoothing, self.pad_idx)
 
         counter_class_rate = [0.00000000e+00, 0.00000000e+00, 1.93425917e-01, 4.12129084e-01,
                             1.88929963e-01, 7.81296833e-02, 5.09541413e-02, 3.12718553e-02,
@@ -350,7 +346,7 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_segments, **kwargs)
 
-    def forward(self, outputs, targets, indices, indices_aux, memory_mask):
+    def forward(self, outputs, targets):
 
         """ 
         This performs the loss computation.
@@ -385,11 +381,11 @@ class SetCriterion(nn.Module):
            
         """
 
-        # outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
-        # indices = self.matcher(outputs_without_aux, targets['video_target']) 
+        indices = self.matcher(outputs_without_aux, targets['video_target']) 
 
         # Average number of target segments accross all nodes, for normalization purposes
         num_segments = sum(len(t["labels"]) for t in targets['video_target'])
@@ -406,8 +402,8 @@ class SetCriterion(nn.Module):
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
-            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
-                # index_aux = self.matcher(aux_outputs, targets['video_target'])
+            for i, aux_outputs in enumerate(outputs['aux_outputs']):
+                index_aux = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'mask_prediction' or loss == 'corr':
                         # captions are computed in another loop
@@ -423,8 +419,8 @@ class SetCriterion(nn.Module):
 
         
         if 'aux_outputs_enc' in outputs:
-            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):
-                # index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
+            for i, aux_outputs in enumerate(outputs['aux_outputs_enc']):
+                index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'mask_prediction' or loss == 'corr':
                         # Intermediate masks losses are too costly to compute, we ignore them.

@@ -220,7 +220,7 @@ class UnimodalSparseDVC(nn.Module):
         if self.aux_loss:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
 
-        return out, torch.argmax(outputs_class[-1], dim=-1)
+        return out
             
 
     @torch.jit.unused

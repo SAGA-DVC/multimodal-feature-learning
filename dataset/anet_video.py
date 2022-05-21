@@ -251,7 +251,7 @@ def resizeFeature(input_data, new_size):
 
 # TODO - extra loss for framestamps?
 # TODO - make mask init constant across the code (torch.ones, torch.BoolTensor)
-def collate_fn(batch, pad_idx, args):
+def collate_fn(batch, args):
     """
     Parameters:
         `batch` : list of shape (batch_size, 8) {8 attributes}
@@ -288,7 +288,7 @@ def collate_fn(batch, pad_idx, args):
     video_length = torch.FloatTensor(batch_size, 3).zero_()  # num_frames, duration, gt_target_segments
     video_mask = torch.BoolTensor(batch_size, max_video_length).fill_(1)
 
-    max_gt_target_segments = max(len(x) for x in caption_list)
+    max_gt_target_segments = max(len(x) for x in gt_raw_timestamps)
 
     gt_segments_tensor = torch.zeros(batch_size, max_gt_target_segments, 2)
 
@@ -340,7 +340,6 @@ def collate_fn(batch, pad_idx, args):
             {
                 "framestamps": gt_timestamps,  # list, (batch_size * gt_target_segments, 2) {dim 0 is an avg value}
                 "timestamp": list(gt_raw_timestamps),  # list of tensors, (shape: (batch_size, gt_target_segments, 2) {variable dim 1})
-                "gather_idx": caption_gather_idx,  # tensor, (total_caption_num)
                 "segments": gt_segments_tensor, # (batch_size, max_gt_target_segments, 2)
                 "segments_mask": gt_segments_mask, # (batch_size, max_gt_target_segments)
             }
@@ -368,8 +367,8 @@ def build_dataset(video_set, args):
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
     PATHS_ANNOTATION = {
-        "train": (root_annotation / 'train_data_with_action_classes.json'),
-        "val": (root_annotation / 'val_data_1_with_action_classes.json'),
+        "train": (root_annotation / 'train.json'),
+        "val": (root_annotation / 'val.json'),
     }
     PATHS_VIDEO = {
         "train": (root_feature / 'train'),

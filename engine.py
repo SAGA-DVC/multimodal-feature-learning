@@ -16,14 +16,13 @@ import numpy as np
 import torch
 from torch.nn.utils import clip_grad_norm_
 from utils.misc import MetricLogger, SmoothedValue, reduce_dict, is_main_process
-from utils.preds_postprocess import get_sample_submission, get_src_permutation_idx, denormalize_segments, captions_to_string, pprint_eval_scores, save_submission
+from utils.preds_postprocess import get_sample_submission, get_src_permutation_idx, denormalize_segments, pprint_eval_scores, save_submission
 from utils.plots import plot_grad_flow_line_plot, plot_grad_flow_bar_plot
-from evaluation.evaluate import run_eval
+from evaluation_action_recog.get_detection_performance import run_eval
+from models.matcher import build_matcher
 
 
-
-
-def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq, device, epoch, args, wandb_log):
+def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device, epoch, args, wandb_log, inverted_action_labels_dict):
     
     """
     Trains the given model for 1 epoch and logs various metrics such as model losses and those associated with the training loop.
@@ -50,6 +49,9 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
+    def map_id_to_classname(cid):
+        return inverted_action_labels_dict[str(cid)]
+
     for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
 
         obj = {key: v.to(device) if isinstance(v, torch.Tensor) else v for key, v in obj.items()}
@@ -58,32 +60,9 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
         obj = defaultdict(lambda: None, obj)
 
-        if len(args.dvc.input_modalities) == 1:
-            outputs = model(obj)
+        outputs = model(obj)
         
-            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
-            
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
-
-        elif len(args.dvc.input_modalities) == 2:
-            outputs = model(obj)
-        
-            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-
-            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
-
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
-
-            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
-
-        else:
-            raise AssertionError('length of input modalities should be 1 or 2')
-
-        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
+        loss_dict = criterion(outputs, obj)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -106,27 +85,32 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
         optimizer.zero_grad()
         losses.backward()
 
-        if batch_idx % 100 == 0:
-            # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
-            plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+        # print("Logits, segments:", outputs['pred_logits'].shape, outputs['pred_segments'].shape)
+        classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
+        mapper = np.vectorize(map_id_to_classname)
+        classes_names = mapper(classes_id.cpu().detach().numpy())
 
-            train_caption_path = Path(os.path.join(args.submission_dir, 'train'))
-            if not os.path.exists(train_caption_path):
-                train_caption_path.mkdir(parents=True, exist_ok=True)
+        # if batch_idx % 100 == 0:
+        #     # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+        #     plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
 
-            src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
-            tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+        #     train_classes_path = Path(os.path.join(args.submission_dir, 'train'))
+        #     if not os.path.exists(train_classes_path):
+        #         train_classes_path.mkdir(parents=True, exist_ok=True)
+
+        #     src_classes_string = classes_to_string(obj['cap_tensor'])
+        #     tgt_classes_string = classes_to_string(classes)    # (total_caption_num, max_caption_length - 1)
             
-            res = {}
-            for src, tgt in zip(src_captions_string, tgt_captions_string):
-                res[src] = tgt
+        #     res = {}
+        #     for src, tgt in zip(src_classes_string, tgt_classes_string):
+        #         res[src] = tgt
 
-            if args.output_dir and is_main_process():
-                with (train_caption_path / "train_caption.json").open("a") as f:
-                    json.dump(res, f, indent=4)
+        #     if args.output_dir and is_main_process():
+        #         with (train_classes_path / "train_classes.json").open("a") as f:
+        #             json.dump(res, f, indent=4)
                 
-                if args.wandb.on:
-                    wandb.save(os.path.join(train_caption_path, "train_caption.json"))
+        #         if args.wandb.on:
+        #             wandb.save(os.path.join(train_classes_path, "train_classes.json"))
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
@@ -157,7 +141,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):
+def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wandb_log, inverted_action_labels_dict, gt_val_json):
     
     """
     Inference on given data and save the results.
@@ -183,6 +167,9 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
+    def map_id_to_classname(cid):
+        return inverted_action_labels_dict[str(cid)]
+
     for (batch_idx, obj) in enumerate(metric_logger.log_every(data_loader, print_freq, wandb_log, header)):
         
         submission_json_batch = get_sample_submission()
@@ -193,29 +180,9 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         obj = defaultdict(lambda: None, obj)
 
-        if len(args.dvc.input_modalities) == 1:
-            outputs = model(obj)
+        outputs = model(obj)
         
-            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
-
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
-
-        elif len(args.dvc.input_modalities) == 2:
-            outputs = model(obj)
-        
-            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-
-            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
-
-            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
-
-        else:
-            raise AssertionError('length of input modalities should be 1 or 2')
-        
-        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
+        loss_dict = criterion(outputs, obj)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -232,29 +199,37 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         # EVALUATION SCORES
         # segments
-        idx = get_src_permutation_idx(indices)
+        # TODO indices, segment_batch_id??
+        # idx = get_src_permutation_idx(indices)
+
+        segment_batch_id = torch.Tensor([i for j in range(20) for i in range(3)]).long()
+        # print(segment_batch_id.shape, segment_batch_id[0])
 
         video_durations = list(obj['video_length'][:, 1])
-        denormalized_segments = denormalize_segments(outputs['pred_segments'][idx], video_durations, idx[0])
-        # print("Video_DUR: ",video_durations, outputs['pred_segments'][idx], denormalized_segments, denormalized_segments.shape)
+        denormalized_segments = denormalize_segments(outputs['pred_segments'].reshape(-1, 2), video_durations, segment_batch_id)
+        # print("Video_DUR: ",video_durations, outputs['pred_segments'].shape, denormalized_segments.shape)
 
-        # captions
-        # captions_string = captions_to_string(captions_with_eos, vocab)
+        # classes
+        classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
+        scores, _ = torch.max(outputs['pred_logits'], dim=-1)
+        scores = scores.cpu().detach().numpy().reshape(-1)
+        
+        mapper = np.vectorize(map_id_to_classname)
+        classes_names = mapper(classes_id.cpu().detach().numpy()).reshape(-1)
 
-        for i, batch_id in enumerate(idx[0]):
+        for i, batch_id in enumerate(segment_batch_id):
             video_id = obj['video_key'][batch_id]
-            append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
-            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_batch, classes_names[i], denormalized_segments[i], scores[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, classes_names[i], denormalized_segments[i], scores[i])
             
-        scores = run_eval(args.eval, submission_json_batch)
-        avg_scores = pprint_eval_scores(scores, debug=False)
+        avg_mAP = run_eval(args.eval, gt_val_json, submission_json_batch)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         # metric_logger.update(class_error=loss_dict_reduced['class_error'])
-        metric_logger.update(**avg_scores)
+        metric_logger.update(**{"avg_mAP": avg_mAP})
 
         if wandb_log and is_main_process():
-            loss_dict_reduced_scaled.update(avg_scores)
+            loss_dict_reduced_scaled.update({"avg_mAP": avg_mAP})
             substring_list = [str(i) for i in range(12)]
             wandb_log_metrics(
                 phase="val",
@@ -272,7 +247,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     # TODO - check if run_eval can be removed and we can instead avg scores in above loop
     # scores = run_eval(args.eval, submission_json_epoch)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    return_dict.update(scores)
+    return_dict.update({"avg_mAP": avg_mAP})
 
     val_caption_path = Path(os.path.join(args.submission_dir, 'val'))
     if not os.path.exists(val_caption_path):
@@ -309,11 +284,12 @@ def wandb_log_metrics(phase, loss, loss_dict, epoch, batch_idx, substring_list):
     wandb.log(log_dict)
 
 
-def append_result_to_json_submission_file(video_id, submission_json_batch, captions_string, denormalized_segments):
+def append_result_to_json_submission_file(video_id, submission_json_batch, class_name, denormalized_segments, score):
     if video_id not in submission_json_batch['results']:
         submission_json_batch['results'][video_id] = []
 
     submission_json_batch['results'][video_id].append({
-        'sentence': captions_string,
-        'timestamp': [denormalized_segments[0].item(), denormalized_segments[1].item()]
+        'segment': [denormalized_segments[0].item(), denormalized_segments[1].item()],
+        'label': class_name,
+        'score': score
     })

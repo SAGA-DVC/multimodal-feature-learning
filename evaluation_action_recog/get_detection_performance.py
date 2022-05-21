@@ -1,18 +1,21 @@
 import argparse
 import numpy as np
 
-from eval_detection import ANETdetection
+from .eval_detection import ANETdetection
+
+def run_eval(eval_args, ground_truth_json, prediction_json,
+         subset='validation', check_status=True):
+
+    tiou_thresholds = eval_args.tiou_thresholds
+    verbose = eval_args.verbose
+    
+    anet_detection = ANETdetection(ground_truth_json, prediction_json,
+                                   subset=subset, tiou_thresholds=tiou_thresholds,
+                                   verbose=verbose, check_status=True, is_submission_json=True)
+    average_mAP = anet_detection.evaluate()
+    return average_mAP
 
 def main(ground_truth_filename, prediction_filename,
-         subset='validation', tiou_thresholds=np.linspace(0.5, 0.95, 10),
-         verbose=True, check_status=True):
-
-    anet_detection = ANETdetection(ground_truth_filename, prediction_filename,
-                                   subset=subset, tiou_thresholds=tiou_thresholds,
-                                   verbose=verbose, check_status=True)
-    anet_detection.evaluate()
-
-def run_eval(ground_truth_filename, prediction_filename,
          subset='validation', tiou_thresholds=np.linspace(0.5, 0.95, 10),
          verbose=True, check_status=True):
 

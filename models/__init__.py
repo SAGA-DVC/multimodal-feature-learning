@@ -112,7 +112,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
 
 
     criterion = SetCriterion(len(args.input_modalities) == 2, num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
-                            eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
+                            eos_coef=args.eos_coef, losses=args.losses, smoothing=args.smoothing,
                             focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=args.lloss_gau_mask, lloss_beta=args.lloss_gau_mask)
 
     return model, criterion

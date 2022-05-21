@@ -64,11 +64,11 @@ def main(args):
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
+                                   collate_fn=partial(collate_fn, args=args.dataset.activity_net), 
                                    num_workers=args.num_workers)
 
     data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val, drop_last=False, 
-                                collate_fn=partial(collate_fn, pad_idx=dataset_train.PAD_IDX, args=args.dataset.activity_net), 
+                                collate_fn=partial(collate_fn, args=args.dataset.activity_net), 
                                 num_workers=args.num_workers)
 
     output_dir = Path(args.output_dir)
@@ -111,6 +111,13 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
+    with open(args.dataset.activity_net.inverted_action_labels_dict, 'r') as f:
+        inverted_action_labels_dict = json.load(f)
+
+    # Load gt validation.json 
+    with open(args.eval.references, 'r') as f:
+        gt_val_json = json.load(f)
+
     if not args.only_eval:
         print(f"Start training from epoch {args.start_epoch}")
         start_time = time.time()
@@ -118,7 +125,7 @@ def main(args):
             if args.distributed.is_distributed:
                 sampler_train.set_epoch(epoch)
 
-            train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
+            train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, args.print_freq, device, epoch, args, args.wandb.on, inverted_action_labels_dict)
             
             lr_scheduler.step()
 
@@ -146,7 +153,7 @@ def main(args):
             # Validation
             val_stats = {}
             if (epoch + 1) % args.eval_rate == 0:
-                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+                val_stats = evaluate(model, criterion, data_loader_val, args.print_freq, device, epoch, args, args.wandb.on, inverted_action_labels_dict, gt_val_json)
 
 
             # TODO: log encoder stats?
@@ -181,7 +188,7 @@ def main(args):
         #     if args.distributed.is_distributed:
         #         sampler_train.set_epoch(epoch)
 
-        #     val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+        #     val_stats = evaluate(model, criterion, data_loader_val, args.print_freq, device, epoch, args, args.wandb.on)
 
         with open('sample_submission_testing.json', 'r') as f:
             sample_submission_testing = json.load(f)

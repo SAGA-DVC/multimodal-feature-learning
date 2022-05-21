@@ -103,6 +103,10 @@ def captions_to_string(captions, vocab):
 
 
 def save_submission(json_data, json_file_path):
+    for vid_id in json_data['results']:
+        for segment_id, _ in enumerate(json_data['results'][vid_id]):
+            json_data['results'][vid_id][segment_id]['score'] = str(json_data['results'][vid_id][segment_id]['score'])
+
     with open(json_file_path, 'w') as f:
         json.dump(json_data, f, indent=4)
 

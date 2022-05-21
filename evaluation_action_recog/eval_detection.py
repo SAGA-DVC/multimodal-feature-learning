@@ -6,8 +6,8 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 # from utils import get_blocked_videos
-from utils import interpolated_prec_rec
-from utils import segment_iou
+from .utils import interpolated_prec_rec
+from .utils import segment_iou
 
 class ANETdetection(object):
 
@@ -20,7 +20,8 @@ class ANETdetection(object):
                  prediction_fields=PREDICTION_FIELDS,
                  tiou_thresholds=np.linspace(0.5, 0.95, 10), 
                  subset='validation', verbose=False, 
-                 check_status=True):
+                 check_status=True,
+                 is_submission_json=False):
         if not ground_truth_filename:
             raise IOError('Please input a valid ground truth file.')
         if not prediction_filename:
@@ -32,6 +33,7 @@ class ANETdetection(object):
         self.pred_fields = prediction_fields
         self.ap = None
         self.check_status = check_status
+        self.is_submission_json = is_submission_json
         # Retrieve blocked videos from server.
         # if self.check_status:
         #     self.blocked_videos = get_blocked_videos()
@@ -67,8 +69,13 @@ class ANETdetection(object):
         activity_index : dict
             Dictionary containing class index.
         """
-        with open(ground_truth_filename, 'r') as fobj:
-            data = json.load(fobj)
+        if self.is_submission_json:
+            data = ground_truth_filename
+        else:
+            with open(ground_truth_filename, 'r') as fobj:
+                data = json.load(fobj)
+        
+        # print(data.keys())
         # Checking format
         if not all([field in data.keys() for field in self.gt_fields]):
             raise IOError('Please input a valid ground truth file.')
@@ -111,8 +118,11 @@ class ANETdetection(object):
         prediction : df
             Data frame containing the prediction instances.
         """
-        with open(prediction_filename, 'r') as fobj:
-            data = json.load(fobj)
+        if self.is_submission_json:
+            data = prediction_filename
+        else:
+            with open(prediction_filename, 'r') as fobj:
+                data = json.load(fobj)
         # Checking format...
         if not all([field in data.keys() for field in self.pred_fields]):
             raise IOError('Please input a valid prediction file.')
@@ -144,7 +154,7 @@ class ANETdetection(object):
         try:
             return prediction_by_label.get_group(cidx).reset_index(drop=True)
         except:
-            print('Warning: No predictions of label \'%s\' were provdied.' % label_name)
+            # print('Warning: No predictions of label \'%s\' were provdied.' % label_name)
             return pd.DataFrame()
 
     def wrapper_compute_average_precision(self):
@@ -181,6 +191,9 @@ class ANETdetection(object):
         if self.verbose:
             print('[RESULTS] Performance on ActivityNet detection task.')
             print('\tAverage-mAP: {}'.format(self.average_mAP))
+
+        if self.is_submission_json:
+            return self.average_mAP
 
 def compute_average_precision_detection(ground_truth, prediction, tiou_thresholds=np.linspace(0.5, 0.95, 10)):
     """Compute average precision (detection task) between ground truth and
