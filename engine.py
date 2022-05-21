@@ -157,7 +157,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):
+def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log, gt_json):
     
     """
     Inference on given data and save the results.
@@ -246,7 +246,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
             append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
-        scores = run_eval(args.eval, submission_json_batch)
+        scores = run_eval(args.eval, submission_json_batch, gt_json)
         avg_scores = pprint_eval_scores(scores, debug=False)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)

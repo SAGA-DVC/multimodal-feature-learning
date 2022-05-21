@@ -506,3 +506,16 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
         return _new_empty_tensor(input, output_shape)
     else:
         return torchvision.ops.misc.interpolate(input, size, scale_factor, mode, align_corners)
+
+
+def import_ground_truths(filenames):
+    
+    gts = []
+    # self.n_ref_vids = Set()
+    n_ref_vids = set()
+    for filename in filenames:
+        gt = json.load(open(filename))
+        n_ref_vids.update(gt.keys())
+        gts.append(gt)
+    
+    return gts
