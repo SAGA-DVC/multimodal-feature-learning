@@ -1,11 +1,9 @@
 '''
 If you want to switch between Sparse DVC, Deformable DVC and regular DVC, change all parameters having the "Switch DVC" comment.
-
 '''
 
 import ml_collections
 import os
-import numpy as np
 
 def load_config():
 
@@ -63,7 +61,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with diff pos embed and modified attention (like nn.MultiHeadAttention)"
+    cfg.wandb.notes = "Sparse DETR with diff pos embed, modified attention (like nn.MultiHeadAttention) and lower case captions"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -149,10 +147,10 @@ def load_config():
     cfg.dvc.eos_coef = 0.1
 
     # TODO - handle not using some losses
-    cfg.dvc.losses = ['labels', 'segments', 'cardinality']
+    cfg.dvc.losses = ['labels', 'segments', 'captions']
     
-    # if cfg.use_differentiable_mask:
-    #     cfg.dvc.losses.append('contexts')
+    if cfg.use_differentiable_mask:
+        cfg.dvc.losses.append('contexts')
     
     if cfg.dvc.use_sparse_detr:
         cfg.dvc.losses.append('mask_prediction')
@@ -363,11 +361,13 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Evaluate inferences
     cfg.eval = ml_collections.ConfigDict()
-    # cfg.eval.submission = 'output/test.json'
-    cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = './anet_data/action_recognition/activity_net.v1-3.min.json'
-    cfg.eval.tiou_thresholds = np.linspace(0.5, 0.95, 10)
-    cfg.eval.verbose = True
+    cfg.eval.submission = 'output/test.json'
+    # cfg.eval.submission = 'sample_submission.json'
+    # cfg.eval.references = ['./anet_data/val_1.json', './anet_data/val_2.json']
+    cfg.eval.references = ['./anet_data/val_1.json']
+    cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
+    cfg.eval.max_proposals_per_video = 100
+    cfg.eval.verbose = False
     cfg.eval.is_submission_json = True
 
     return cfg
