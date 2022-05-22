@@ -109,6 +109,8 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
+    gt_json = import_ground_truths_for_eval(args.eval.references)
+
     if not args.only_eval:
         print(f"Start training from epoch {args.start_epoch}")
         start_time = time.time()
@@ -144,7 +146,7 @@ def main(args):
             # Validation
             val_stats = {}
             if (epoch + 1) % args.eval_rate == 0:
-                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json)
 
 
             # TODO: log encoder stats?
@@ -179,7 +181,7 @@ def main(args):
             if args.distributed.is_distributed:
                 sampler_train.set_epoch(epoch)
 
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json)
 
     
 

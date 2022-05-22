@@ -47,7 +47,8 @@ class ANETcaptions(object):
         self.tious = tious
         self.max_proposals = max_proposals
         self.pred_fields = prediction_fields
-        self.ground_truths = self.import_ground_truths(ground_truth_filenames)
+        # self.ground_truths = self.import_ground_truths(ground_truth_filenames)
+        self.ground_truths = self.import_ground_truths(ground_truth_filenames, is_submission_json, gt_json)
         self.prediction = self.import_prediction(prediction_filename, is_submission_json, submission_json)
         self.tokenizer = PTBTokenizer()
 
@@ -78,7 +79,10 @@ class ANETcaptions(object):
             results[vid_id] = submission['results'][vid_id][:self.max_proposals]
         return results
 
-    def import_ground_truths(self, filenames):
+    def import_ground_truths(self, filenames, is_submission_json, gt_json):
+        if is_submission_json:
+            return gt_json
+            
         gts = []
         # self.n_ref_vids = Set()
         self.n_ref_vids = set()
