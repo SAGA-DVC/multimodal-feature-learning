@@ -15,10 +15,10 @@ def load_config():
     cfg.seed = 0
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 3
+    cfg.batch_size = 16
     cfg.num_workers = 1
 
-    cfg.print_freq = 1
+    cfg.print_freq = 10
 
     cfg.lr = 1e-4
     cfg.lr_drop = 200
@@ -27,7 +27,7 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.only_eval = True
+    cfg.only_eval = False
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_action'
@@ -37,7 +37,7 @@ def load_config():
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 1
+    cfg.epochs = 2
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -61,9 +61,9 @@ def load_config():
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.on = False
-    cfg.wandb.project = "simple-end-to-end"
+    cfg.wandb.project = "action-recognition"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with diff pos embed and modified attention (like nn.MultiHeadAttention)"
+    cfg.wandb.notes = "Sparse DETR"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -85,7 +85,7 @@ def load_config():
     cfg.dataset.activity_net.inverted_action_labels_dict = './anet_data/action_recognition/inverted_action_labels_dict.json'
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/action_recognition/invalid_ids.json'
 
-    cfg.dataset.activity_net.for_testing = True    # for testing only
+    cfg.dataset.activity_net.for_testing = False    # for testing only
     cfg.dataset.activity_net.num_samples = 6    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
@@ -369,7 +369,7 @@ def load_config():
     cfg.eval.submission = 'sample_submission.json'
     cfg.eval.references = './anet_data/action_recognition/activity_net.v1-3.min.json'
     cfg.eval.tiou_thresholds = np.linspace(0.5, 0.95, 10)
-    cfg.eval.verbose = True
+    cfg.eval.verbose = False
     cfg.eval.is_submission_json = True
 
     return cfg

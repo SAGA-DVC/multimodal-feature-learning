@@ -85,7 +85,7 @@ def main(args):
     if args.distributed.is_distributed:
         print('Started wrapping model in DDP constructor')
 
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.distributed.gpu])
         model_without_ddp = model.module
 
         print('Finished wrapping model in DDP constructor')

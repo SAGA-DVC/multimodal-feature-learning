@@ -45,7 +45,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
 
     metric_logger = MetricLogger(delimiter="\t")
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
@@ -119,7 +119,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
-        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         if wandb_log and is_main_process():
@@ -164,7 +164,7 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
     submission_json_epoch = get_sample_submission()
 
     metric_logger = MetricLogger(delimiter="\t")
-    # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
@@ -203,17 +203,28 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         # TODO indices, segment_batch_id??
         # idx = get_src_permutation_idx(indices)
         
-        segment_batch_id = torch.Tensor([[i for j in range(outputs['pred_logits'].shape[1])] for i in range(outputs['pred_logits'].shape[0])]).long()
+        batch_size, num_queries, _ = outputs['pred_logits'].shape
+
+        segment_batch_id = torch.Tensor([[i for j in range(num_queries)] for i in range(batch_size)]).long()
         # print(segment_batch_id.shape, segment_batch_id[0])
 
         # classes
         # classes_id = torch.argmax(outputs['pred_logits'][..., :-1], dim=-1)    # (batch_size, num_queries, num_classes)
 
+        # count
+        count = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
+
         # (batch_size, num_queries), (batch_size, num_queries)
         scores, classes_id = torch.max(outputs['pred_logits'][..., :-1], dim=-1)
         scores = scores.cpu().detach()
 
-        keep = scores > 0.01   #  (batch_size, num_queries)
+        keep = scores > 0.7   #  (batch_size, num_queries)
+
+        for i, k in enumerate(keep):
+            if torch.all(k == False):
+                _, indices = torch.topk(scores[i], count[i], -1)    # (topk)
+                keep[i][indices] = True
+
         classes_id_keep = classes_id[keep]    # (batch_size * <num_queries)
         scores_keep = scores[keep]    # (batch_size * <num_queries)
         segment_batch_id_keep = segment_batch_id[keep]    # (batch_size * <num_queries)
@@ -233,7 +244,7 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         avg_mAP = run_eval(args.eval, gt_val_json, submission_json_batch)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
-        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(**avg_mAP)
 
         if wandb_log and is_main_process():
