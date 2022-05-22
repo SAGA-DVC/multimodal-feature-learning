@@ -203,7 +203,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=True)
+            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -249,13 +249,15 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         scores = run_eval(args.eval, submission_json_batch, gt_json)
         avg_scores = pprint_eval_scores(scores, debug=False)
 
+        scores.update(avg_scores)
+        
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         # metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(**avg_scores)
 
         if wandb_log and is_main_process():
             loss_dict_reduced_scaled.update(avg_scores)
-            substring_list = [str(i) for i in range(12)]
+            substring_list = [f'_{i}' for i in range(12)]
             wandb_log_metrics(
                 phase="val",
                 loss=loss_value,

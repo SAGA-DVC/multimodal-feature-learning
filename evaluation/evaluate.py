@@ -140,6 +140,8 @@ class ANETcaptions(object):
                 precision, recall = self.evaluate_detection(tiou)
                 self.scores['Recall'].append(recall)
                 self.scores['Precision'].append(precision)
+                self.scores[f'Recall-{tiou}'] = recall
+                self.scores[f'Precision-{tiou}'] = precision
 
     def evaluate_detection(self, tiou):
         gt_vid_ids = self.get_gt_vid_ids()

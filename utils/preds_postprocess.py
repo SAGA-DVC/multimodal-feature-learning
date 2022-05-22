@@ -116,10 +116,15 @@ def pprint_eval_scores(scores, debug=False):
     
     avg_scores = {}
     for metric in scores:
-        score = scores[metric]
-        avg_scores[metric] = 100 * sum(score) / float(len(score))
-        
-        if debug:
-            print ('| %s: %2.4f'%(metric, avg_scores[metric]))
+        if type(scores[metric]) == list:
+            score = scores[metric]
+            avg_scores[metric] = 100 * sum(score) / float(len(score))
+            
+            if debug:
+                print ('| %s: %2.4f'%(metric, avg_scores[metric]))
+        else:
+            avg_scores[metric] = scores[metric]
+    
+    avg_scores['F1_score'] = 2 * (avg_scores['Precision'] * avg_scores['Recall']) / (avg_scores['Precision'] + avg_scores['Recall'])
     
     return avg_scores
