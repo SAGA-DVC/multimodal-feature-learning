@@ -86,9 +86,9 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         losses.backward()
 
         # print("Logits, segments:", outputs['pred_logits'].shape, outputs['pred_segments'].shape)
-        classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
-        mapper = np.vectorize(map_id_to_classname)
-        classes_names = mapper(classes_id.cpu().detach().numpy())
+        # classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
+        # mapper = np.vectorize(map_id_to_classname)
+        # classes_names = mapper(classes_id.cpu().detach().numpy()).reshape(-1)
 
         # if batch_idx % 100 == 0:
         #     # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
@@ -98,8 +98,9 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         #     if not os.path.exists(train_classes_path):
         #         train_classes_path.mkdir(parents=True, exist_ok=True)
 
-        #     src_classes_string = classes_to_string(obj['cap_tensor'])
-        #     tgt_classes_string = classes_to_string(classes)    # (total_caption_num, max_caption_length - 1)
+        #     # src_classes_string = classes_to_string(obj['cap_tensor'])
+        #     # tgt_classes_string = classes_to_string(classes)    # (total_caption_num, max_caption_length - 1)
+
             
         #     res = {}
         #     for src, tgt in zip(src_classes_string, tgt_classes_string):
@@ -122,7 +123,7 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         if wandb_log and is_main_process():
-            substring_list = [str(i) for i in range(12)]
+            substring_list = [f'_{i}' for i in range(12)]
             wandb_log_metrics(
                 phase="train",
                 loss=loss_value,
@@ -201,36 +202,43 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         # segments
         # TODO indices, segment_batch_id??
         # idx = get_src_permutation_idx(indices)
-
-        segment_batch_id = torch.Tensor([i for j in range(20) for i in range(3)]).long()
+        
+        segment_batch_id = torch.Tensor([[i for j in range(outputs['pred_logits'].shape[1])] for i in range(outputs['pred_logits'].shape[0])]).long()
         # print(segment_batch_id.shape, segment_batch_id[0])
 
+        # classes
+        # classes_id = torch.argmax(outputs['pred_logits'][..., :-1], dim=-1)    # (batch_size, num_queries, num_classes)
+
+        # (batch_size, num_queries), (batch_size, num_queries)
+        scores, classes_id = torch.max(outputs['pred_logits'][..., :-1], dim=-1)
+        scores = scores.cpu().detach()
+
+        keep = scores > 0.01   #  (batch_size, num_queries)
+        classes_id_keep = classes_id[keep]    # (batch_size * <num_queries)
+        scores_keep = scores[keep]    # (batch_size * <num_queries)
+        segment_batch_id_keep = segment_batch_id[keep]    # (batch_size * <num_queries)
+
+        mapper = np.vectorize(map_id_to_classname)
+        classes_names = mapper(classes_id_keep.cpu().detach().numpy()).reshape(-1)    # (batch_size * <num_queries)
+
         video_durations = list(obj['video_length'][:, 1])
-        denormalized_segments = denormalize_segments(outputs['pred_segments'].reshape(-1, 2), video_durations, segment_batch_id)
+        denormalized_segments = denormalize_segments(outputs['pred_segments'][keep].reshape(-1, 2), video_durations, segment_batch_id_keep)
         # print("Video_DUR: ",video_durations, outputs['pred_segments'].shape, denormalized_segments.shape)
 
-        # classes
-        classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
-        scores, _ = torch.max(outputs['pred_logits'], dim=-1)
-        scores = scores.cpu().detach().numpy().reshape(-1)
-        
-        mapper = np.vectorize(map_id_to_classname)
-        classes_names = mapper(classes_id.cpu().detach().numpy()).reshape(-1)
-
-        for i, batch_id in enumerate(segment_batch_id):
+        for i, batch_id in enumerate(segment_batch_id_keep):
             video_id = obj['video_key'][batch_id]
-            append_result_to_json_submission_file(video_id, submission_json_batch, classes_names[i], denormalized_segments[i], scores[i])
-            append_result_to_json_submission_file(video_id, submission_json_epoch, classes_names[i], denormalized_segments[i], scores[i])
-            
+            append_result_to_json_submission_file(video_id, submission_json_batch, classes_names[i], denormalized_segments[i], scores_keep[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, classes_names[i], denormalized_segments[i], scores_keep[i])
+
         avg_mAP = run_eval(args.eval, gt_val_json, submission_json_batch)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         # metric_logger.update(class_error=loss_dict_reduced['class_error'])
-        metric_logger.update(**{"avg_mAP": avg_mAP})
+        metric_logger.update(**avg_mAP)
 
         if wandb_log and is_main_process():
-            loss_dict_reduced_scaled.update({"avg_mAP": avg_mAP})
-            substring_list = [str(i) for i in range(12)]
+            loss_dict_reduced_scaled.update(avg_mAP)
+            substring_list = [f'_{i}' for i in range(12)]
             wandb_log_metrics(
                 phase="val",
                 loss=loss_value,
@@ -247,7 +255,7 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
     # TODO - check if run_eval can be removed and we can instead avg scores in above loop
     # scores = run_eval(args.eval, submission_json_epoch)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    return_dict.update({"avg_mAP": avg_mAP})
+    return_dict.update(avg_mAP)
 
     val_caption_path = Path(os.path.join(args.submission_dir, 'val'))
     if not os.path.exists(val_caption_path):
@@ -291,5 +299,5 @@ def append_result_to_json_submission_file(video_id, submission_json_batch, class
     submission_json_batch['results'][video_id].append({
         'segment': [denormalized_segments[0].item(), denormalized_segments[1].item()],
         'label': class_name,
-        'score': score
+        'score': score.item()
     })

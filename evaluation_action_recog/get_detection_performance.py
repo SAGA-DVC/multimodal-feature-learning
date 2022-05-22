@@ -12,8 +12,9 @@ def run_eval(eval_args, ground_truth_json, prediction_json,
     anet_detection = ANETdetection(ground_truth_json, prediction_json,
                                    subset=subset, tiou_thresholds=tiou_thresholds,
                                    verbose=verbose, check_status=True, is_submission_json=True)
-    average_mAP = anet_detection.evaluate()
-    return average_mAP
+    mAP = anet_detection.evaluate()
+    mAP_dict = {f'tiou-{tiou_threshold}':mAP_val for tiou_threshold, mAP_val in zip(tiou_thresholds, mAP)}
+    return mAP_dict
 
 def main(ground_truth_filename, prediction_filename,
          subset='validation', tiou_thresholds=np.linspace(0.5, 0.95, 10),

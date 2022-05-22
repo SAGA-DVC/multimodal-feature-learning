@@ -184,16 +184,10 @@ def main(args):
     else:
         print(f"Start eval from epoch {args.start_epoch}")
         start_time = time.time()
-        # for epoch in range(args.start_epoch, args.epochs):
-        #     if args.distributed.is_distributed:
-        #         sampler_train.set_epoch(epoch)
-
-        #     val_stats = evaluate(model, criterion, data_loader_val, args.print_freq, device, epoch, args, args.wandb.on)
-
-        with open('sample_submission_testing.json', 'r') as f:
-            sample_submission_testing = json.load(f)
-        scores = run_eval(args.eval, sample_submission_testing)
-        print("Scores: ", scores)
+        for epoch in range(args.start_epoch, args.epochs):
+            if args.distributed.is_distributed:
+                sampler_train.set_epoch(epoch)
+            val_stats = evaluate(model, criterion, data_loader_val, args.print_freq, device, epoch, args, args.wandb.on, inverted_action_labels_dict, gt_val_json)
 
     
 

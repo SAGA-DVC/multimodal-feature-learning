@@ -193,7 +193,7 @@ class ANETdetection(object):
             print('\tAverage-mAP: {}'.format(self.average_mAP))
 
         if self.is_submission_json:
-            return self.average_mAP
+            return self.mAP
 
 def compute_average_precision_detection(ground_truth, prediction, tiou_thresholds=np.linspace(0.5, 0.95, 10)):
     """Compute average precision (detection task) between ground truth and

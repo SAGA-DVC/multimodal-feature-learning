@@ -27,7 +27,7 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.only_eval = False
+    cfg.only_eval = True
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_action'
