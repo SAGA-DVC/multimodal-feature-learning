@@ -103,22 +103,23 @@ class SetCriterion(nn.Module):
         # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
         target_classes[idx] = target_classes_o
 
-        # used in detr
-        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {'loss_ce': loss_ce}
+        # # used in detr
+        # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+        # losses = {'loss_ce': loss_ce}
 
         # used in pdvc
-        # # (batch_size, num_queries, num_classes + 1)
-        # target_classes_onehot = torch.zeros(src_logits.shape, dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
+        # (batch_size, num_queries, num_classes + 1)
+        target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2] + 1],
+                                            dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         
-        # # 1 for positive class, 0 for negative class
-        # target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
+        # 1 for positive class, 0 for negative class
+        target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
-        # target_classes_onehot = target_classes_onehot[:,:,:-1]
+        target_classes_onehot = target_classes_onehot[:,:,:-1]
 
-        # loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
+        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
         
-        # losses = {'loss_ce': loss_ce}
+        losses = {'loss_ce': loss_ce}
 
         # losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
 

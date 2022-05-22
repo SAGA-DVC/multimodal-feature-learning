@@ -27,17 +27,17 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.only_eval = False
+    cfg.only_eval = True
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_action_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output_temp_action_lol/checkpoint.pth'
-    cfg.resume = None
+    cfg.resume = 'output_temp_action/checkpoint.pth'
+    # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 1
+    cfg.epochs = 31
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -367,7 +367,7 @@ def load_config():
     cfg.eval = ml_collections.ConfigDict()
     # cfg.eval.submission = 'output/test.json'
     cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = './anet_data/action_recognition/activity_net.v1-3.min.json'
+    cfg.eval.references = './anet_data/action_recognition/no_invalid_val.json'
     cfg.eval.tiou_thresholds = np.linspace(0.5, 0.95, 10)
     cfg.eval.verbose = False
     cfg.eval.is_submission_json = True

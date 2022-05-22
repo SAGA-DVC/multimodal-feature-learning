@@ -367,7 +367,7 @@ def load_config():
     cfg.eval = ml_collections.ConfigDict()
     # cfg.eval.submission = 'output/test.json'
     cfg.eval.submission = 'sample_submission.json'
-    cfg.eval.references = './anet_data/action_recognition/activity_net.v1-3.min.json'
+    cfg.eval.references = './anet_data/action_recognition/no_invalid_val.json'
     cfg.eval.tiou_thresholds = np.linspace(0.5, 0.95, 10)
     cfg.eval.verbose = False
     cfg.eval.is_submission_json = True

@@ -206,10 +206,6 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         batch_size, num_queries, _ = outputs['pred_logits'].shape
 
         segment_batch_id = torch.Tensor([[i for j in range(num_queries)] for i in range(batch_size)]).long()
-        # print(segment_batch_id.shape, segment_batch_id[0])
-
-        # classes
-        # classes_id = torch.argmax(outputs['pred_logits'][..., :-1], dim=-1)    # (batch_size, num_queries, num_classes)
 
         # count
         count = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
