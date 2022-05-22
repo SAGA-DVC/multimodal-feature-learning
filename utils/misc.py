@@ -508,7 +508,7 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
         return torchvision.ops.misc.interpolate(input, size, scale_factor, mode, align_corners)
     
 
-def import_ground_truths(filenames):
+def import_ground_truths_for_eval(filenames):
 
     gts = []
     # self.n_ref_vids = Set()
