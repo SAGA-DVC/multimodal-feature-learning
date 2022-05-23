@@ -44,7 +44,7 @@ class SetCriterion(nn.Module):
         self.losses = losses
 
         self.eos_coef = eos_coef
-        empty_weight = torch.ones(self.num_classes + 1) 
+        empty_weight = torch.ones(self.num_classes) 
         empty_weight[-1] = self.eos_coef
         self.register_buffer('empty_weight', empty_weight)
 
@@ -96,6 +96,7 @@ class SetCriterion(nn.Module):
         # tensor (nb_target_segments) contains class labels
         # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
+        # print("IDX: ", idx, torch.argmax(src_logits[idx], -1), target_classes_o)
 
         # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
         target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
@@ -118,7 +119,7 @@ class SetCriterion(nn.Module):
         target_classes_onehot = target_classes_onehot[:,:,:-1]
 
         loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
-        
+        # print("**** LOSS_CE: ", loss_ce)
         losses = {'loss_ce': loss_ce}
 
         # losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
@@ -382,7 +383,11 @@ class SetCriterion(nn.Module):
            
         """
 
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        # outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        outputs_without_aux = {
+            "pred_logits": outputs["pred_logits"],
+            "pred_segments": outputs["pred_segments"]
+        }
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
@@ -433,6 +438,8 @@ class SetCriterion(nn.Module):
                     l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
+
+        print("**** LOSS_CE_ENC: ", losses["loss_ce_enc_0"].item(), losses["loss_ce_enc_4"].item())
 
         return losses
 

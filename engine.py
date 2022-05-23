@@ -211,7 +211,7 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         count = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
 
         # (batch_size, num_queries), (batch_size, num_queries)
-        scores, classes_id = torch.max(outputs['pred_logits'][..., :-1], dim=-1)
+        scores, classes_id = torch.max(outputs['pred_logits'], dim=-1)
         scores = scores.cpu().detach()
 
         keep = scores > 0.7   #  (batch_size, num_queries)

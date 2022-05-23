@@ -48,8 +48,8 @@ class UnimodalSparseDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.class_embedding_encoder = nn.Linear(d_model, num_classes + 1)
-        self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
+        self.class_embedding_encoder = nn.Linear(d_model, num_classes)
+        self.class_embedding_decoder = nn.Linear(d_model, num_classes)
 
         self.segment_embedding_encoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
         self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
@@ -69,8 +69,8 @@ class UnimodalSparseDVC(nn.Module):
         # TODO - do all this in init_weights()
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding_encoder.bias.data = torch.ones(num_classes + 1) * bias_value
-        self.class_embedding_decoder.bias.data = torch.ones(num_classes + 1) * bias_value
+        self.class_embedding_encoder.bias.data = torch.ones(num_classes) * bias_value
+        self.class_embedding_decoder.bias.data = torch.ones(num_classes) * bias_value
 
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data, 0.)
@@ -290,6 +290,6 @@ class UnimodalSparseDVC(nn.Module):
 
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
+        self.class_embedding.bias.data = torch.ones(self.num_classes) * bias_value
         nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
         nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)

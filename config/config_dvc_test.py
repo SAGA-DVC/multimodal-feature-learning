@@ -27,7 +27,7 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.only_eval = True
+    cfg.only_eval = False
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_action_lol'
@@ -124,7 +124,7 @@ def load_config():
     cfg.dvc.input_modalities = ['video']
     # cfg.dvc.input_modalities = ['audio']
 
-    cfg.dvc.num_queries = 20
+    cfg.dvc.num_queries = 300
     cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
@@ -139,14 +139,14 @@ def load_config():
 
     cfg.dvc.smoothing = 0.5
 
-    cfg.dvc.cls_loss_coef = 1
+    cfg.dvc.cls_loss_coef = 1   # 2 in PDVC, sparse, 1 in detr
     cfg.dvc.counter_loss_coef = 2
     cfg.dvc.bbox_loss_coef = 5
     cfg.dvc.giou_loss_coef = 2
     cfg.dvc.self_iou_loss_coef = 2
     cfg.dvc.caption_loss_coef = 1
     cfg.dvc.context_loss_coef = 3
-    cfg.dvc.mask_prediction_coef = 2
+    cfg.dvc.mask_prediction_coef = 2    # 1 in sparse, 
     cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1
 
