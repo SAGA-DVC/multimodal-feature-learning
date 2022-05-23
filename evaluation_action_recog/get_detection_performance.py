@@ -13,7 +13,10 @@ def run_eval(eval_args, ground_truth_json, prediction_json,
                                    subset=subset, tiou_thresholds=tiou_thresholds,
                                    verbose=verbose, check_status=True, is_submission_json=True)
     mAP = anet_detection.evaluate()
+
     mAP_dict = {f'tiou-{tiou_threshold}':mAP_val for tiou_threshold, mAP_val in zip(tiou_thresholds, mAP)}
+    mAP_dict['Avg-mAP'] =  mAP.mean()
+    
     return mAP_dict
 
 def main(ground_truth_filename, prediction_filename,
