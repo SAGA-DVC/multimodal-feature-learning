@@ -49,13 +49,13 @@ class CapUnimodalSparseDVC(nn.Module):
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
         self.class_embedding_encoder = nn.Linear(d_model, num_classes + 1)
-        self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
+        # self.class_embedding_decoder = nn.Linear(d_model, num_classes + 1)
 
         self.segment_embedding_encoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
-        self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
+        # self.segment_embedding_decoder = FFN(in_dim=d_model, hidden_dim=d_model, out_dim=2, num_layers=3)
         
         self.count_head_encoder = nn.Linear(d_model, max_eseq_length + 1)
-        self.count_head_decoder = nn.Linear(d_model, max_eseq_length + 1)
+        # self.count_head_decoder = nn.Linear(d_model, max_eseq_length + 1)
 
         assert 'video' in input_modalities or 'audio' in input_modalities, f'input_modalities should contain one of "video" or "audio". You have {input_modalities}'
 

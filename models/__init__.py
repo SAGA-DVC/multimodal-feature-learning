@@ -6,6 +6,8 @@ import numpy as np
 import timm
 from .sparse.cap_module import CapUnimodalSparseDVC
 from .sparse.prop_module import PropUnimodalSparseDVC
+from .deformable.cap_module import CapUnimodalDeformableDVC
+from .deformable.prop_module import PropUnimodalDeformableDVC
 from .regular.dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
@@ -27,19 +29,35 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
             embedding_matrix = build_word_embedding_matrix(args.caption.glove_file_path, dataset.vocab, args.caption.pretrained_word_embed_dim)
             pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
 
-        model = CapUnimodalSparseDVC(input_modalities=args.input_modalities,
-                            num_queries=args.num_queries,
-                            d_model=args.d_model, 
-                            num_classes=args.num_classes,
-                            aux_loss=args.aux_loss,
-                            threshold=args.threshold,
-                            max_eseq_length=args.max_eseq_length,
-                            vocab=dataset.vocab, 
-                            seq_len=dataset.max_caption_len_all, 
-                            embedding_matrix=embedding_matrix,
-                            sparse_detr_args=args.sparse_detr, 
-                            caption_args=args.caption,
-                        )
+        if args.dvc.use_sparse_detr:
+            model = CapUnimodalSparseDVC(input_modalities=args.input_modalities,
+                                num_queries=args.num_queries,
+                                d_model=args.d_model, 
+                                num_classes=args.num_classes,
+                                aux_loss=args.aux_loss,
+                                threshold=args.threshold,
+                                max_eseq_length=args.max_eseq_length,
+                                vocab=dataset.vocab, 
+                                seq_len=dataset.max_caption_len_all, 
+                                embedding_matrix=embedding_matrix,
+                                sparse_detr_args=args.sparse_detr, 
+                                caption_args=args.caption,
+                            )
+        elif args.dvc.use_deformable_detr:
+            model = CapUnimodalDeformableDVC(input_modalities=args.input_modalities,
+                                num_queries=args.num_queries,
+                                d_model=args.d_model, 
+                                num_classes=args.num_classes,
+                                aux_loss=args.aux_loss,
+                                threshold=args.threshold,
+                                max_eseq_length=args.max_eseq_length,
+                                vocab=dataset.vocab, 
+                                seq_len=dataset.max_caption_len_all, 
+                                embedding_matrix=embedding_matrix,
+                                detr_args=args.detr, 
+                                caption_args=args.caption,
+                            )
+
 
         weight_dict = {'loss_caption': args.caption_loss_coef,
                         'loss_mask_prediction': args.mask_prediction_coef
@@ -64,15 +82,28 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
     
 
     elif procedure == 'train_prop':
-        model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
-                            num_queries=args.num_queries,
-                            d_model=args.d_model, 
-                            num_classes=args.num_classes,
-                            aux_loss=args.aux_loss,
-                            threshold=args.threshold,
-                            max_eseq_length=args.max_eseq_length,
-                            sparse_detr_args=args.sparse_detr, 
-                        )
+        if args.dvc.use_sparse_detr:
+            model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
+                                num_queries=args.num_queries,
+                                d_model=args.d_model, 
+                                num_classes=args.num_classes,
+                                aux_loss=args.aux_loss,
+                                threshold=args.threshold,
+                                max_eseq_length=args.max_eseq_length,
+                                sparse_detr_args=args.sparse_detr, 
+                            )
+
+        elif args.dvc.use_deformable_detr:
+            model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
+                                num_queries=args.num_queries,
+                                d_model=args.d_model, 
+                                num_classes=args.num_classes,
+                                aux_loss=args.aux_loss,
+                                threshold=args.threshold,
+                                max_eseq_length=args.max_eseq_length,
+                                detr_args=args.detr, 
+                            )
+
 
         weight_dict = {'loss_ce': args.cls_loss_coef,
                 'loss_counter': args.counter_loss_coef, 

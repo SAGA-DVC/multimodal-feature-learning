@@ -218,6 +218,9 @@ class PropUnimodalSparseDVC(nn.Module):
             out["sparse_token_nums"] = sparse_token_nums
 
         out['mask_flatten'] = torch.cat([m.flatten(1) for m in masks], 1)
+        
+        if self.aux_loss:
+            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
             
         return out
 
