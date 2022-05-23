@@ -124,7 +124,7 @@ def load_config():
     cfg.dvc.input_modalities = ['video']
     # cfg.dvc.input_modalities = ['audio']
 
-    cfg.dvc.num_queries = 20
+    cfg.dvc.num_queries = 100
     cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes

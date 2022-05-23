@@ -430,7 +430,7 @@ class SetCriterion(nn.Module):
                     if loss == 'labels':
                         # Logging is enabled only for the last layer (class error)
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

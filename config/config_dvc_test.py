@@ -33,11 +33,11 @@ def load_config():
     cfg.output_dir = 'output_temp_action_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output_temp_action/checkpoint.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output_temp_action/checkpoint.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 31
+    cfg.epochs = 1
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
