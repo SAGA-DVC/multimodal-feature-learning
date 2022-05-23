@@ -174,6 +174,8 @@ class CapUnimodalSparseDVC(nn.Module):
         for i, target in enumerate(obj['video_target']):
             segment_batch_id_arr += [i for j in range(len(target['segments']))]
         
+        # segment_batch_id_arr = [i for j in range(len(target['segments'])) for i, target in enumerate(obj['video_target'])]
+
         segment_batch_id = torch.LongTensor(segment_batch_id_arr)    # (nb_target_segments)
 
         video_durations = list(obj['video_length'][:, 1])

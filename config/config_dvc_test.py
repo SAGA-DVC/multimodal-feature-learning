@@ -24,11 +24,12 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 5    # used for val loops and submission json files
+    cfg.eval_rate = 1    # used for val loops and submission json files
     cfg.only_eval = False
     
-    cfg.procedure = 'train_cap'    # ['train_cap', 'train_prop']
-    # cfg.procedure = 'train_prop'
+    # ['train_cap', 'train_prop']
+    # cfg.procedure = 'train_cap'    
+    cfg.procedure = 'train_prop'
 
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_lol'

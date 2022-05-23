@@ -87,23 +87,23 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
             plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.procedure, args.output_dir, wandb_log)
 
-            # train_caption_path = Path(os.path.join(args.submission_dir, 'train'))
-            # if not os.path.exists(train_caption_path):
-            #     train_caption_path.mkdir(parents=True, exist_ok=True)
+            train_submission_path = Path(os.path.join(args.submission_dir, 'train'))
+            if not os.path.exists(train_submission_path):
+                train_submission_path.mkdir(parents=True, exist_ok=True)
 
-            # src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
-            # tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
-            
-            # res = {}
-            # for src, tgt in zip(src_captions_string, tgt_captions_string):
-            #     res[src] = tgt
+            src_num_events = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
+            tgt_num_events = [target['segments'].shape[0] for target in obj['video_target']]    # (batch_size)
 
-            # if args.output_dir and is_main_process():
-            #     with (train_caption_path / "train_caption.json").open("a") as f:
-            #         json.dump(res, f, indent=4)
+            res = {}
+            for src, tgt in zip(src_num_events, tgt_num_events):
+                res[str(src.item())] = str(tgt)
+
+            if args.output_dir and is_main_process():
+                with (train_submission_path / "train_num_events.json").open("a") as f:
+                    json.dump(res, f, indent=4)
                 
-            #     if args.wandb.on:
-            #         wandb.save(os.path.join(train_caption_path, "train_caption.json"))
+                if args.wandb.on:
+                    wandb.save(os.path.join(train_submission_path, "train_num_events.json"))
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
@@ -170,29 +170,9 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         obj = defaultdict(lambda: None, obj)
 
-        if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+        outputs = model(obj, is_training=False, faster_eval=False)
         
-            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
-
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
-
-        elif len(args.dvc.input_modalities) == 2:
-            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
-        
-            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-
-            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
-
-            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
-
-        else:
-            raise AssertionError('length of input modalities should be 1 or 2')
-        
-        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
+        loss_dict = criterion(outputs, obj)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -209,19 +189,24 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         # EVALUATION SCORES
         # segments
-        idx = get_src_permutation_idx(indices)
-
+        gt_segments = torch.cat([target['segments'] for target in obj['video_target']], dim=0)    # (nb_target_segments, 2)
+        
+        segment_batch_id_arr = []
+        for i, target in enumerate(obj['video_target']):
+            segment_batch_id_arr += [i for j in range(len(target['segments']))]
+        
+        segment_batch_id = torch.LongTensor(segment_batch_id_arr)    # (nb_target_segments)
         video_durations = list(obj['video_length'][:, 1])
-        denormalized_segments = denormalize_segments(outputs['pred_segments'][idx], video_durations, idx[0])
-        # print("Video_DUR: ",video_durations, outputs['pred_segments'][idx], denormalized_segments, denormalized_segments.shape)
+
+        denormalized_segments = denormalize_segments(gt_segments, video_durations, segment_batch_id)
 
         # captions
-        captions_string = captions_to_string(captions_with_eos, vocab)
+        # captions_string = captions_to_string(captions_with_eos, vocab)
 
-        for i, batch_id in enumerate(idx[0]):
+        for i, batch_id in enumerate(segment_batch_id):
             video_id = obj['video_key'][batch_id]
-            append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
-            append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_batch, '', denormalized_segments[i])
+            append_result_to_json_submission_file(video_id, submission_json_epoch, '', denormalized_segments[i])
             
         scores = run_eval(args.eval, submission_json_batch, gt_json)
         avg_scores = pprint_eval_scores(scores, debug=False)
