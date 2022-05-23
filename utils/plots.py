@@ -46,7 +46,7 @@ def plot_grad_flow_line_plot(named_parameters, epoch, batch_idx, output_dir='out
     plt.close()
 
 
-def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, output_dir='output', wandb_log=False):
+def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, procedure, output_dir='output', wandb_log=False):
     '''Plots the gradients flowing through different layers in the net during training.
     Can be used for checking for possible gradient vanishing / exploding problems.
     
@@ -82,7 +82,7 @@ def plot_grad_flow_bar_plot(named_parameters, epoch, batch_idx, output_dir='outp
                 Line2D([0], [0], color="b", lw=4),
                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
 
-    plot_path = os.path.join(output_dir, 'grads')
+    plot_path = os.path.join(output_dir, 'grads', procedure)
 
     if not os.path.exists(plot_path):
         Path(plot_path).mkdir(parents=True, exist_ok=True)

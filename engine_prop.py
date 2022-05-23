@@ -58,32 +58,9 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
         obj = defaultdict(lambda: None, obj)
 
-        if len(args.dvc.input_modalities) == 1:
-            outputs, captions, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
-        
-            context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
-            
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
+        outputs = model(obj, is_training=True)
 
-        elif len(args.dvc.input_modalities) == 2:
-            outputs, captions, indices, indices_aux, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
-        
-            context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-            context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
-
-            assert context_flag_video and context_flag_audio, f'mis-match in context loss and differentiable mask. video_target_memory_mask is {video_target_memory_mask}, audio_target_memory_mask is {audio_target_memory_mask}, and losses are {args.dvc.losses}'
-
-            aux_flag = (len(indices_aux) == 0 and not args.dvc.aux_loss) or (len(indices_aux) != 0 and args.dvc.aux_loss) 
-            assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
-
-            target_memory_mask = (video_target_memory_mask, audio_target_memory_mask)
-
-        else:
-            raise AssertionError('length of input modalities should be 1 or 2')
-
-        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
+        loss_dict = criterion(outputs, obj)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -108,25 +85,25 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
         if batch_idx % 100 == 0:
             # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
-            plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+            plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.procedure, args.output_dir, wandb_log)
 
-            train_caption_path = Path(os.path.join(args.submission_dir, 'train'))
-            if not os.path.exists(train_caption_path):
-                train_caption_path.mkdir(parents=True, exist_ok=True)
+            # train_caption_path = Path(os.path.join(args.submission_dir, 'train'))
+            # if not os.path.exists(train_caption_path):
+            #     train_caption_path.mkdir(parents=True, exist_ok=True)
 
-            src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
-            tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+            # src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
+            # tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
             
-            res = {}
-            for src, tgt in zip(src_captions_string, tgt_captions_string):
-                res[src] = tgt
+            # res = {}
+            # for src, tgt in zip(src_captions_string, tgt_captions_string):
+            #     res[src] = tgt
 
-            if args.output_dir and is_main_process():
-                with (train_caption_path / "train_caption.json").open("a") as f:
-                    json.dump(res, f, indent=4)
+            # if args.output_dir and is_main_process():
+            #     with (train_caption_path / "train_caption.json").open("a") as f:
+            #         json.dump(res, f, indent=4)
                 
-                if args.wandb.on:
-                    wandb.save(os.path.join(train_caption_path, "train_caption.json"))
+            #     if args.wandb.on:
+            #         wandb.save(os.path.join(train_caption_path, "train_caption.json"))
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)

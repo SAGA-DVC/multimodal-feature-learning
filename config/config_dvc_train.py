@@ -26,12 +26,14 @@ def load_config():
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
     cfg.only_eval = False
-        
+    
+    cfg.procedure = 'train_cap'    # ['train_cap', 'train_prop']
+
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output_temp/checkpoint.pth'
+    # cfg.resume = 'output_temp/checkpoint_cap.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
@@ -61,7 +63,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with diff pos embed, modified attention (like nn.MultiHeadAttention) and lower case captions"
+    cfg.wandb.notes = "Sparse DETR separate"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -145,16 +147,16 @@ def load_config():
     cfg.dvc.mask_prediction_coef = 2
     cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1
+    
+    
+    if cfg.procedure == 'train_cap':
+        cfg.dvc.losses = ['captions']
 
-    # TODO - handle not using some losses
-    cfg.dvc.losses = ['labels', 'segments', 'captions']
+        if cfg.dvc.use_sparse_detr:
+            cfg.dvc.losses.append('mask_prediction')
     
-    if cfg.use_differentiable_mask:
-        cfg.dvc.losses.append('contexts')
-    
-    if cfg.dvc.use_sparse_detr:
-        cfg.dvc.losses.append('mask_prediction')
-        # cfg.dvc.losses.append('corr')
+    elif cfg.procedure == 'train_prop':
+        cfg.dvc.losses = ['labels', 'segments']
 
 
     # Matcher args

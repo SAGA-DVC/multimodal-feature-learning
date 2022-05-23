@@ -18,7 +18,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and segments)
     """
     # TODO - check __init__() attributes
-    def __init__(self, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
+    def __init__(self, procedure, is_multimodal, num_classes, matcher, weight_dict, eos_coef, losses, pad_idx, smoothing=0.7, 
                 focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=1, lloss_beta=1.):
 
         """ 
@@ -37,6 +37,7 @@ class SetCriterion(nn.Module):
         """
 
         super().__init__()
+        self.procedure = procedure
         self.is_multimodal = is_multimodal
         self.num_classes = num_classes
         self.matcher = matcher
@@ -69,7 +70,7 @@ class SetCriterion(nn.Module):
 
 
 
-    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, log=True):
+    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, log=True):
 
         """
         Classification loss (Negative Log Likelihood)
@@ -148,7 +149,7 @@ class SetCriterion(nn.Module):
 
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_cardinality(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
 
         """ 
         Compute the cardinality error, ie the absolute error in the number of predicted non-empty segments
@@ -182,7 +183,7 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_segments(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_segments(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
 
         """
         Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss.
@@ -243,7 +244,7 @@ class SetCriterion(nn.Module):
         return losses
 
     
-    def loss_mask_prediction(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_mask_prediction(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
         assert "backbone_mask_prediction" in outputs
         assert "sampling_locations_dec" in outputs
         assert "attn_weights_dec" in outputs
@@ -281,7 +282,7 @@ class SetCriterion(nn.Module):
 
 
     @torch.no_grad()
-    def corr(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def corr(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
         if "backbone_topk_proposals" not in outputs.keys():
             return {}
 
@@ -309,7 +310,7 @@ class SetCriterion(nn.Module):
         return losses
 
 
-    def loss_captions(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
+    def loss_captions(self, outputs, targets, indices, num_segments, num_tokens_without_pad):
 
         """
         Compute the losses related to the captions, KL Divergence using Label Smoothing.
@@ -330,63 +331,8 @@ class SetCriterion(nn.Module):
 
         losses = {}
         loss_caption = self.labelSmoothing(outputs['pred_captions'], targets['cap_tensor'][:, 1:])
-        # print('----------------------------', loss_caption, num_tokens_without_pad)
+
         losses['loss_caption'] = loss_caption / num_tokens_without_pad
-        return losses
-
-    # TODO - focal loss and dice loss for masks
-    def unimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
-
-        """
-        Compute the losses related to the context_mask using BCE.
-        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
-        
-        Parameters:
-            `outputs` (dict) : Output of the model. See forward() for the format.
-            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
-            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
-            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
-            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
-        
-        Returns: dict {loss : value} where loss is 'loss_context'.
-        """
-
-        assert 'pred_memory_mask' in outputs, "Outputs does not have the key 'pred_memory_mask'."
-
-        losses = {}
-        loss_context = F.binary_cross_entropy_with_logits(outputs['pred_memory_mask'], memory_mask)
-        losses['loss_context'] = loss_context
-        return losses
-
-    # TODO - check avg or sum of video/audio contexts
-    def multimodal_loss_contexts(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask):
-
-        """
-        Compute the losses related to the context_mask using BCE.
-        targets dicts must contain the key "pred_memory_mask" containing a tensor of dim (nb_target_segements, num_tokens)
-        
-        Parameters:
-            `outputs` (dict) : Output of the model. See forward() for the format.
-            `targets` (list) : Ground truth targets of the dataset. See forward() for the format.
-            `indices` (list) : Bipartite matching of the output and target segments. list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments)).
-            `num_segments` (int) : Average number of target segments accross all nodes, for normalization purposes.
-            `num_tokens_without_pad` (int): Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
-        
-        Returns: dict {loss : value} where loss is 'loss_context'.
-        """
-        
-        assert 'video_pred_memory_mask' in outputs, "Outputs does not have the key 'video_pred_memory_mask'."
-        assert 'audio_pred_memory_mask' in outputs, "Outputs does not have the key 'audio_pred_memory_mask'."
-
-        losses = {}
-        video_memory_mask, audio_memory_mask = memory_mask
-
-        video_loss_context = F.binary_cross_entropy_with_logits(outputs['video_pred_memory_mask'], video_memory_mask)
-        audio_loss_context = F.binary_cross_entropy_with_logits(outputs['audio_pred_memory_mask'], audio_memory_mask)
-
-        losses['loss_context'] = (video_loss_context + audio_loss_context) / 2
         return losses
 
 
@@ -403,7 +349,7 @@ class SetCriterion(nn.Module):
         return batch_idx, tgt_idx
 
 
-    def get_loss(self, loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs):
+    def get_loss(self, loss, outputs, targets, indices, num_segments, num_tokens_without_pad, **kwargs):
 
         """
         Calculates a specific loss of the outputs w.r.t. the targets. 
@@ -426,14 +372,25 @@ class SetCriterion(nn.Module):
             'cardinality': self.loss_cardinality,
             'segments': self.loss_segments,
             'captions': self.loss_captions,
-            'contexts': self.multimodal_loss_contexts if self.is_multimodal else self.unimodal_loss_contexts,
             "mask_prediction": self.loss_mask_prediction,
             "corr": self.corr,
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
-        return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
+        return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, **kwargs)
 
-    def forward(self, outputs, targets, indices, indices_aux, memory_mask):
+
+    def forward(self, outputs, targets):
+        
+        if self.procedure == 'train_cap':
+            return self.forward_cap(outputs, targets)
+        elif self.procedure == 'train_prop':
+            return self.forward_prop(outputs, targets)
+        else:
+            raise AssertionError(f'procedure should be in [train_cap, train_prop]. It is {self.procedure}')
+
+
+
+    def forward_cap(self, outputs, targets):
 
         """ 
         This performs the loss computation.
@@ -468,11 +425,11 @@ class SetCriterion(nn.Module):
            
         """
 
-        # outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
-        # indices = self.matcher(outputs_without_aux, targets['video_target']) 
+        indices = None 
 
         # Average number of target segments accross all nodes, for normalization purposes
         num_segments = sum(len(t["labels"]) for t in targets['video_target'])
@@ -492,37 +449,20 @@ class SetCriterion(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask))
-
-
-        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
-        if 'aux_outputs' in outputs:
-            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs'], indices_aux)):
-                # index_aux = self.matcher(aux_outputs, targets['video_target'])
-                for loss in self.losses:
-                    if loss == 'captions' or loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
-                        # captions are computed in another loop
-                        # Intermediate masks losses are too costly to compute, we ignore them.
-                        continue
-                    kwargs = {}
-                    if loss == 'labels':
-                        # Logging is enabled only for the last layer (class error)
-                        kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
-                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
-                    losses.update(l_dict)
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
         
         if 'aux_outputs_caption' in outputs:
+            kwargs = {}
             for i, aux_outputs_caption in enumerate(outputs['aux_outputs_caption']):
                 if 'captions' in self.losses:
-                    l_dict = self.get_loss('captions', aux_outputs_caption, targets, None, None, num_tokens_without_pad, None, **kwargs)
+                    l_dict = self.get_loss('captions', aux_outputs_caption, targets, indices, num_segments, num_tokens_without_pad, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
         
         if 'aux_outputs_enc' in outputs:
-            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):
-                # index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
+            for i, aux_outputs in enumerate(outputs['aux_outputs_enc']):
+                index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
                         # Intermediate masks losses are too costly to compute, we ignore them.
@@ -534,7 +474,109 @@ class SetCriterion(nn.Module):
                     if loss == 'captions':
                         # there are no captions in encoder loss
                         continue
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, **kwargs)
+                    l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
+                    losses.update(l_dict)
+
+        return losses
+
+
+
+    def forward_prop(self, outputs, targets):
+
+        """ 
+        This performs the loss computation.
+        Parameters:
+            `outputs` (dict): dict of tensors
+                    - "pred_logits": the classification logits (including no-action) for all queries
+                                    shape (batch_size, num_queries, num_classes + 1)
+                    - "pred_segments": The normalized segments for all queries, represented as
+                                    (center_offset, length). Shape (batch_size, num_queries, 2)
+                    - "pred_captions": All captions in a batch with shape (total_caption_num, seq_len, vocab_size)
+                    - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
+                                    dictionaries containing the two above keys for each decoder layer.
+
+            `targets` (dict): check collate_fn in dataset/anet.py for description (obj)
+            
+            `indices` (list): matching between the outputs of the last layer and the targets
+                            list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+
+            `indices_aux` (list): list of len=depth. Matching between the outputs of the each layer (except the last) 
+                            and the targets list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+
+            `memory_mask`(tensor: int): 1 if num_token useless, else 0 (nb_target_segments, num_tokens)
+        
+        Returns:
+            `losses`: dict consisting of the following items
+                    - "loss_ce" (float): cross entropy loss
+                    - "class_error" (float): classification error based on accuracy of ...
+                    - "cardinality_error" (float): based on number of predicted non-empty segments
+                    - "loss_bbox" (float): bounding box loss
+                    - "loss_giou" (float): general intersection over union loss
+                    - "loss_captions (float): KL Divergence loss using Label Smoothing
+           
+        """
+
+        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+
+        # Retrieve the matching between the outputs of the last layer and the targets
+        # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))
+        indices = self.matcher(outputs_without_aux, targets['video_target']) 
+
+        # Average number of target segments accross all nodes, for normalization purposes
+        num_segments = sum(len(t["labels"]) for t in targets['video_target'])
+        num_segments = torch.as_tensor([num_segments], dtype=torch.float, device=next(iter(outputs.values())).device)
+        if is_dist_avail_and_initialized():
+            torch.distributed.all_reduce(num_segments)
+        num_segments = torch.clamp(num_segments / get_world_size(), min=1).item()
+
+        # Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
+        # ignore <bos> token as it is not predicted as part of the output
+        num_tokens_without_pad = (targets['cap_tensor'][:, 1:] != self.pad_idx).sum()
+        num_tokens_without_pad = torch.as_tensor([num_tokens_without_pad], dtype=torch.float, device=next(iter(outputs.values())).device)
+        if is_dist_avail_and_initialized():
+            torch.distributed.all_reduce(num_tokens_without_pad)
+        num_tokens_without_pad = torch.clamp(num_tokens_without_pad / get_world_size(), min=1).item()
+
+        # Compute all the requested losses
+        losses = {}
+        for loss in self.losses:
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
+
+
+        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
+        if 'aux_outputs' in outputs:
+            for i, aux_outputs in enumerate(outputs['aux_outputs']):
+                index_aux = self.matcher(aux_outputs, targets['video_target'])
+                for loss in self.losses:
+                    if loss == 'captions' or loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                        # captions are computed in another loop
+                        # Intermediate masks losses are too costly to compute, we ignore them.
+                        continue
+                    kwargs = {}
+                    if loss == 'labels':
+                        # Logging is enabled only for the last layer (class error)
+                        kwargs = {'log': False}
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, **kwargs)
+                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
+                    losses.update(l_dict)
+
+        
+        if 'aux_outputs_enc' in outputs:
+            for i, aux_outputs in enumerate(outputs['aux_outputs_enc']):
+                index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
+                for loss in self.losses:
+                    if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
+                        # Intermediate masks losses are too costly to compute, we ignore them.
+                        continue
+                    kwargs = {}
+                    if loss == 'labels':
+                        # Logging is enabled only for the last layer (class error)
+                        kwargs = {'log': False}
+                    if loss == 'captions':
+                        # there are no captions in encoder loss
+                        continue
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, num_tokens_without_pad, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -573,9 +615,6 @@ class LabelSmoothing(nn.Module):
         loss = F.kl_div(pred.log(), dist, reduction='sum')
 
         return loss
-
-
-
 
 
 def cross_entropy_with_gaussian_mask(inputs, targets, weight, lloss_gau_mask=1, lloss_beta=1.):

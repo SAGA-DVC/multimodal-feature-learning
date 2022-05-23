@@ -356,7 +356,7 @@ def collate_fn(batch, pad_idx, args):
                 "length": video_length,    # (batch_size, 3) - num_frames, duration, gt_target_segments
                 "mask": video_mask,    # (batch_size, max_video_length)
                 "key": list(key),    # list, (batch_size)
-                "target": target,
+                "target": target,    # list, (batch_size)
             },
        
         "gt":

@@ -4,142 +4,49 @@ import pickle
 import torch
 import numpy as np
 import timm
-from .deformable.unimodal_deformable_dvc import UnimodalDeformableDVC
-from .deformable.multimodal_deformable_dvc import MultimodalDeformableDVC
-from .sparse.unimodal_sparse_dvc import UnimodalSparseDVC
-from .sparse.multimodal_sparse_dvc import MultimodalSparseDVC
+from .sparse.cap_module import CapUnimodalSparseDVC
+from .sparse.prop_module import PropUnimodalSparseDVC
 from .regular.dvc import DVC
 from .matcher import build_matcher
 from .criterion import SetCriterion
 from config.config_dvc import load_config
 
 # TODO - file.close()?
-def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
+def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=False):
 
-    # device = torch.device(args.device)
-    
     model_official = None
     
-    # if args.model_official is not None:
-    #     model_official = timm.create_model(args.model_official, pretrained=True)
-    #     model_official.eval()
-
     matcher = build_matcher(args.matcher)
     
-    embedding_matrix_file = Path(args.caption.embedding_matrix_file_path)
+    if procedure == 'train_cap':
+        embedding_matrix_file = Path(args.caption.embedding_matrix_file_path)
 
-    if embedding_matrix_file.exists():
-        embedding_matrix = pickle.load(open(embedding_matrix_file, 'rb'))
-    else:
-        embedding_matrix = build_word_embedding_matrix(args.caption.glove_file_path, dataset.vocab, args.caption.pretrained_word_embed_dim)
-        pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
-
-    if args.use_deformable_detr:
-        if len(args.input_modalities) == 1:
-            model = UnimodalDeformableDVC(input_modalities=args.input_modalities,
-                        num_queries=args.num_queries,
-                        d_model=args.d_model, 
-                        num_classes=args.num_classes,
-                        aux_loss=args.aux_loss,
-                        matcher=matcher,
-                        threshold=args.threshold,
-                        max_eseq_length=args.max_eseq_length,
-                        vocab=dataset.vocab, 
-                        seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix,
-                        detr_args=args.detr, 
-                        caption_args=args.caption,
-                        use_differentiable_mask=use_differentiable_mask
-                    )
+        if embedding_matrix_file.exists():
+            embedding_matrix = pickle.load(open(embedding_matrix_file, 'rb'))
         else:
-            model = MultimodalDeformableDVC(input_modalities=args.input_modalities,
-                        num_queries=args.num_queries,
-                        d_model=args.d_model, 
-                        num_classes=args.num_classes,
-                        aux_loss=args.aux_loss,
-                        matcher=matcher,
-                        threshold=args.threshold,
-                        vocab=dataset.vocab,  
-                        seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix,
-                        detr_args=args.detr, 
-                        caption_args=args.caption,
-                        use_differentiable_mask=use_differentiable_mask
-                    )
+            embedding_matrix = build_word_embedding_matrix(args.caption.glove_file_path, dataset.vocab, args.caption.pretrained_word_embed_dim)
+            pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
 
-    elif args.use_sparse_detr:
-        if len(args.input_modalities) == 1:
-            model = UnimodalSparseDVC(input_modalities=args.input_modalities,
-                        num_queries=args.num_queries,
-                        d_model=args.d_model, 
-                        num_classes=args.num_classes,
-                        aux_loss=args.aux_loss,
-                        matcher=matcher,
-                        threshold=args.threshold,
-                        max_eseq_length=args.max_eseq_length,
-                        vocab=dataset.vocab, 
-                        seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix,
-                        sparse_detr_args=args.sparse_detr, 
-                        caption_args=args.caption,
-                        use_differentiable_mask=use_differentiable_mask
-                    )
-        else:
-            model = MultimodalSparseDVC(input_modalities=args.input_modalities,
-                        num_queries=args.num_queries,
-                        d_model=args.d_model, 
-                        num_classes=args.num_classes,
-                        aux_loss=args.aux_loss,
-                        matcher=matcher,
-                        threshold=args.threshold,
-                        max_eseq_length=args.max_eseq_length,
-                        vocab=dataset.vocab,  
-                        seq_len=dataset.max_caption_len_all, 
-                        embedding_matrix=embedding_matrix,
-                        detr_args=args.detr, 
-                        caption_args=args.caption,
-                        use_differentiable_mask=use_differentiable_mask
-                    )
+        model = CapUnimodalSparseDVC(input_modalities=args.input_modalities,
+                            num_queries=args.num_queries,
+                            d_model=args.d_model, 
+                            num_classes=args.num_classes,
+                            aux_loss=args.aux_loss,
+                            threshold=args.threshold,
+                            max_eseq_length=args.max_eseq_length,
+                            vocab=dataset.vocab, 
+                            seq_len=dataset.max_caption_len_all, 
+                            embedding_matrix=embedding_matrix,
+                            sparse_detr_args=args.sparse_detr, 
+                            caption_args=args.caption,
+                        )
 
-    else :
-        
-        model = DVC(input_modalities=args.input_modalities,
-                    num_queries=args.num_queries,
-                    d_model=args.d_model, 
-                    num_classes=args.num_classes,
-                    aux_loss=args.aux_loss,
-                    matcher=matcher,
-                    threshold=args.threshold,
-                    max_eseq_length=args.max_eseq_length,
-                    vocab=dataset.vocab, 
-                    seq_len=dataset.max_caption_len_all, 
-                    embedding_matrix=embedding_matrix, 
-                    decoder_args=args.decoder,
-                    caption_args=args.caption,
-                    use_differentiable_mask=use_differentiable_mask
-                )
+        weight_dict = {'loss_caption': args.caption_loss_coef,
+                        'loss_mask_prediction': args.mask_prediction_coef
+                        }
 
-    weight_dict = {'loss_ce': args.cls_loss_coef,
-                'loss_counter': args.counter_loss_coef, 
-                'loss_bbox': args.bbox_loss_coef,
-                'loss_giou': args.giou_loss_coef,
-                'loss_self_iou': args.self_iou_loss_coef,
-                'loss_caption': args.caption_loss_coef,
-                'loss_context': args.context_loss_coef,
-                'loss_mask_prediction': args.mask_prediction_coef,
-                'loss_corr': args.corr_coef,
-                }
 
-    if use_differentiable_mask:
-        weight_dict['loss_context'] = args.context_loss_coef
-
-    # TODO this is a hack
-    if args.use_sparse_detr:
         if args.aux_loss:
-            aux_weight_dict = {}
-            for i in range(args.sparse_detr.dec_layers - 1):
-                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items() if k != 'loss_caption'})
-
             caption_aux_weight_dict = {}
             for i in range(args.caption.depth - 1):
                 caption_aux_weight_dict.update({'loss_caption' + f'_{i}': weight_dict['loss_caption']})
@@ -150,25 +57,55 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                 enc_aux_weight_dict.update({k + f'_enc_{i}': v for k, v in weight_dict.items()})
 
         if args.aux_loss:
-            weight_dict.update(aux_weight_dict)
             weight_dict.update(caption_aux_weight_dict)
         
         if args.sparse_detr.use_enc_aux_loss:
             weight_dict.update(enc_aux_weight_dict)
     
-    elif args.use_deformable_detr:
+
+    elif procedure == 'train_prop':
+        model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
+                            num_queries=args.num_queries,
+                            d_model=args.d_model, 
+                            num_classes=args.num_classes,
+                            aux_loss=args.aux_loss,
+                            threshold=args.threshold,
+                            max_eseq_length=args.max_eseq_length,
+                            sparse_detr_args=args.sparse_detr, 
+                        )
+
+        weight_dict = {'loss_ce': args.cls_loss_coef,
+                'loss_counter': args.counter_loss_coef, 
+                'loss_bbox': args.bbox_loss_coef,
+                'loss_giou': args.giou_loss_coef,
+                'loss_self_iou': args.self_iou_loss_coef,
+                'loss_context': args.context_loss_coef,
+                'loss_mask_prediction': args.mask_prediction_coef,
+                'loss_corr': args.corr_coef,
+                }
+
         if args.aux_loss:
             aux_weight_dict = {}
-            for i in range(args.detr.dec_layers - 1):
-                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
+            for i in range(args.sparse_detr.dec_layers - 1):
+                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items() if k != 'loss_caption'})
+        
+        if args.sparse_detr.use_enc_aux_loss:
+            enc_aux_weight_dict = {}
+            for i in range(args.sparse_detr.enc_layers - 1):
+                enc_aux_weight_dict.update({k + f'_enc_{i}': v for k, v in weight_dict.items()})
+
+        if args.aux_loss:
             weight_dict.update(aux_weight_dict)
+        
+        if args.sparse_detr.use_enc_aux_loss:
+            weight_dict.update(enc_aux_weight_dict)
+    
 
 
-    criterion = SetCriterion(len(args.input_modalities) == 2, num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
+    criterion = SetCriterion(procedure=procedure, is_multimodal=len(args.input_modalities) == 2, 
+                            num_classes=args.num_classes, matcher=matcher, weight_dict=weight_dict,
                             eos_coef=args.eos_coef, losses=args.losses, pad_idx=dataset.PAD_IDX, smoothing=args.smoothing,
                             focal_alpha=0.25, focal_gamma=2, lloss_gau_mask=args.lloss_gau_mask, lloss_beta=args.lloss_gau_mask)
-
-    # # postprocessors = {'bbox': PostProcess(args)}
 
     return model, criterion
 
