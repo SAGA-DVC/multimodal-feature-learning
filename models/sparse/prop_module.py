@@ -172,7 +172,7 @@ class PropUnimodalSparseDVC(nn.Module):
                                                                                                                                     mask_flatten, proposals_mask, disable_iterative_refine)
         
         # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
-        outputs_class = self.class_embedding_decoder(query_features).softmax(dim=-1)
+        outputs_class = self.class_embedding_decoder(query_features)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
         outputs_segment = self.segment_embedding_decoder(query_features)

@@ -24,10 +24,12 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 5    # used for val loops and submission json files
+    cfg.eval_rate = 1    # used for val loops and submission json files
     cfg.only_eval = False
     
-    cfg.procedure = 'train_cap'    # ['train_cap', 'train_prop']
+    # ['train_cap', 'train_prop']
+    cfg.procedure = 'train_cap'    
+    # cfg.procedure = 'train_prop'
 
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
@@ -37,7 +39,7 @@ def load_config():
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 70
+    cfg.epochs = 1
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -60,7 +62,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Sparse DETR separate"
@@ -152,8 +154,8 @@ def load_config():
     if cfg.procedure == 'train_cap':
         cfg.dvc.losses = ['captions']
 
-        if cfg.dvc.use_sparse_detr:
-            cfg.dvc.losses.append('mask_prediction')
+        # if cfg.dvc.use_sparse_detr:
+        #     cfg.dvc.losses.append('mask_prediction')
     
     elif cfg.procedure == 'train_prop':
         cfg.dvc.losses = ['labels', 'segments']
