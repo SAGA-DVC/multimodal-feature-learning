@@ -119,7 +119,7 @@ class SetCriterion(nn.Module):
         target_classes_onehot = target_classes_onehot[:,:,:-1]
 
         loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
-        # print("**** LOSS_CE: ", loss_ce)
+        # print("**** LOSS_CE: ", loss_ce, torch.max(src_logits).item(), torch.min(src_logits).item())
         losses = {'loss_ce': loss_ce}
 
         # losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
@@ -139,8 +139,8 @@ class SetCriterion(nn.Module):
         if log:
             # TODO this should probably be a separate loss, not hacked in this one here
             # only takes top-1 accuracy for now
-            # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-            losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            # losses['class_error'] = 100 - accuracy(src_logits[idx][..., :-1], target_classes_o)[0]    # ignores 'no-action' class 
         
         return losses
 
@@ -439,7 +439,7 @@ class SetCriterion(nn.Module):
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
-        print("**** LOSS_CE_ENC: ", losses["loss_ce_enc_0"].item(), losses["loss_ce_enc_4"].item())
+        # print("**** LOSS_CE_ENC: ", losses["loss_ce_enc_0"].item(), losses["loss_ce_enc_4"].item())
 
         return losses
 
