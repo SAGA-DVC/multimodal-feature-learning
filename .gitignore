@@ -1,7 +1,7 @@
 data
 data_features
 output
-output_temp
+output_temp*
 wandb
 *.h5
 *.pkl

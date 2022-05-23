@@ -130,10 +130,10 @@ class SetCriterion(nn.Module):
         pred_count = outputs['pred_count']
         max_length = pred_count.shape[1] - 1
         counter_target = [len(target['segments']) if len(target['segments']) < max_length  else max_length for target in targets['video_target']]
-        counter_target = torch.tensor(counter_target, device=src_logits.device, dtype=torch.long)
+        counter_target = torch.tensor(counter_target, device=pred_count.device, dtype=torch.long)
         counter_target_onehot = torch.zeros_like(pred_count)
         counter_target_onehot.scatter_(1, counter_target.unsqueeze(-1), 1)
-        weight = self.counter_class_rate[:max_length + 1].to(src_logits.device)
+        weight = self.counter_class_rate[:max_length + 1].to(pred_count.device)
 
         counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, weight, self.lloss_gau_mask, self.lloss_beta)
         losses['loss_counter'] = counter_loss

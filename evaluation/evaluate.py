@@ -47,7 +47,8 @@ class ANETcaptions(object):
         self.tious = tious
         self.max_proposals = max_proposals
         self.pred_fields = prediction_fields
-        self.ground_truths = self.import_ground_truths(ground_truth_filenames)
+        # self.ground_truths = self.import_ground_truths(ground_truth_filenames)
+        self.ground_truths = self.import_ground_truths(ground_truth_filenames, is_submission_json, ground_truth_filenames)
         self.prediction = self.import_prediction(prediction_filename, is_submission_json, submission_json)
         self.tokenizer = PTBTokenizer()
 
@@ -78,7 +79,9 @@ class ANETcaptions(object):
             results[vid_id] = submission['results'][vid_id][:self.max_proposals]
         return results
 
-    def import_ground_truths(self, filenames):
+    def import_ground_truths(self, filenames, is_submission_json, gt_json):
+        if is_submission_json:
+            return gt_json
         gts = []
         # self.n_ref_vids = Set()
         self.n_ref_vids = set()
@@ -135,6 +138,8 @@ class ANETcaptions(object):
                 precision, recall = self.evaluate_detection(tiou)
                 self.scores['Recall'].append(recall)
                 self.scores['Precision'].append(precision)
+                self.scores[f'Recall-{tiou}'] = recall
+                self.scores[f'Precision-{tiou}'] = precision
 
     def evaluate_detection(self, tiou):
         gt_vid_ids = self.get_gt_vid_ids()
@@ -265,9 +270,9 @@ class ANETcaptions(object):
         return output
 
 
-def run_eval(args, submission_json=None):
+def run_eval(args, submission_json=None, gt_json=None):
     # Call coco eval
-    evaluator = ANETcaptions(ground_truth_filenames=args.references,
+    evaluator = ANETcaptions(ground_truth_filenames=gt_json,
                              prediction_filename=args.submission,
                              tious=args.tious,
                              max_proposals=args.max_proposals_per_video,
