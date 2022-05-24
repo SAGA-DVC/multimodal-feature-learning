@@ -15,14 +15,14 @@ def load_config():
     cfg.seed = 0
     cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
-    cfg.batch_size = 2
+    cfg.batch_size = 16
     cfg.num_workers = 1
 
     cfg.print_freq = 10
 
-    cfg.lr = 1e-5
-    cfg.lr_drop = 3
-    cfg.weight_decay = 1e-4
+    cfg.lr = 1e-4
+    cfg.lr_drop = 40
+    cfg.weight_decay = 1e-1
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
@@ -30,14 +30,14 @@ def load_config():
     cfg.only_eval = False
         
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp_action'
+    cfg.output_dir = 'output_temp_action_with_matcher'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
     # cfg.resume = 'output_temp_lol/checkpoint.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 70
+    cfg.epochs = 200
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -63,7 +63,7 @@ def load_config():
     cfg.wandb.on = True
     cfg.wandb.project = "action-recognition"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR"
+    cfg.wandb.notes = "Action recognition with matcher"
     # cfg.wandb.run_name = 'dvc-testing'
 
 

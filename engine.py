@@ -97,8 +97,8 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
             tgt_num_events = [target['segments'].shape[0] for target in obj['video_target']]    # (batch_size)
 
             res = {}
-            for src, tgt in zip(src_num_events, tgt_num_events):
-                res[f'E{epoch}_B{batch_idx}_{src.item()}'] = str(tgt)    # to avoid same key-value pairs across epochs and batches
+            for i, (src, tgt) in enumerate(zip(src_num_events, tgt_num_events)):
+                res[f'E{epoch}_B{batch_idx}_index_{i}_{src.item()}'] = str(tgt)    # to avoid same key-value pairs across epochs and batches
 
             if args.output_dir and is_main_process():
                 with (train_submission_path / "train_num_events.json").open("a") as f:
@@ -206,8 +206,8 @@ def evaluate(model, criterion, data_loader, print_freq, device, epoch, args, wan
         count = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
 
         # (batch_size, num_queries), (batch_size, num_queries)
-        scores, classes_id = torch.max(outputs['pred_logits'], dim=-1)
-        scores = scores.cpu().detach()
+        scores, classes_id = torch.max(outputs['pred_logits'].softmax(-1), dim=-1)
+        # scores = scores.cpu().detach()
 
         keep = scores > 0.7   #  (batch_size, num_queries)
 

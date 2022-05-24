@@ -20,9 +20,9 @@ def load_config():
 
     cfg.print_freq = 1
 
-    cfg.lr = 1e-5
-    cfg.lr_drop = 3
-    cfg.weight_decay = 1e-4
+    cfg.lr = 1e-4
+    cfg.lr_drop = 40
+    cfg.weight_decay = 1e-1
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
