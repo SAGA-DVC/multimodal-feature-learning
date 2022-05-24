@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .multimodal_sparse_deformable_transformer import build_multimodal_sparse_deforamble_transformer
+from .multimodal_sparse_deformable_transformer import build_multimodal_sparse_deformable_transformer
 from ..base_encoder import build_base_encoder
 from ..multimodal_caption_decoder import build_multimodal_caption_decoder
 
@@ -82,7 +82,7 @@ class MultimodalSparseDVC(nn.Module):
         nn.init.constant_(self.segment_embedding_decoder.layers[-1].bias.data[2:], -2.0)
 
         # Multimodal Sparse DETR
-        self.multimodal_sparse_transformer = build_multimodal_sparse_deforamble_transformer(sparse_detr_args)
+        self.multimodal_sparse_transformer = build_multimodal_sparse_deformable_transformer(sparse_detr_args)
         
         if sparse_detr_args.use_enc_aux_loss:
             self.unimodal_sparse_transformer.encoder.aux_heads = True

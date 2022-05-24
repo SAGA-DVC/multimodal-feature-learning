@@ -46,7 +46,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
     metric_logger = MetricLogger(delimiter="\t")
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
@@ -111,7 +111,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
         optimizer.step()
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
-        metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
         if wandb_log and is_main_process():
@@ -156,7 +156,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     submission_json_epoch = get_sample_submission()
 
     metric_logger = MetricLogger(delimiter="\t")
-    metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = f'Epoch: [{epoch}]'
     print_freq = args.print_freq
 
@@ -214,7 +214,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         scores.update(avg_scores)
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
-        metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(**avg_scores)
 
         if wandb_log and is_main_process():

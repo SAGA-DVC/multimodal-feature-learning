@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-from deformable_transformer import build_deforamble_transformer
+from deformable_transformer import build_deformable_transformer
 from base_encoder import build_base_encoder
 from config import load_config
 
@@ -10,7 +10,7 @@ from .modules.misc_modules import decide_two_stage
 
 cfg = load_config()
 base_encoder = build_base_encoder(cfg.detr)
-transformer = build_deforamble_transformer(cfg.detr)
+transformer = build_deformable_transformer(cfg.detr)
 
 
 # vf = dt['video_tensor']  # (batch_size, num_token, dmodel) or  (video_num, video_len, video_dim)

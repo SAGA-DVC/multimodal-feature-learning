@@ -676,7 +676,7 @@ def _get_activation_fn(activation):
 )
 
 
-def build_sparse_deforamble_transformer(args):
+def build_sparse_deformable_transformer(args):
     return SparseDeformableTransformer(
         d_model=args.d_model,
         num_head=args.num_heads,

@@ -15,7 +15,7 @@ from .modules.misc_modules import FFN, decide_two_stage
 
 from .load_weights import load_positional_embeddings
 
-from .deformable_transformer import build_deforamble_transformer
+from .deformable_transformer import build_deformable_transformer
 from .base_encoder import build_base_encoder
 
 
@@ -95,7 +95,7 @@ class DeformableDVC(nn.Module):
                     )
 
         self.base_encoder = build_base_encoder(detr_args)
-        self.deformable_transformer = build_deforamble_transformer(detr_args)
+        self.deformable_transformer = build_deformable_transformer(detr_args)
         
         self.caption_decoder = CaptionDecoder(vocab_size=vocab_size, 
                         seq_len=seq_len, 

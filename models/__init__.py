@@ -29,7 +29,7 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
             embedding_matrix = build_word_embedding_matrix(args.caption.glove_file_path, dataset.vocab, args.caption.pretrained_word_embed_dim)
             pickle.dump(embedding_matrix, open(embedding_matrix_file, 'wb'))
 
-        if args.dvc.use_sparse_detr:
+        if args.use_sparse_detr:
             model = CapUnimodalSparseDVC(input_modalities=args.input_modalities,
                                 num_queries=args.num_queries,
                                 d_model=args.d_model, 
@@ -43,7 +43,7 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
                                 sparse_detr_args=args.sparse_detr, 
                                 caption_args=args.caption,
                             )
-        elif args.dvc.use_deformable_detr:
+        elif args.use_deformable_detr:
             model = CapUnimodalDeformableDVC(input_modalities=args.input_modalities,
                                 num_queries=args.num_queries,
                                 d_model=args.d_model, 
@@ -63,7 +63,6 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
                         'loss_mask_prediction': args.mask_prediction_coef
                         }
 
-
         if args.aux_loss:
             caption_aux_weight_dict = {}
             for i in range(args.caption.depth - 1):
@@ -82,7 +81,7 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
     
 
     elif procedure == 'train_prop':
-        if args.dvc.use_sparse_detr:
+        if args.use_sparse_detr:
             model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
                                 num_queries=args.num_queries,
                                 d_model=args.d_model, 
@@ -93,7 +92,7 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
                                 sparse_detr_args=args.sparse_detr, 
                             )
 
-        elif args.dvc.use_deformable_detr:
+        elif args.use_deformable_detr:
             model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
                                 num_queries=args.num_queries,
                                 d_model=args.d_model, 

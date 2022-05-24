@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .unimodal_sparse_deformable_transformer import build_sparse_deforamble_transformer
+from .unimodal_deformable_transformer import build_unimodal_deformable_transformer
 from ..base_encoder import build_base_encoder
 from ..unimodal_caption_decoder import build_unimodal_caption_decoder
 

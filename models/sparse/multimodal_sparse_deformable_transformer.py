@@ -819,7 +819,7 @@ def _get_activation_fn(activation):
 )
 
 
-def build_multimodal_sparse_deforamble_transformer(args):
+def build_multimodal_sparse_deformable_transformer(args):
     return MultimodalSparseDeformableTransformer(
         d_model=args.d_model,
         num_head=args.num_heads,

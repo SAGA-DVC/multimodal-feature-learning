@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-from models.unimodal_sparse_deformable_transformer import build_sparse_deforamble_transformer
+from models.unimodal_sparse_deformable_transformer import build_sparse_deformable_transformer
 from models.base_encoder import build_base_encoder
 from config.config_dvc import load_config
 from models.modules.misc_modules import decide_two_stage
@@ -9,7 +9,7 @@ from models.modules.misc_modules import decide_two_stage
 
 cfg = load_config()
 base_encoder = build_base_encoder(cfg.dvc.sparse_detr)
-transformer = build_sparse_deforamble_transformer(cfg.dvc.sparse_detr)
+transformer = build_sparse_deformable_transformer(cfg.dvc.sparse_detr)
 
 
 # vf = dt['video_tensor']  # (batch_size, num_token, dmodel) or  (video_num, video_len, video_dim)

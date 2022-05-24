@@ -8,7 +8,7 @@ def load_config():
 
     cfg = ml_collections.ConfigDict()
 
-    cfg.is_train = True
+    cfg.is_train = False
 
     if cfg.is_train:
         return load_config_train()

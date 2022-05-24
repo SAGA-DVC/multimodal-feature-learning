@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .unimodal_sparse_deformable_transformer import build_sparse_deforamble_transformer
+from .unimodal_deformable_transformer import build_unimodal_deformable_transformer
 from ..base_encoder import build_base_encoder
 from ..unimodal_caption_decoder import build_unimodal_caption_decoder
 
@@ -32,15 +32,15 @@ def _get_clones(module, N):
 
 # TODO - check devices for tensors
 # TODOD - is_sparse flag in init
-class PropUnimodalSparseDVC(nn.Module):
+class PropUnimodalDeformableDVC(nn.Module):
     def __init__(self, input_modalities, num_queries, d_model, num_classes, aux_loss, threshold, max_eseq_length, 
                 detr_args):
         
         """
-        UnimodalSparseDVC model for proposal generation
+        UnimodalDeformableDVC model for proposal generation
         """
 
-        super(PropUnimodalSparseDVC, self).__init__()
+        super(PropUnimodalDeformableDVC, self).__init__()
         
         self.input_modalities = input_modalities
         self.num_queries = num_queries
