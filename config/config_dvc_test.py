@@ -20,14 +20,14 @@ def load_config():
 
     cfg.print_freq = 1
 
-    cfg.lr = 1e-4
-    cfg.lr_drop = 200
+    cfg.lr = 1e-5
+    cfg.lr_drop = 3
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.only_eval = True
+    cfg.only_eval = False
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_action_lol'

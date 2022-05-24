@@ -20,8 +20,8 @@ def load_config():
 
     cfg.print_freq = 10
 
-    cfg.lr = 1e-4
-    cfg.lr_drop = 200
+    cfg.lr = 1e-5
+    cfg.lr_drop = 3
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
 

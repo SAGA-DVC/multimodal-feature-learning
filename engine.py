@@ -85,33 +85,28 @@ def train_one_epoch(model, criterion, data_loader, optimizer, print_freq, device
         optimizer.zero_grad()
         losses.backward()
 
-        # print("Logits, segments:", outputs['pred_logits'].shape, outputs['pred_segments'].shape)
-        # classes_id = torch.argmax(outputs['pred_logits'], dim=-1)
-        # mapper = np.vectorize(map_id_to_classname)
-        # classes_names = mapper(classes_id.cpu().detach().numpy()).reshape(-1)
+        if batch_idx % 100 == 0:
+            # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+            plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
 
-        # if batch_idx % 100 == 0:
-        #     # plot_grad_flow_line_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
-        #     plot_grad_flow_bar_plot(model.named_parameters(), epoch, batch_idx, args.output_dir, wandb_log)
+            train_submission_path = Path(os.path.join(args.submission_dir, 'train'))
+            if not os.path.exists(train_submission_path):
+                train_submission_path.mkdir(parents=True, exist_ok=True)
 
-        #     train_classes_path = Path(os.path.join(args.submission_dir, 'train'))
-        #     if not os.path.exists(train_classes_path):
-        #         train_classes_path.mkdir(parents=True, exist_ok=True)
+            src_num_events = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
+            tgt_num_events = [target['segments'].shape[0] for target in obj['video_target']]    # (batch_size)
 
-        #     # src_classes_string = classes_to_string(obj['cap_tensor'])
-        #     # tgt_classes_string = classes_to_string(classes)    # (total_caption_num, max_caption_length - 1)
+            res = {}
+            for src, tgt in zip(src_num_events, tgt_num_events):
+                res[f'E{epoch}_B{batch_idx}_{src.item()}'] = str(tgt)    # to avoid same key-value pairs across epochs and batches
 
-            
-        #     res = {}
-        #     for src, tgt in zip(src_classes_string, tgt_classes_string):
-        #         res[src] = tgt
-
-        #     if args.output_dir and is_main_process():
-        #         with (train_classes_path / "train_classes.json").open("a") as f:
-        #             json.dump(res, f, indent=4)
+            if args.output_dir and is_main_process():
+                with (train_submission_path / "train_num_events.json").open("a") as f:
+                    json.dump(res, f, indent=4)
                 
-        #         if args.wandb.on:
-        #             wandb.save(os.path.join(train_classes_path, "train_classes.json"))
+                if args.wandb.on:
+                    wandb.save(os.path.join(train_submission_path, "train_num_events.json"))
+
 
         if args.clip_max_norm > 0:
             clip_grad_norm_(model.parameters(), args.clip_max_norm)
