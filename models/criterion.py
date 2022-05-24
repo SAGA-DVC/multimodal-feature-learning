@@ -450,8 +450,7 @@ class SetCriterion(nn.Module):
 
         # Compute all the requested losses
         losses = {}
-        for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
+        losses.update(self.get_loss('captions', outputs, targets, indices, num_segments, num_tokens_without_pad))
         
         if 'aux_outputs_caption' in outputs:
             kwargs = {}
@@ -476,7 +475,7 @@ class SetCriterion(nn.Module):
                     if loss == 'captions':
                         # there are no captions in encoder loss
                         continue
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, num_tokens_without_pad, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -532,18 +531,11 @@ class SetCriterion(nn.Module):
             torch.distributed.all_reduce(num_segments)
         num_segments = torch.clamp(num_segments / get_world_size(), min=1).item()
 
-        # Number of tokens in the caption excluding the '<pad>' token, for normalization purposes
-        # ignore <bos> token as it is not predicted as part of the output
-        num_tokens_without_pad = (targets['cap_tensor'][:, 1:] != self.pad_idx).sum()
-        num_tokens_without_pad = torch.as_tensor([num_tokens_without_pad], dtype=torch.float, device=next(iter(outputs.values())).device)
-        if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_tokens_without_pad)
-        num_tokens_without_pad = torch.clamp(num_tokens_without_pad / get_world_size(), min=1).item()
-
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, num_tokens_without_pad))
+            if loss != 'captions':
+                losses.update(self.get_loss(loss, outputs, targets, indices, num_segments, None))
 
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
@@ -559,7 +551,7 @@ class SetCriterion(nn.Module):
                     if loss == 'labels':
                         # Logging is enabled only for the last layer (class error)
                         kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, num_tokens_without_pad, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux, num_segments, None, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -578,7 +570,7 @@ class SetCriterion(nn.Module):
                     if loss == 'captions':
                         # there are no captions in encoder loss
                         continue
-                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, num_tokens_without_pad, **kwargs)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, index_aux_enc, num_segments, None, **kwargs)
                     l_dict = {k + f'_enc_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

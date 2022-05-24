@@ -43,7 +43,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
     model.train()
     criterion.train()
-
+            
     metric_logger = MetricLogger(delimiter="\t")
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
@@ -91,12 +91,12 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             if not os.path.exists(train_submission_path):
                 train_submission_path.mkdir(parents=True, exist_ok=True)
 
-            src_num_events = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
+            pred_num_events = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
             tgt_num_events = [target['segments'].shape[0] for target in obj['video_target']]    # (batch_size)
 
             res = {}
-            for src, tgt in zip(src_num_events, tgt_num_events):
-                res[str(src.item())] = str(tgt)
+            for i, (pred, tgt) in enumerate(zip(pred_num_events, tgt_num_events)):
+                res[f'E{epoch}_B{batch_idx}_index{i}_{tgt}'] = str(pred.item())
 
             if args.output_dir and is_main_process():
                 with (train_submission_path / "train_num_events.json").open("a") as f:
@@ -189,21 +189,43 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
 
         # EVALUATION SCORES
         # segments
-        gt_segments = torch.cat([target['segments'] for target in obj['video_target']], dim=0)    # (nb_target_segments, 2)
+        # gt_segments = torch.cat([target['segments'] for target in obj['video_target']], dim=0)    # (nb_target_segments, 2)
         
-        segment_batch_id_arr = []
-        for i, target in enumerate(obj['video_target']):
-            segment_batch_id_arr += [i for j in range(len(target['segments']))]
+        # segment_batch_id_arr = []
+        # for i, target in enumerate(obj['video_target']):
+        #     segment_batch_id_arr += [i for j in range(len(target['segments']))]
         
-        segment_batch_id = torch.LongTensor(segment_batch_id_arr)    # (nb_target_segments)
+        # segment_batch_id = torch.LongTensor(segment_batch_id_arr)    # (nb_target_segments)
+
+        batch_size, num_queries, _ = outputs['pred_logits'].shape
+
+        segment_batch_id = torch.Tensor([[i for j in range(num_queries)] for i in range(batch_size)]).long()
+
+        # count
+        count = torch.argmax(outputs['pred_count'], -1) + 1    # (batch_size)
+
+        # (batch_size, num_queries), (batch_size, num_queries)
+        scores, classes_id = torch.max(outputs['pred_logits'], dim=-1)
+        scores = scores.cpu().detach()
+
+        keep = scores > 0.7   #  (batch_size, num_queries)
+
+        for i, k in enumerate(keep):
+            if torch.all(k == False):
+                _, indices = torch.topk(scores[i], count[i], -1)    # (topk)
+                keep[i][indices] = True
+
+        pred_segments = outputs['pred_segments'][keep]    # (batch_size * <num_queries, 2)
+        segment_batch_id_keep = segment_batch_id[keep]    # (batch_size * <num_queries)
+
         video_durations = list(obj['video_length'][:, 1])
 
-        denormalized_segments = denormalize_segments(gt_segments, video_durations, segment_batch_id)
+        denormalized_segments = denormalize_segments(pred_segments, video_durations, segment_batch_id_keep)
 
         # captions
         # captions_string = captions_to_string(captions_with_eos, vocab)
 
-        for i, batch_id in enumerate(segment_batch_id):
+        for i, batch_id in enumerate(segment_batch_id_keep):
             video_id = obj['video_key'][batch_id]
             append_result_to_json_submission_file(video_id, submission_json_batch, '', denormalized_segments[i])
             append_result_to_json_submission_file(video_id, submission_json_epoch, '', denormalized_segments[i])

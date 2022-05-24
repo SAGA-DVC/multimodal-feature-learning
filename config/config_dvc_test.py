@@ -18,7 +18,7 @@ def load_config():
 
     cfg.print_freq = 1
 
-    cfg.lr = 1e-4
+    cfg.lr = 1e-5
     cfg.lr_drop = 200
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
@@ -28,14 +28,16 @@ def load_config():
     cfg.only_eval = False
     
     # ['train_cap', 'train_prop']
-    # cfg.procedure = 'train_cap'    
-    cfg.procedure = 'train_prop'
+    cfg.procedure = 'train_cap'
+    # cfg.procedure = 'train_prop'
 
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp_lol'
+    cfg.output_dir = 'output_temp_cap_lol'
+    # cfg.output_dir = 'output_temp_prop_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output_tem_lol/checkpoint_cap.pth'
+    # cfg.resume = 'output_temp_cap_lol/checkpoint_cap.pth'
+    # cfg.resume = 'output_temp_prop_lol/checkpoint_cap.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
@@ -107,15 +109,6 @@ def load_config():
     cfg.dataset.activity_net.num_classes = 200    # no action class not included 
 
 
-    # Kinetics 
-    cfg.dataset.kinetics = ml_collections.ConfigDict()
-    cfg.dataset.kinetics.kinetics_root = '../data/sample'
-    cfg.dataset.kinetics.num_temporal_samples = 10
-    cfg.dataset.kinetics.frame_size = (224, 224)
-    cfg.dataset.kinetics.batch_size = 1
-
-
-
     #-------------------------------------------------------------------------------------------------
     # DVC model
     cfg.dvc = ml_collections.ConfigDict()
@@ -124,7 +117,10 @@ def load_config():
     cfg.dvc.input_modalities = ['video']
     # cfg.dvc.input_modalities = ['audio']
 
-    cfg.dvc.num_queries = 20
+    cfg.dvc.load_encoder_weights = True
+    cfg.dvc.cap_module_path = 'output_temp_cap_lol/checkpoint_cap.pth'
+
+    cfg.dvc.num_queries = 100
     cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
@@ -150,15 +146,10 @@ def load_config():
     cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1
     
-    
-    if cfg.procedure == 'train_cap':
-        cfg.dvc.losses = ['captions']
+    cfg.dvc.losses = ['captions', 'labels', 'segments']
 
-        # if cfg.dvc.use_sparse_detr:
-        #     cfg.dvc.losses.append('mask_prediction')
-    
-    elif cfg.procedure == 'train_prop':
-        cfg.dvc.losses = ['labels', 'segments']
+    # if cfg.dvc.use_sparse_detr:
+    #     cfg.dvc.losses.append('mask_prediction')
 
 
     # Matcher args
@@ -289,77 +280,6 @@ def load_config():
     cfg.dvc.decoder.weight_load = False
 
     cfg.dvc.decoder.return_intermediate = True
-
-
-    # ViViT
-    cfg.dvc.vivit = ml_collections.ConfigDict()
-
-    models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.dvc.vivit.model_name = models[0]
-
-    cfg.dvc.vivit.num_frames_in = 30
-    cfg.dvc.vivit.img_size = 224
-
-    cfg.dvc.vivit.spatial_patch_size = 16
-    cfg.dvc.vivit.temporal_patch_size = 2
-
-    cfg.dvc.vivit.num_frames = cfg.dvc.vivit.num_frames_in // cfg.dvc.vivit.temporal_patch_size
-    cfg.dvc.vivit.num_patches = (cfg.dvc.vivit.img_size // cfg.dvc.vivit.spatial_patch_size) ** 2
-
-    tokenization_method = ['filter inflation', 'central frame']
-    cfg.dvc.vivit.tokenization_method = tokenization_method[1]
-
-    cfg.dvc.vivit.in_channels = 3
-    cfg.dvc.vivit.d_model = cfg.dvc.d_model
-
-    cfg.dvc.vivit.depth = 2
-    cfg.dvc.vivit.temporal_depth = 4
-
-    cfg.dvc.vivit.num_heads = 8
-    cfg.dvc.vivit.mlp_ratio = 4
-    cfg.dvc.vivit.qkv_bias = True
-
-    cfg.dvc.vivit.positional_embedding_dropout = 0.1
-    cfg.dvc.vivit.attention_dropout = 0.1
-    cfg.dvc.vivit.projection_dropout = 0.1
-    cfg.dvc.vivit.mlp_dropout_1 = 0.1
-    cfg.dvc.vivit.mlp_dropout_2 = 0.1
-
-    cfg.dvc.vivit.pre_norm = True
-
-    cfg.dvc.vivit.classification_head = False
-    cfg.dvc.vivit.num_classes = cfg.dvc.num_classes
-
-    cfg.dvc.vivit.return_preclassifier = True
-    cfg.dvc.vivit.return_prelogits = False
-
-    cfg.dvc.vivit.model_official = None
-    cfg.dvc.vivit.weight_init = True
-    cfg.dvc.vivit.weight_load = False
-
-
-    # AST
-    cfg.dvc.ast = ml_collections.ConfigDict()
-
-    cfg.dvc.ast.fstride = 10
-    cfg.dvc.ast.tstride = 10
-    cfg.dvc.ast.input_fdim = 128
-    cfg.dvc.ast.input_tdim = 64
-
-    cfg.dvc.ast.imagenet_pretrained = True
-    cfg.dvc.ast.model_size='base224'
-
-    cfg.dvc.ast.depth = 2
-    
-    cfg.dvc.ast.return_preclassifier = True  # Set True for Feature extraction
-    cfg.dvc.ast.return_prelogits = False  # Set True for TSP & GVF extraction
-
-    
-    #-------------------------------------------------------------------------------------------------
-    # Pre-trained models
-    cfg.pretrained_models = ml_collections.ConfigDict()
-    cfg.pretrained_models.vit = 'vit_base_patch16_224'
-    cfg.pretrained_models.deit = 'deit_base_patch16_224'
 
 
     #-------------------------------------------------------------------------------------------------

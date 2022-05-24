@@ -24,7 +24,7 @@ def load_config():
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
-    cfg.eval_rate = 1    # used for val loops and submission json files
+    cfg.eval_rate = 5    # used for val loops and submission json files
     cfg.only_eval = False
     
     # ['train_cap', 'train_prop']
@@ -32,14 +32,16 @@ def load_config():
     # cfg.procedure = 'train_prop'
 
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp'
+    cfg.output_dir = 'output_temp_cap'
+    # cfg.output_dir = 'output_temp_prop_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output_temp/checkpoint_cap.pth'
+    # cfg.resume = 'output_temp_cap_lol/checkpoint_cap.pth'
+    # cfg.resume = 'output_temp_prop_lol/checkpoint_cap.pth'
     cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 1
+    cfg.epochs = 30
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -124,7 +126,10 @@ def load_config():
     cfg.dvc.input_modalities = ['video']
     # cfg.dvc.input_modalities = ['audio']
 
-    cfg.dvc.num_queries = 20
+    cfg.load_encoder_weights = True
+    cfg.cap_module_path = 'output_temp_cap/checkpoint_cap.pth'
+    
+    cfg.dvc.num_queries = 100
     cfg.dvc.d_model = 512
     cfg.dvc.aux_loss = True    # depth for decoder and caption decoder must be the same (for now)
     cfg.dvc.num_classes = cfg.dataset.activity_net.num_classes
@@ -150,15 +155,10 @@ def load_config():
     cfg.dvc.corr_coef = 2
     cfg.dvc.eos_coef = 0.1
     
-    
-    if cfg.procedure == 'train_cap':
-        cfg.dvc.losses = ['captions']
+    cfg.dvc.losses = ['captions', 'labels', 'segments']
 
-        # if cfg.dvc.use_sparse_detr:
-        #     cfg.dvc.losses.append('mask_prediction')
-    
-    elif cfg.procedure == 'train_prop':
-        cfg.dvc.losses = ['labels', 'segments']
+    # if cfg.dvc.use_sparse_detr:
+    #     cfg.dvc.losses.append('mask_prediction')
 
 
     # Matcher args

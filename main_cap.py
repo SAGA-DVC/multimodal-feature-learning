@@ -136,7 +136,7 @@ def train_cap(args):
 
                     if args.wandb.on and is_main_process():
                         # versioning on wandb
-                        artifact = wandb.Artifact("dvc separate", type="model", description="Unimodal sparse DVC cap module")
+                        artifact = wandb.Artifact("dvc-separate-cap", type="model", description="Unimodal sparse DVC cap module")
                         artifact.add_file(checkpoint_path)
                         wandb.log_artifact(artifact)
 

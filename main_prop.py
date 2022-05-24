@@ -92,13 +92,35 @@ def train_prop(args):
     #     print(a, b.shape)
     print(f'number of params: {n_parameters / 1000000} M')
 
+    cap_model_name = 'unimodal_sparse_transformer' if args.dvc.use_sparse_detr else 'unimodal_deformable_transformer'
+    
+    # freeze encoder weights 
+    if cap_model_name == 'unimodal_sparse_transformer':
+        for name, param in model.named_parameters():
+            if (f'{cap_model_name}.encoder' in name 
+                or 'level_embed' in name
+                or 'enc_mask_predictor' in name
+                or 'enc_output' in name
+                or 'pos_embed' in name
+                or 'base_encoder' in name):
+                param.requires_grad = False
+
+    elif cap_model_name == 'unimodal_deformable_transformer':
+        for name, param in model.named_parameters():
+            if (f'{cap_model_name}.encoder' in name 
+                or 'level_embed' in name
+                or 'pos_embed' in name
+                or 'base_encoder' in name):
+                param.requires_grad = False
+
+
     param_dicts = [
         {"params": [p for n, p in model_without_ddp.named_parameters() if p.requires_grad]},
     ]
+
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
-
-
+    
     if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
@@ -107,6 +129,21 @@ def train_prop(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
+    
+    else:
+        if args.dvc.load_encoder_weights:
+            checkpoint_cap = torch.load(args.dvc.cap_module_path, map_location='cpu')
+
+            encoder_weights = {}
+            for key, param in checkpoint_cap['model'].items():
+                if f'{cap_model_name}.encoder' in key:
+                    encoder_weights[key] = param
+            
+            model_without_ddp.state_dict().update(encoder_weights)
+
+    # for name, param in model.named_parameters():
+    #     # if f'{cap_model_name}.encoder' in name:
+    #     print(name, param.requires_grad)
 
     gt_json = import_ground_truths_for_eval(args.eval.references)
 
@@ -118,14 +155,14 @@ def train_prop(args):
                 sampler_train.set_epoch(epoch)
 
             train_stats = train_one_epoch(model, criterion, data_loader_train, dataset_train.vocab, optimizer, args.print_freq, device, epoch, args, args.wandb.on)
-            
+
             lr_scheduler.step()
 
             if args.output_dir:
-                checkpoint_paths = [output_dir / 'checkpoint.pth']
+                checkpoint_paths = [output_dir / 'checkpoint_prop.pth']
                 # extra checkpoint before LR drop and every 100 epochs
                 if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_rate == 0:
-                    checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
+                    checkpoint_paths.append(output_dir / f'checkpoint_prop{epoch:04}.pth')
                 for checkpoint_path in checkpoint_paths:
                     save_on_master({
                         'model': model_without_ddp.state_dict(),
@@ -137,7 +174,7 @@ def train_prop(args):
 
                     if args.wandb.on and is_main_process():
                         # versioning on wandb
-                        artifact = wandb.Artifact("dvc-v2-bs-16", type="model", description="Unimodal-DVC v2 batch size 16 checkpoint")
+                        artifact = wandb.Artifact("dvc-separate-prop", type="model", description="Unimodal-DVC separate")
                         artifact.add_file(checkpoint_path)
                         wandb.log_artifact(artifact)
 

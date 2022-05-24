@@ -47,8 +47,6 @@ class CapUnimodalDeformableDVC(nn.Module):
 
         self.query_embedding = nn.Embedding(num_queries, d_model * 2)
 
-        self.matcher = matcher
-
         assert 'video' in input_modalities or 'audio' in input_modalities, f'input_modalities should contain one of "video" or "audio". You have {input_modalities}'
 
         self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
@@ -118,6 +116,8 @@ class CapUnimodalDeformableDVC(nn.Module):
         # audio_mask = obj['audio_mask']    # (batch_size, num_tokens_a)
         
         batch_size, _, _ = video.shape
+
+        out = {}
 
         # Base Encoder - for multi-scale features
         if 'video' in self.input_modalities: 

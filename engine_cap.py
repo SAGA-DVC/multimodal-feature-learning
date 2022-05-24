@@ -91,12 +91,12 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             if not os.path.exists(train_caption_path):
                 train_caption_path.mkdir(parents=True, exist_ok=True)
 
-            src_captions_string = captions_to_string(obj['cap_tensor'], vocab)
-            tgt_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+            pred_captions_string = captions_to_string(captions, vocab)    # (total_caption_num, max_caption_length - 1)
+            tgt_captions_string = captions_to_string(obj['cap_tensor'], vocab)
             
             res = {}
-            for src, tgt in zip(src_captions_string, tgt_captions_string):
-                res[src] = tgt
+            for pred, tgt in zip(pred_captions_string, tgt_captions_string):
+                res[tgt] = pred
 
             if args.output_dir and is_main_process():
                 with (train_caption_path / "train_caption.json").open("a") as f:

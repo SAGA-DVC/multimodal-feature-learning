@@ -93,7 +93,7 @@ def build_model_and_criterion(procedure, args, dataset, use_differentiable_mask=
                             )
 
         elif args.use_deformable_detr:
-            model = PropUnimodalSparseDVC(input_modalities=args.input_modalities,
+            model = PropUnimodalDeformableDVC(input_modalities=args.input_modalities,
                                 num_queries=args.num_queries,
                                 d_model=args.d_model, 
                                 num_classes=args.num_classes,

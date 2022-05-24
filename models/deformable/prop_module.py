@@ -54,8 +54,6 @@ class PropUnimodalDeformableDVC(nn.Module):
 
         self.count_head = nn.Linear(d_model, max_eseq_length + 1)
 
-        self.matcher = matcher
-
         assert 'video' in input_modalities or 'audio' in input_modalities, f'input_modalities should contain one of "video" or "audio". You have {input_modalities}'
 
         self.pos_embed = PositionEmbeddingVideoSine(d_model//2, normalize=True)
