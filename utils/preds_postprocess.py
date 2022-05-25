@@ -125,6 +125,9 @@ def pprint_eval_scores(scores, debug=False):
         else:
             avg_scores[metric] = scores[metric]
     
-    avg_scores['F1_score'] = 2 * (avg_scores['Precision'] * avg_scores['Recall']) / (avg_scores['Precision'] + avg_scores['Recall'])
+    if (avg_scores['Precision'] + avg_scores['Recall']) > 0:
+        avg_scores['F1_score'] = 2 * (avg_scores['Precision'] * avg_scores['Recall']) / (avg_scores['Precision'] + avg_scores['Recall'])
+    else:
+        avg_scores['F1_score'] = -2 * (avg_scores['Precision'] * avg_scores['Recall'])
     
     return avg_scores

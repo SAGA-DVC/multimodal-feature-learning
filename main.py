@@ -49,7 +49,7 @@ def main(args):
         collate_fn = collate_fn_without_raw_videos
     
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
-    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='train', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
@@ -191,7 +191,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(args.start_epoch)
 
-        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
+        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="one_by_one")
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
