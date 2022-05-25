@@ -364,7 +364,7 @@ def load_config():
     cfg.eval.submission = 'output/test.json'
     # cfg.eval.submission = 'sample_submission.json'
     # cfg.eval.references = ['./anet_data/val_1.json', './anet_data/val_2.json']
-    cfg.eval.references = ['./anet_data/val_1.json']
+    cfg.eval.references = ['./anet_data/train.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False
