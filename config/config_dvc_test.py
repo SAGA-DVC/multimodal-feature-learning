@@ -204,7 +204,7 @@ def load_config():
     cfg.dvc.sparse_detr.d_model= cfg.dvc.d_model
     cfg.dvc.sparse_detr.hidden_dim = cfg.dvc.d_model   #   Dimensionality of the hidden layer in the feed-forward networks within the Transformer
    
-    cfg.dvc.sparse_detr.hidden_dropout_prob = 0.1
+    cfg.dvc.sparse_detr.hidden_dropout_prob = 0.5
     cfg.dvc.sparse_detr.layer_norm_eps = 1e-12 
 
     cfg.dvc.sparse_detr.num_heads = 8    #   the number of heads in the multiheadattention models
@@ -216,12 +216,12 @@ def load_config():
     cfg.dvc.sparse_detr.enc_layers = 6 #   number of sub-encoder-layers in the encoder
     cfg.dvc.sparse_detr.dec_layers = 6 #   number of sub-decoder-layers in the decode
 
-    cfg.dvc.sparse_detr.transformer_dropout_prob = 0.1 #   the dropout value
+    cfg.dvc.sparse_detr.transformer_dropout_prob = 0.5 #   the dropout value
     cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.sparse_detr.rho=0.5
-    cfg.dvc.sparse_detr.use_enc_aux_loss=True
+    cfg.dvc.sparse_detr.rho=1
+    cfg.dvc.sparse_detr.use_enc_aux_loss=False
     cfg.dvc.sparse_detr.return_intermediate=True
 
     # not used

@@ -268,7 +268,8 @@ class SetCriterion(nn.Module):
         sparse_token_nums = outputs["sparse_token_nums"]
         num_topk = sparse_token_nums.max()
 
-        topk_idx_tgt = torch.topk(flat_grid_attn_map_dec, num_topk)[1]
+        print(num_topk, flat_grid_attn_map_dec.shape)
+        topk_idx_tgt = torch.topk(flat_grid_attn_map_dec, num_topk-1)[1]
         target = torch.zeros_like(mask_prediction)
         for i in range(target.shape[0]):
             target[i].scatter_(0, topk_idx_tgt[i][:sparse_token_nums[i]], 1)
