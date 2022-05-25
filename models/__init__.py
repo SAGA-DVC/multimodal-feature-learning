@@ -63,13 +63,13 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                     )
 
     else :
-        
         model = DVC(input_modalities=args.input_modalities,
                     num_queries=args.num_queries,
                     d_model=args.d_model, 
                     num_classes=args.num_classes,
                     aux_loss=args.aux_loss,
                     max_eseq_length=args.max_eseq_length, 
+                    encoder_args=args.encoder,
                     decoder_args=args.decoder
                 )
 

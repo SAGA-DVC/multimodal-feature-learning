@@ -53,11 +53,11 @@ class DVCdataset(Dataset):
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
-        print(f'{len(self.keys)} videos are present in the dataset.')
-
         # for testing purposes (remove later)
         if args.for_testing:
             self.keys = self.keys[:args.num_samples]
+        
+        print(f'{len(self.keys)} videos are present in the dataset.')
 
         # self.video_features_folder = video_features_folder
 

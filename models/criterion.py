@@ -383,11 +383,11 @@ class SetCriterion(nn.Module):
            
         """
 
-        # outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
-        outputs_without_aux = {
-            "pred_logits": outputs["pred_logits"],
-            "pred_segments": outputs["pred_segments"]
-        }
+        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
+        # outputs_without_aux = {
+        #     "pred_logits": outputs["pred_logits"],
+        #     "pred_segments": outputs["pred_segments"]
+        # }
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # list (len=batch_size) of tuple of tensors (shape=(2, gt_target_segments))

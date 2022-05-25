@@ -291,75 +291,34 @@ def load_config():
     cfg.dvc.decoder.return_intermediate = True
 
 
-    # ViViT
-    cfg.dvc.vivit = ml_collections.ConfigDict()
+    # Encoder
+    cfg.dvc.encoder = ml_collections.ConfigDict()
 
-    models = ['spatio temporal attention', 'factorised encoder', 'factorised self attention', 'factorised dot product attention']
-    cfg.dvc.vivit.model_name = models[0]
+    cfg.dvc.encoder.d_model = cfg.dvc.d_model
 
-    cfg.dvc.vivit.num_frames_in = 30
-    cfg.dvc.vivit.img_size = 224
+    cfg.dvc.encoder.depth = 6
 
-    cfg.dvc.vivit.spatial_patch_size = 16
-    cfg.dvc.vivit.temporal_patch_size = 2
+    cfg.dvc.encoder.num_heads = 8
+    cfg.dvc.encoder.mlp_ratio = 4
+    cfg.dvc.encoder.qkv_bias = True
 
-    cfg.dvc.vivit.num_frames = cfg.dvc.vivit.num_frames_in // cfg.dvc.vivit.temporal_patch_size
-    cfg.dvc.vivit.num_patches = (cfg.dvc.vivit.img_size // cfg.dvc.vivit.spatial_patch_size) ** 2
+    cfg.dvc.encoder.positional_embedding_dropout = 0.1
+    cfg.dvc.encoder.attention_dropout = 0.1
+    cfg.dvc.encoder.projection_dropout = 0.1
+    cfg.dvc.encoder.mlp_dropout_1 = 0.1
+    cfg.dvc.encoder.mlp_dropout_2 = 0.1
 
-    tokenization_method = ['filter inflation', 'central frame']
-    cfg.dvc.vivit.tokenization_method = tokenization_method[1]
+    cfg.dvc.encoder.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.vivit.in_channels = 3
-    cfg.dvc.vivit.d_model = cfg.dvc.d_model
+    cfg.dvc.encoder.pre_norm = False
 
-    cfg.dvc.vivit.depth = 2
-    cfg.dvc.vivit.temporal_depth = 4
+    cfg.dvc.encoder.model_official = None
+    cfg.dvc.encoder.weight_init = True
+    cfg.dvc.encoder.weight_load = False
 
-    cfg.dvc.vivit.num_heads = 8
-    cfg.dvc.vivit.mlp_ratio = 4
-    cfg.dvc.vivit.qkv_bias = True
-
-    cfg.dvc.vivit.positional_embedding_dropout = 0.1
-    cfg.dvc.vivit.attention_dropout = 0.1
-    cfg.dvc.vivit.projection_dropout = 0.1
-    cfg.dvc.vivit.mlp_dropout_1 = 0.1
-    cfg.dvc.vivit.mlp_dropout_2 = 0.1
-
-    cfg.dvc.vivit.pre_norm = True
-
-    cfg.dvc.vivit.classification_head = False
-    cfg.dvc.vivit.num_classes = cfg.dvc.num_classes
-
-    cfg.dvc.vivit.return_preclassifier = True
-    cfg.dvc.vivit.return_prelogits = False
-
-    cfg.dvc.vivit.model_official = None
-    cfg.dvc.vivit.weight_init = True
-    cfg.dvc.vivit.weight_load = False
+    cfg.dvc.encoder.return_intermediate = False
 
 
-    # AST
-    cfg.dvc.ast = ml_collections.ConfigDict()
-
-    cfg.dvc.ast.fstride = 10
-    cfg.dvc.ast.tstride = 10
-    cfg.dvc.ast.input_fdim = 128
-    cfg.dvc.ast.input_tdim = 64
-
-    cfg.dvc.ast.imagenet_pretrained = True
-    cfg.dvc.ast.model_size='base224'
-
-    cfg.dvc.ast.depth = 2
-    
-    cfg.dvc.ast.return_preclassifier = True  # Set True for Feature extraction
-    cfg.dvc.ast.return_prelogits = False  # Set True for TSP & GVF extraction
-
-    
-    #-------------------------------------------------------------------------------------------------
-    # Pre-trained models
-    cfg.pretrained_models = ml_collections.ConfigDict()
-    cfg.pretrained_models.vit = 'vit_base_patch16_224'
-    cfg.pretrained_models.deit = 'deit_base_patch16_224'
 
 
     #-------------------------------------------------------------------------------------------------

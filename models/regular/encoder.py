@@ -1,20 +1,20 @@
-""" Decoder """
+""" Encoder """
 
 import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_, zeros_, ones_
 
-from ..modules.layers import DecoderLayer
+from ..modules.layers import EncoderLayer
 from ..load_weights import init_encoder_block_weights
 
-class Decoder(nn.Module):
+class Encoder(nn.Module):
     
     def __init__(self, d_model, depth, num_heads, mlp_ratio=4., qkv_bias=False, 
                 attention_dropout=0., projection_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True,
                 weight_init=False, weight_load=False, model_official=None, return_intermediate=False):
 
         """
-        Decoder is Stack of N decoder layers
+        Encoder is Stack of N encoder layers
   
         Parameters:
             `d_model` (int): Dimension of the tensors used to compute attention
@@ -30,20 +30,20 @@ class Decoder(nn.Module):
             `weight_init` (boolean): If True, initialises the weights of the model (default True)
             `weight_load` (boolean): If True, loads the weights of the specified pre-trained model after initialisation (default False)
             `model_official`: This model's weights are used by ViViT
-            `return_intermediate` (boolean) : If True, output from intermediate layers of the decoder are also returned along with the output from the final layer. (default False)
+            `return_intermediate` (boolean) : If True, output from intermediate layers of the encoder are also returned along with the output from the final layer. (default False)
     
         """
 
-        super(Decoder, self).__init__()
+        super(Encoder, self).__init__()
 
         self.d_model = d_model
         self.depth = depth
 
         self.return_intermediate = return_intermediate
 
-        self.decoder = nn.ModuleList(
+        self.encoder = nn.ModuleList(
                 [
-                    DecoderLayer(
+                    EncoderLayer(
                         d_model=d_model,
                         num_heads=num_heads,
                         mlp_ratio=mlp_ratio,
@@ -63,13 +63,12 @@ class Decoder(nn.Module):
         self.init_weights()
 
     
-    def forward(self, memory, memory_positional_embedding, query_embedding, 
-                tgt_mask=None, memory_mask=None, tgt_padding_mask=None, memory_padding_mask=None):
+    def forward(self, src, src_positional_embedding, src_mask=None, src_padding_mask=None):
 
         """
-        Pass the inputs (and mask) through the decoder layer in turn.
+        Pass the inputs (and mask) through the encoder layer in turn.
         Parameters:
-            tgt (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            tgt (tensor): the sequence to the encoder layer, Tensor of dimension (batch_size, num_queries, d_model)
             memory (tensor): the sequence from the last layer of the encoder
             position_embedding_layer: position embedding layer for encoder inputs
             query_embedding (tensor): event queries
@@ -81,37 +80,34 @@ class Decoder(nn.Module):
                                  Tensor of dimension (depth, batch_size, num_queries, d_model)
         """
 
-        tgt = torch.zeros_like(query_embedding)     # (batch_size, num_queries, d_model)
-
         intermediate = []
         
-        for layer in self.decoder:
-            tgt = layer(tgt, memory, memory_positional_embedding, query_embedding, 
-                            tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask)
+        for layer in self.encoder:
+            src = layer(src, src_positional_embedding, src_mask, src_padding_mask)
 
             if self.return_intermediate:
-                intermediate.append(tgt)
+                intermediate.append(src)
         
         if self.return_intermediate:
-            tgt = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
+            src = torch.stack(intermediate)    # (depth, batch_size, seq_len, embed_dim)
         else:
-            tgt = tgt.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
+            src = src.unsqueeze(0)    # (1, batch_size, seq_len, embed_dim)
 
-        return tgt
+        return src
 
 
     def init_weights(self):
 
         """
-        Initialises the weights and biases of all the Decoder layers.
+        Initialises the weights and biases of all the Encoder layers.
         """
 
-        self.decoder.apply(init_encoder_block_weights)
+        self.encoder.apply(init_encoder_block_weights)
 
 
-def build_decoder(args):
-    # return Decoder(**args)
-    return Decoder(d_model=args.d_model, 
+def build_encoder(args):
+    # return Encoder(**args)
+    return Encoder(d_model=args.d_model, 
                 depth=args.depth, 
                 num_heads=args.num_heads, 
                 mlp_ratio=args.mlp_ratio, 
