@@ -157,7 +157,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log, gt_json):
+def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log, gt_json, val_mode="one_by_one"):
     
     """
     Inference on given data and save the results.
@@ -169,6 +169,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         `vocab` (torchtext.vocab.Vocab): mapping of all the words in the training dataset to indices and vice versa)
         `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
         `eval_args` (ml_collections.ConfigDict) : config params for run_eval
+        `val_mode` (string): one_by_one OR teacher_forcing
     
     Returns: ???
     """
@@ -194,7 +195,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False, val_mode=val_mode)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'

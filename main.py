@@ -110,7 +110,7 @@ def main(args):
 
     gt_json = import_ground_truths_for_eval(args.eval.references)
 
-    if not args.only_eval:
+    if args.model_mode == "training":
         print(f"Start training from epoch {args.start_epoch}")
         start_time = time.time()
         for epoch in range(args.start_epoch, args.epochs):
@@ -173,15 +173,29 @@ def main(args):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print(f"Total training time for {args.epochs - args.start_epoch} epochs:", total_time_str)
     
-    else:
+    elif args.model_mode == "validation":
         print(f"Start eval from epoch {args.start_epoch}")
         start_time = time.time()
         for epoch in range(args.start_epoch, args.epochs):
             if args.distributed.is_distributed:
                 sampler_train.set_epoch(epoch)
 
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json)
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="one_by_one")
 
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Total validation time for {args.epochs - args.start_epoch} epochs:", total_time_str)
+
+    elif args.model_mode == "testing":
+        start_time = time.time()
+        if args.distributed.is_distributed:
+            sampler_train.set_epoch(args.start_epoch)
+
+        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
+
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Total testing time for {args.start_epoch}th epoch model:", total_time_str)
     
 
 if __name__ == '__main__':

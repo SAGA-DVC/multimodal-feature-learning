@@ -25,13 +25,13 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
-    cfg.only_eval = False
+    cfg.model_mode = "testing"  # training, validation, testing
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output_temp/checkpoint.pth'
+    cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
     # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
