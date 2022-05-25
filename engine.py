@@ -268,6 +268,8 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
                 substring_list=substring_list
             )
 
+        # print(submission_json_batch)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(f"\nAveraged val stats for epoch [{epoch}]: ", metric_logger, "\n")

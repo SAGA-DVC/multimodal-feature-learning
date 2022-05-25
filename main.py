@@ -49,7 +49,7 @@ def main(args):
         collate_fn = collate_fn_without_raw_videos
     
     dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
-    dataset_val = build_dataset(video_set='train', args=args.dataset.activity_net)
+    dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:
         sampler_train = DistributedSampler(dataset_train)
