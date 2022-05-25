@@ -30,7 +30,7 @@ def load_config():
     cfg.only_eval = False
         
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp_action_with_matcher'
+    cfg.output_dir = 'output_temp_action'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
     # cfg.resume = 'output_temp_lol/checkpoint.pth'
@@ -221,7 +221,7 @@ def load_config():
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
     cfg.dvc.sparse_detr.rho=1
-    cfg.dvc.sparse_detr.use_enc_aux_loss=False
+    cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.return_intermediate=True
 
     # not used
