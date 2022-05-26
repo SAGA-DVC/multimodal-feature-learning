@@ -19,7 +19,7 @@ from config.config_dvc import load_config
 
 class DVCdataset(Dataset):
 
-    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_features_folder, is_training, args):
 
         """
         Parent class of the dataset to be used for training the DVC model (activity-net)
@@ -58,17 +58,17 @@ class DVCdataset(Dataset):
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
-        print(f'{len(self.keys)} videos are present in the dataset.')
-
         # for testing purposes (remove later)
         if args.for_testing:
-            self.keys = self.keys[:3]
+            self.keys = self.keys[:args.num_samples]
+        
+        print(f'{len(self.keys)} videos are present in the dataset.')
 
         # self.video_features_folder = video_features_folder
 
         # h5 object with {key (video id) as string : value (num_tokens, d_model) as dataset object}
         self.video_features = h5py.File(video_features_folder / 'video-features.h5', 'r')    
-        # self.audio_features = h5py.File(video_features_folder / 'audio_features.h5', 'r')
+        # self.audio_features = h5py.File(video_features_folder / 'audio-features.h5', 'r')
         self.audio_features = h5py.File(video_features_folder / 'video-features.h5', 'r')
 
         self.is_training = is_training
@@ -115,7 +115,7 @@ class DVCdataset(Dataset):
 
 class ActivityNet(DVCdataset):
 
-    def __init__(self, annotation_file, video_features_folder, tokenizer, vocab, is_training, args):
+    def __init__(self, annotation_file, video_features_folder, is_training, args):
 
         """
         Class for the ActivityNet dataset to be used for Dense Video Caption 
@@ -135,7 +135,7 @@ class ActivityNet(DVCdataset):
             `args` (ml_collections.ConfigDict): Configuration object for the dataset
         """
 
-        super(ActivityNet, self).__init__(annotation_file, video_features_folder, tokenizer, vocab, is_training, args)
+        super(ActivityNet, self).__init__(annotation_file, video_features_folder, is_training, args)
 
 
     def __getitem__(self, idx):
@@ -159,38 +159,39 @@ class ActivityNet(DVCdataset):
         """
 
         key = self.keys[idx] # string
-
-        for timestamp in self.annotation[key]['timestamps']:
+        
+        for segment in self.annotation[key]['annotations']:
+            timestamp = segment['segment']
             if timestamp[0] >= timestamp[1]:
-                return (None,) * 9
+                return (None,) * 6
 
         # (num_tokens_v, d_model), (num_tokens_a, d_model)
         video_feature, audio_feature = self.get_feature(key)
 
         duration = self.annotation[key]['duration'] # float
-        captions = self.annotation[key]['sentences'] # [gt_target_segments] -- list of strings
-        gt_timestamps = self.annotation[key]['timestamps']  # [gt_target_segments, 2] -- 2d list of floats
 
-        action_labels = self.annotation[key].get('classes', [0] * len(gt_timestamps)) # [gt_target_segments] -- default value [0, 0, 0...]
+        gt_timestamps = []
+        for segment in self.annotation[key]['annotations']:
+            timestamp = segment['segment']
+            gt_timestamps.append(timestamp)    # [gt_target_segments, 2] -- 2d list of floats
+
+        action_labels = []  
+        for segment in self.annotation[key]['annotations']:
+            label = segment['label']
+            label_index = self.action_labels_dict[label]
+            action_labels.append(label_index)    # [gt_target_segments]
+
         assert max(action_labels) <= self.args.num_classes, f'action label {max(action_labels)} for video {key} is > total number of classes {self.args.num_classes}.'
 
         gt_target_segments = len(gt_timestamps) if len(gt_timestamps) < self.max_gt_target_segments else self.max_gt_target_segments
         random_gt_proposal_ids = np.random.choice(list(range(len(gt_timestamps))), gt_target_segments, replace=False) # (gt_target_segments) -- list
 
-        captions = [captions[_] for _ in range(len(captions)) if _ in random_gt_proposal_ids] # [gt_target_segments] -- list of strings
         gt_timestamps = [gt_timestamps[_] for _ in range(len(gt_timestamps)) if _ in random_gt_proposal_ids] # [gt_target_segments, 2] -- 2d list of floats
-        action_labels = [action_labels[_] for _ in range(len(action_labels)) if _ in random_gt_proposal_ids] # [gt_target_segments] -- default value [0, 0, 0...]
-
-        captions_label = []    # [gt_target_segments, max_caption_len_all] {variable dim 1}
-
-        for caption in captions:
-            caption_label = [self.vocab[token] if token in self.vocab.get_itos() else self.UNK_IDX for token in self.tokenizer(caption)]
-            caption_label = [self.BOS_IDX] + caption_label[:self.max_caption_len_all - 2] + [self.EOS_IDX]
-            captions_label.append(caption_label)
+        action_labels = [action_labels[_] for _ in range(len(action_labels)) if _ in random_gt_proposal_ids] # [gt_target_segments]
 
         gt_framestamps = self.process_time_step(duration, gt_timestamps, video_feature.shape[0]) # [gt_target_segments, 2] -- 2d list of in
         
-        return video_feature, audio_feature, gt_framestamps, action_labels, captions_label, gt_timestamps, duration, captions, key
+        return video_feature, audio_feature, gt_framestamps, action_labels, gt_timestamps, duration, key
 
 
     def get_feature(self, key):
@@ -260,7 +261,7 @@ def resizeFeature(input_data, new_size):
 
 # TODO - extra loss for framestamps?
 # TODO - make mask init constant across the code (torch.ones, torch.BoolTensor)
-def collate_fn(batch, pad_idx, args):
+def collate_fn(batch, args):
     """
     Parameters:
         `batch` : list of shape (batch_size, 8) {8 attributes}
@@ -293,9 +294,6 @@ def collate_fn(batch, pad_idx, args):
     max_video_length = max([x.shape[0] for x in video_feature_list])
     max_audio_length = max([x.shape[0] for x in audio_feature_list])
 
-    max_caption_len = max(chain(*[[len(caption) for caption in captions] for captions in caption_list]))
-    total_caption_num = sum([len(captions) for captions in caption_list])
-
     gt_timestamps = list(chain(*gt_timestamps_list)) # (batch_size * gt_target_segments, 2) {dim 0 is an avg value}
 
     video_tensor = torch.FloatTensor(batch_size, max_video_length, d_model).zero_()
@@ -306,16 +304,9 @@ def collate_fn(batch, pad_idx, args):
     audio_length = torch.FloatTensor(batch_size, 3).zero_()  # time_frame_num, duration, gt_target_segments
     audio_mask = torch.BoolTensor(batch_size, max_audio_length).fill_(1)
 
-    caption_tensor_all = torch.LongTensor(total_caption_num, max_caption_len).fill_(pad_idx)
-    caption_length_all = torch.LongTensor(total_caption_num).zero_()
-    caption_mask_all = torch.BoolTensor(total_caption_num, max_caption_len).fill_(1)
-    caption_gather_idx = torch.LongTensor(total_caption_num).zero_()
-
     max_gt_target_segments = max(len(x) for x in caption_list)
 
     gt_segments_tensor = torch.zeros(batch_size, max_gt_target_segments, 2)
-
-    total_caption_idx = 0
 
     for idx in range(batch_size):
         video_len = video_feature_list[idx].shape[0]
@@ -339,22 +330,12 @@ def collate_fn(batch, pad_idx, args):
         audio_mask[idx, :audio_len] = False
         # audio_mask[idx] = audio_feature_mask_list[idx]
 
-        caption_gather_idx[total_caption_idx:total_caption_idx + gt_segment_length] = idx
-
         gt_segments_tensor[idx, :gt_segment_length] = torch.tensor(
             [[(ts[1] + ts[0]) / (2 * raw_duration[idx]), (ts[1] - ts[0]) / raw_duration[idx]] for ts in
              gt_raw_timestamps[idx]]).float()
-
-        for iidx, caption in enumerate(caption_list[idx]):
-            _caption_len = len(caption)
-            caption_length_all[total_caption_idx + iidx] = _caption_len
-            caption_tensor_all[total_caption_idx + iidx, :_caption_len] = torch.Tensor(caption)
-            caption_mask_all[total_caption_idx + iidx, :_caption_len] = False
         
         # mask = (caption_length_all == self.PAD_IDX)
         # print(mask.shape)
-
-        total_caption_idx += gt_segment_length
 
     # Rescale tensor and mask
     video_tensor = resizeFeature(video_tensor, args.video_rescale_len) # (batch_size, video_rescale_len, d_model)
@@ -399,34 +380,9 @@ def collate_fn(batch, pad_idx, args):
                 "segments": gt_segments_tensor, # (batch_size, max_gt_target_segments, 2)
                 "segments_mask": gt_segments_mask, # (batch_size, max_gt_target_segments)
             },
-
-        "cap":
-            {
-                "tensor": caption_tensor_all,  # tensor, (total_caption_num, max_caption_len)
-                "length": caption_length_all,  # tensor, (total_caption_num)
-                "mask": caption_mask_all,  # tensor, (total_caption_num, max_caption_len)
-                "raw": list(raw_caption),  # list of strings, (batch_size, gt_target_segments) {variable dim 1}
-            }
     }
     obj = {k1 + '_' + k2: v2 for k1, v1 in obj.items() for k2, v2 in v1.items()}
     return obj
-
-
-def build_vocab(annotation, tokenizer, min_freq):
-        """
-        Builds the vocabulary (word to idx and idx to word mapping) based on all the captions in the training dataset.
-        """
-        
-        counter = Counter()
-
-        captions = []
-        for value in list(annotation.values()):
-            captions += value['sentences']
-
-        for caption in captions:
-            counter.update(tokenizer(caption))
-
-        return vocab(counter, min_freq=min_freq, specials=['<unk>', '<pad>', '<bos>', '<eos>'])
 
 
 def build_dataset(video_set, args):
@@ -458,23 +414,9 @@ def build_dataset(video_set, args):
 
     annotation_file = PATHS_ANNOTATION[video_set]
     video_features_folder = PATHS_VIDEO[video_set]
-    
-    tokenizer = get_tokenizer('spacy', language='en_core_web_sm')
-
-    # TODO - save words in a diff file for faster vocab building
-    vocab_file = Path(args.vocab_file_path)
-
-    if vocab_file.exists():
-        vocab = pickle.load(open(vocab_file, 'rb'))
-    else:
-        vocab = build_vocab(json.load(open(PATHS_ANNOTATION['train'], 'r')), tokenizer, args.min_freq)
-        pickle.dump(vocab, open(vocab_file, 'wb'))
-    
 
     dataset = ActivityNet(annotation_file=annotation_file, 
                           video_features_folder=video_features_folder,
-                          tokenizer=tokenizer,
-                          vocab=vocab,
                           is_training=(video_set == 'train'),
                           args=args)
     return dataset

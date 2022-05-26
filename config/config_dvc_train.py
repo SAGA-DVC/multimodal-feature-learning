@@ -30,11 +30,11 @@ def load_config():
     cfg.only_eval = False
         
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp_action'
+    cfg.output_dir = 'output_temp_action_sparse'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output_temp_lol/checkpoint.pth'
-    cfg.resume = None
+    cfg.resume = 'output_temp_action_sparse/checkpoint.pth'
+    # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
     cfg.epochs = 200

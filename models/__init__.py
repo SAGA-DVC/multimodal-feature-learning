@@ -59,7 +59,7 @@ def build_model_and_criterion(args, dataset, use_differentiable_mask=False):
                         num_classes=args.num_classes,
                         aux_loss=args.aux_loss,
                         max_eseq_length=args.max_eseq_length,
-                        detr_args=args.detr
+                        sparse_detr_args=args.sparse_detr
                     )
 
     else :

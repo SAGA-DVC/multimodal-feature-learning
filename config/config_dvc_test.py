@@ -13,7 +13,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 3
     cfg.num_workers = 1
@@ -134,7 +134,7 @@ def load_config():
     cfg.dvc.lloss_gau_mask = 1
     cfg.dvc.lloss_beta = 1.0
 
-    cfg.dvc.use_sparse_detr = False    # Switch DVC
+    cfg.dvc.use_sparse_detr = True    # Switch DVC
     cfg.dvc.use_deformable_detr = False    # Switch DVC
 
     cfg.dvc.smoothing = 0.5

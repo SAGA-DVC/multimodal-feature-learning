@@ -379,6 +379,142 @@ class DecoderLayer(nn.Module):
         return tgt
 
 
+class BiModalDecoderLayer(nn.Module):
+    def __init__(self, d_model, num_heads, mlp_ratio=4., qkv_bias=False,  
+                attention_dropout=0., projection_dropout=0., mlp_dropout_1=0., mlp_dropout_2=0., pre_norm=True):
+
+        """
+        Decoder consisting of the basic attention architecture.
+  
+        Parameters:
+            `d_model` (int): Dimension of the tensors used to compute attention
+            `num_heads` (int): Number of attention heads. 
+            `mlp_ratio` (int): Used to determine the hidden layer dimension of the MLP. (default 4)
+            `qkv_bias` (boolean): Determines whether to use bias as part of the query/key/value linear layers in the attention block (default True)
+            `attention_dropout` (float): Dropout probability for the layer after the multi-head attention mechanism (default 0.0)
+            `projection_dropout` (float): Dropout probability for the layer after the projection layer (default 0.0)
+            `dropout_1` (float): Dropout probability for the MLP block (default 0.0)
+            `dropout_2` (float): Dropout probability for the MLP block (default 0.0)
+            `pre_norm` (boolean): If True, the normalisation layer would be placed before the attention and mlp blocks. Else, after them. (default True)
+        """
+
+        super(DecoderLayer, self).__init__()
+
+        self.pre_norm=pre_norm
+        
+        self.self_attention = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+        
+        self.cross_attention_video = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.cross_attention_audio = CrossAttention(d_model=d_model, num_heads=num_heads, qkv_bias=qkv_bias, 
+                                attention_dropout=attention_dropout, projection_dropout=projection_dropout)
+
+        self.layer_norm_1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm_3 = nn.LayerNorm(d_model, eps=1e-6)
+
+        mlp_hidden_dim = int(d_model * mlp_ratio)
+        self.mlp = MLP(in_dim=d_model, hidden_dim=mlp_hidden_dim, out_dim=d_model, 
+                       dropout_1=mlp_dropout_1, dropout_2=mlp_dropout_2)
+
+    
+    def forward(self, tgt, video_memory, audio_memory, video_positional_embedding, audio_positional_embedding, 
+                query_embedding, tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
+
+        """
+        Performs a forward pass on the Decoder block. Calls either forward_pre() or forward_post() based on the value of self.pre_nrom
+  
+        Parameters:
+            tgt (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            positional_embedding: position embedding for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            tgt (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+
+        if self.pre_norm:
+            return self.forward_pre(tgt, video_memory, audio_memory, video_positional_embedding, audio_positional_embedding, 
+                                    query_embedding, tgt_mask, video_memory_mask, audio_memory_mask, 
+                                    tgt_padding_mask, video_memory_padding_mask, audio_memory_padding_mask)    # (batch_size, num_queries, d_model)
+        else:
+            return self.forward_post(tgt, video_memory, audio_memory, video_positional_embedding, audio_positional_embedding, 
+                                    query_embedding, tgt_mask, video_memory_mask, audio_memory_mask, 
+                                    tgt_padding_mask, video_memory_padding_mask, audio_memory_padding_mas)    # (batch_size, num_queries, d_model)
+
+    
+    def forward_pre(self, tgt, video_memory, audio_memory, video_positional_embedding, audio_positional_embedding, 
+                    query_embedding, tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                    tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
+
+        """
+        Performs a forward pass on the Decoder block with normalisation layers before attention and mlp blocks.
+  
+        Parameters:
+            tgt (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            positional_embedding: position embedding for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            tgt (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+
+        tgt_after_norm = self.layer_norm_1(tgt) 
+        q = k = tgt_after_norm + query_embedding
+        tgt = tgt + self.self_attention(q=q, k=k, v=tgt_after_norm, attn_mask=tgt_mask, key_padding_mask=tgt_padding_mask, need_weights=False)[0]    # (batch_size, num_queries, d_model)
+
+        # video
+        tgt_after_norm = self.layer_norm_2(tgt)
+        q = tgt_after_norm + query_embedding
+        k = positional_embedding(video_memory)
+        tgt = tgt + self.cross_attention_video(q=q, k=k, v=video_memory, attn_mask=video_memory_mask, key_padding_mask=video_memory_padding_mask, need_weights=False)[0]    # (batch_size, num_queries, d_model)) # (batch_size, num_queries, d_model)
+
+        # audio
+        tgt_after_norm = self.layer_norm_2(tgt)
+        q = tgt_after_norm + query_embedding
+        k = positional_embedding(audio_memory)
+        tgt = tgt + self.cross_attention_audio(q=q, k=k, v=audio_memory, attn_mask=audio_emory_mask, key_padding_mask=audio_memory_padding_mask, need_weights=False)[0]    # (batch_size, num_queries, d_model)) # (batch_size, num_queries, d_model)
+        
+        tgt_after_norm = self.layer_norm_3(tgt)
+        tgt = tgt + self.mlp(tgt_after_norm)
+
+        return tgt
+
+
+    def forward_post(self, tgt, video_memory, audio_memory, video_positional_embedding, audio_positional_embedding, 
+                    query_embedding, tgt_mask=None, video_memory_mask=None, audio_memory_mask=None, 
+                    tgt_padding_mask=None, video_memory_padding_mask=None, audio_memory_padding_mask=None):
+
+        """
+        Performs a forward pass on the Decoder block with normalisation layers after attention and mlp blocks.
+  
+        Parameters:
+            tgt (tensor): the sequence to the decoder layer, Tensor of dimension (batch_size, num_queries, d_model)
+            memory: the sequence from the last layer of the encoder
+            positional_embedding: position embedding for encoder inputs
+            query_embedding: event queries
+        
+        Returns:
+            tgt (tensor): Tensor of dimension (batch_size, num_queries, d_model)
+        """
+       
+        q = k = tgt + query_embedding
+        tgt = self.layer_norm_1(tgt + self.self_attention(q=q, k=k, v=tgt, attn_mask=tgt_mask, key_padding_mask=tgt_padding_mask, need_weights=False)[0])    # (batch_size, num_queries, d_model)
+
+        q = tgt + query_embedding
+        k = positional_embedding(memory)
+        tgt = self.layer_norm_2(tgt + self.cross_attention(q=q, k=k, v=memory, attn_mask=memory_mask, key_padding_mask=memory_padding_mask, need_weights=False)[0])    # (batch_size, num_queries, d_model)
+
+        tgt = self.layer_norm_3(tgt + self.mlp(tgt))
+
+        return tgt
+
+
 
 # TODO - dropout before/after each layer_norm?
 class UnimodalCaptionDecoderLayer(nn.Module):
