@@ -569,7 +569,7 @@ class UnimodalCaptionDecoderLayer(nn.Module):
         Returns:
             target (tensor): Tensor of dimension (batch_size, seq_len, vocab_size)
         """
-
+        
         if self.pre_norm:
             return self.forward_pre(target, memory, tgt_mask, memory_mask, tgt_padding_mask, memory_padding_mask) # (batch_size, num_tokens_tgt, d_model)
         else:

@@ -11,31 +11,32 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 16
     cfg.num_workers = 1
 
     cfg.print_freq = 10
 
-    cfg.lr = 1e-4
-    cfg.lr_drop = 200
+    cfg.lr = 1e-5
+    cfg.lr_drop = 20
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 5    # used for val loops and submission json files
-    cfg.model_mode = "testing"  # training, validation, testing
+    cfg.model_mode = "training"  # training, validation, testing
         
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp'
+    cfg.output_dir = 'output_temp_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
+    # cfg.resume = 'output_temp_70/checkpoint.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 70
+    cfg.epochs = 200
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -58,10 +59,10 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
-    cfg.wandb.notes = "Sparse DETR with diff pos embed, modified attention (like nn.MultiHeadAttention) and lower case captions"
+    cfg.wandb.notes = "Sparse DETR with dropout 0.1 epcoh 70 onwards"
     # cfg.wandb.run_name = 'dvc-testing'
 
 
@@ -77,7 +78,8 @@ def load_config():
 
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/multimodal-feature-learning/data_features'
 
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
@@ -216,7 +218,7 @@ def load_config():
     cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.sparse_detr.rho=0.5
+    cfg.dvc.sparse_detr.rho=0.3
     cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.return_intermediate=True
 
@@ -364,7 +366,7 @@ def load_config():
     cfg.eval.submission = 'output/test.json'
     # cfg.eval.submission = 'sample_submission.json'
     # cfg.eval.references = ['./anet_data/val_1.json', './anet_data/val_2.json']
-    cfg.eval.references = ['./anet_data/train.json']
+    cfg.eval.references = ['./anet_data/val_2.json']
     cfg.eval.tious = [0.3, 0.5, 0.7, 0.9]
     cfg.eval.max_proposals_per_video = 100
     cfg.eval.verbose = False

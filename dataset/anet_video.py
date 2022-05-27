@@ -58,11 +58,11 @@ class DVCdataset(Dataset):
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
-        print(f'{len(self.keys)} videos are present in the dataset.')
-
         # for testing purposes (remove later)
         if args.for_testing:
             self.keys = self.keys[:args.num_samples]
+        
+        print(f'{len(self.keys)} videos are present in the dataset.')
 
         # self.video_features_folder = video_features_folder
 
@@ -416,7 +416,7 @@ def build_dataset(video_set, args):
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
     PATHS_ANNOTATION = {
-        "train": (root_annotation / 'train_data_with_action_classes.json'),
+        "train": (root_annotation / 'data_with_action_classes.json'),
         "val": (root_annotation / 'val_data_1_with_action_classes.json'),
     }
     PATHS_VIDEO = {

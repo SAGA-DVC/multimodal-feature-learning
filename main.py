@@ -88,7 +88,7 @@ def main(args):
         print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # for a,b in model.named_parameters():
+    # for a,b in model.named_parameters():\
     #     print(a, b.shape)
     print(f'number of params: {n_parameters / 1000000} M')
 
@@ -97,7 +97,6 @@ def main(args):
     ]
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
-
 
     if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -145,7 +144,7 @@ def main(args):
             # Validation
             val_stats = {}
             if (epoch + 1) % args.eval_rate == 0:
-                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json)
+                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
 
 
             # TODO: log encoder stats?
@@ -180,7 +179,7 @@ def main(args):
             if args.distributed.is_distributed:
                 sampler_train.set_epoch(epoch)
 
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="one_by_one")
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -191,7 +190,7 @@ def main(args):
         if args.distributed.is_distributed:
             sampler_train.set_epoch(args.start_epoch)
 
-        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="one_by_one")
+        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))

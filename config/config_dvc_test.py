@@ -19,23 +19,24 @@ def load_config():
     cfg.print_freq = 1
 
     cfg.lr = 1e-4
-    cfg.lr_drop = 200
+    cfg.lr_drop = 10
     cfg.weight_decay = 1e-4
     cfg.clip_max_norm = 0.1
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.model_mode = "testing"  # training, validation, testing
+    cfg.model_mode = "training"  # training, validation, testing
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp_lol'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
+    # cfg.resume = 'output_temp_lol/checkpoint0029.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 1
+    cfg.epochs = 31
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -77,7 +78,8 @@ def load_config():
 
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-nogvf'
     # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/_tsp/tsp-features-r2plus1d-34'
-    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133'
+    # cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/tsp/tsp-features-vivit-512-tspv133'
+    cfg.dataset.activity_net.video_features_folder = '/home/arnavshah/multimodal-feature-learning/data_features'
 
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
@@ -216,7 +218,7 @@ def load_config():
     cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.sparse_detr.rho=0.5
+    cfg.dvc.sparse_detr.rho=0.3
     cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.return_intermediate=True
 
