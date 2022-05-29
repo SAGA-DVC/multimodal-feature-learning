@@ -2,6 +2,8 @@ data
 anet_data/data_with_action_classes.json
 data_features
 output
+output_test*
+output_test/
 output_temp*
 wandb
 *.h5

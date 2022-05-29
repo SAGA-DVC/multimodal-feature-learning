@@ -53,14 +53,14 @@ class DVCdataset(Dataset):
 
         self.keys = list(self.annotation.keys())
 
-        # TODO - convert mkv files (in invalid_ids for now)
+        if args.for_testing and args.video_id is not None:
+            self.keys = [args.video_id]
+
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
-        # for testing purposes (remove later)
-        if args.for_testing:
-            self.keys = self.keys[:args.num_samples]
+        assert len(self.keys) != 0, 'length of dataset is 0, possible due to invalid video_id used for inference.'
         
         print(f'{len(self.keys)} videos are present in the dataset.')
 
@@ -416,7 +416,7 @@ def build_dataset(video_set, args):
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
     PATHS_ANNOTATION = {
-        "train": (root_annotation / 'train_with_action_classes.json'),
+        "train": (root_annotation / 'train_data_with_action_classes.json'),
         "val": (root_annotation / 'val_data_1_with_action_classes.json'),
     }
     PATHS_VIDEO = {

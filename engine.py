@@ -285,10 +285,10 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
     
     if args.output_dir and is_main_process():
         if args.save_submission:
-            save_submission(submission_json_epoch, os.path.join(val_caption_path, f"E{epoch}_submission.json"))
+            save_submission(submission_json_epoch, os.path.join(val_caption_path, f"submission.json"))
         
         if wandb_log:
-            wandb.save(os.path.join(val_caption_path, f"E{epoch}_submission.json"))
+            wandb.save(os.path.join(val_caption_path, f"submission.json"))
 
     return return_dict
 

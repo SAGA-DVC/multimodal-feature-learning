@@ -8,7 +8,7 @@ def get_sample_submission():
         "results": {},
         "external_data": {
             "used": True, 
-            "details": "PDVC + BMT + Event-Centric + Thoda Novelty"
+            "details": "DVC"
         }
     }
 
@@ -99,6 +99,8 @@ def captions_to_string(captions, vocab):
     for caption in captions:
         captions_string.append(' '.join([vocab.get_itos()[token_num] for token_num in caption if token_num not in unwanted_tokens][1:-1]))
 
+    captions_string = pre_process(captions_string)
+
     return captions_string
 
 
@@ -131,3 +133,18 @@ def pprint_eval_scores(scores, debug=False):
         avg_scores['F1_score'] = -2 * (avg_scores['Precision'] * avg_scores['Recall'])
     
     return avg_scores
+
+
+def pre_process(captions):
+    for i, caption in enumerate(captions):
+        tokens = caption.split()
+        res_tokens = [tokens[0]]
+        for j in range(1, len(tokens)):
+            if tokens[j] in ['.', ',', '/', "'"]:
+                continue
+            else:
+                if res_tokens[-1] == tokens[j] : continue
+                else : res_tokens.append(tokens[j])
+        captions[i] = ' '.join(res_tokens)
+    return captions
+    
