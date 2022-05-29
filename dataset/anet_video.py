@@ -416,7 +416,7 @@ def build_dataset(video_set, args):
     assert video_set in ['train', 'val'], f'video_set is {video_set} but should be one of "train" or "val".'
 
     PATHS_ANNOTATION = {
-        "train": (root_annotation / 'data_with_action_classes.json'),
+        "train": (root_annotation / 'train_with_action_classes.json'),
         "val": (root_annotation / 'val_data_1_with_action_classes.json'),
     }
     PATHS_VIDEO = {

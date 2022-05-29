@@ -48,7 +48,7 @@ def main(args):
         build_dataset = build_dataset_without_raw_videos
         collate_fn = collate_fn_without_raw_videos
     
-    dataset_train = build_dataset(video_set='train', args=args.dataset.activity_net)
+    dataset_train = build_dataset(video_set='val', args=args.dataset.activity_net)
     dataset_val = build_dataset(video_set='val', args=args.dataset.activity_net)
 
     if args.distributed.is_distributed:

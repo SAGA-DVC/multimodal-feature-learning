@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
+    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 3
     cfg.num_workers = 1
@@ -25,18 +25,18 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.model_mode = "training"  # training, validation, testing
+    cfg.model_mode = "validation"  # training, validation, testing
         
     # cfg.output_dir = 'output'
-    cfg.output_dir = 'output_temp_lol'
+    cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    # cfg.resume = 'output/unimodal_sparse_dvc_lower_case/checkpoint0069.pth'
+    cfg.resume = 'output/unimodal_sparse_dvc_lower_case_E0-70/checkpoint0069.pth'
     # cfg.resume = 'output_temp_lol/checkpoint0029.pth'
-    cfg.resume = None
+    # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 31
+    cfg.epochs = 120
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -218,7 +218,7 @@ def load_config():
     cfg.dvc.sparse_detr.transformer_ff_dim = 2048  #    the dimension of the feedforward network model
     cfg.dvc.sparse_detr.video_rescale_len = cfg.dataset.activity_net.video_rescale_len
 
-    cfg.dvc.sparse_detr.rho=0.3
+    cfg.dvc.sparse_detr.rho=0.5
     cfg.dvc.sparse_detr.use_enc_aux_loss=True
     cfg.dvc.sparse_detr.return_intermediate=True
 

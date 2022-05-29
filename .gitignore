@@ -1,4 +1,5 @@
 data
+anet_data/data_with_action_classes.json
 data_features
 output
 output_temp*
