@@ -69,7 +69,7 @@ class SetCriterion(nn.Module):
 
 
 
-    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, log=True):
+    def loss_labels(self, outputs, targets, indices, num_segments, log=True):
 
         """
         Classification loss (Negative Log Likelihood)
@@ -92,57 +92,59 @@ class SetCriterion(nn.Module):
 
         src_logits = outputs['pred_logits'] # (batch_size, num_queries, num_classes + 1)
 
-        # # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
-        # # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
-        # # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
-        # idx = self._get_src_permutation_idx(indices) 
+        # batch_idx - tensor (nb_target_segments) contains batch numbers AND 
+        # src_idx - tensor (nb_target_segments) contains source indices of bipartite matcher
+        # eg. [0, 0, 0,   1, 1] AND [2, 14, 88,   3, 91] 
+        idx = self._get_src_permutation_idx(indices) 
 
-        # # tensor (nb_target_segments) contains class labels
-        # # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
+        # tensor (nb_target_segments) contains class labels
+        # eg. [6, 9, 25,   4, 7] (each index represents a class in its batch)
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets['video_target'], indices)])
+        # print("IDX: ", idx, torch.argmax(src_logits[idx], -1), target_classes_o)
 
-        # # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
-        # target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
+        # (batch_size, num_queries) where all elements have a value of self.num_classes ('no-action' has an index of self.num_classes)
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
         
-        # # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
-        # target_classes[idx] = target_classes_o
+        # (batch_size, num_queries) where class labels are assigned based on batch_idx and src_idx. Other elements have a value of self.num_classes
+        target_classes[idx] = target_classes_o
 
         # # used in detr
         # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
         # losses = {'loss_ce': loss_ce}
 
         # used in pdvc
-        # # (batch_size, num_queries, num_classes + 1)
-        # target_classes_onehot = torch.zeros(src_logits.shape, dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
+        # (batch_size, num_queries, num_classes + 1)
+        target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2] + 1],
+                                            dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         
-        # # 1 for positive class, 0 for negative class
-        # target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
+        # 1 for positive class, 0 for negative class
+        target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
-        # target_classes_onehot = target_classes_onehot[:,:,:-1]
+        target_classes_onehot = target_classes_onehot[:,:,:-1]
 
-        # loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
-        
-        # losses = {'loss_ce': loss_ce}
+        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_segments, alpha=self.focal_alpha, gamma=self.focal_gamma) * src_logits.shape[1]
+        # print("**** LOSS_CE: ", loss_ce, torch.max(src_logits).item(), torch.min(src_logits).item())
+        losses = {'loss_ce': loss_ce}
 
-        losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
+        # losses = {}    # TODO - remove if using class loss above (and uncomment class_error in engine.py, remove find_unused_parameters params in main.py)
 
         # used in pdvc (event counter)
         pred_count = outputs['pred_count']
         max_length = pred_count.shape[1] - 1
         counter_target = [len(target['segments']) if len(target['segments']) < max_length  else max_length for target in targets['video_target']]
-        counter_target = torch.tensor(counter_target, device=src_logits.device, dtype=torch.long)
+        counter_target = torch.tensor(counter_target, device=pred_count.device, dtype=torch.long)
         counter_target_onehot = torch.zeros_like(pred_count)
         counter_target_onehot.scatter_(1, counter_target.unsqueeze(-1), 1)
-        weight = self.counter_class_rate[:max_length + 1].to(src_logits.device)
+        weight = self.counter_class_rate[:max_length + 1].to(pred_count.device)
 
         counter_loss = cross_entropy_with_gaussian_mask(pred_count, counter_target_onehot, weight, self.lloss_gau_mask, self.lloss_beta)
         losses['loss_counter'] = counter_loss
 
-        # if log:
-        #     # TODO this should probably be a separate loss, not hacked in this one here
-        #     # only takes top-1 accuracy for now
-        #     # losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
-        #     losses['class_error'] = 100 - accuracy(src_logits[idx][..., 1:], target_classes_o)[0]    # ignores 'no-action' class 
+        if log:
+            # TODO this should probably be a separate loss, not hacked in this one here
+            # only takes top-1 accuracy for now
+            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]    # takes into account 'no-action' class 
+            # losses['class_error'] = 100 - accuracy(src_logits[idx][..., :-1], target_classes_o)[0]    # ignores 'no-action' class 
         
         return losses
 
@@ -433,7 +435,7 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, **kwargs)
 
-    def forward(self, outputs, targets, indices, indices_aux, memory_mask):
+    def forward(self, outputs, targets, indices, indices_aux, indices_enc_aux, memory_mask):
 
         """ 
         This performs the loss computation.
@@ -521,7 +523,7 @@ class SetCriterion(nn.Module):
 
         
         if 'aux_outputs_enc' in outputs:
-            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_aux)):
+            for i, (aux_outputs, index_aux) in enumerate(zip(outputs['aux_outputs_enc'], indices_enc_aux)):
                 # index_aux_enc = self.matcher(aux_outputs, targets['video_target'])
                 for loss in self.losses:
                     if loss == 'contexts' or loss == 'mask_prediction' or loss == 'corr':
