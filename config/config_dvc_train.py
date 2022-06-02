@@ -59,7 +59,7 @@ def load_config():
     #-------------------------------------------------------------------------------------------------
     # Wandb (Weights and Biases)
     cfg.wandb = ml_collections.ConfigDict()
-    cfg.wandb.on = True
+    cfg.wandb.on = False
     cfg.wandb.project = "simple-end-to-end"
     cfg.wandb.entity = "saga-dvc"
     cfg.wandb.notes = "Sparse DETR with dropout 0.1 epcoh 70 onwards"

@@ -53,8 +53,12 @@ class DVCdataset(Dataset):
 
         self.keys = list(self.annotation.keys())
 
-        if args.for_testing and args.video_id is not None:
-            self.keys = [args.video_id]
+        if args.for_testing: 
+            if args.video_id is not None:
+                self.keys = args.video_id
+
+            else:
+                self.keys = self.keys[:args.num_samples]
 
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))

@@ -11,7 +11,8 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
+    # cfg.device = 'cpu'    # change to 'cuda' when using distributed training
+    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 1
     cfg.num_workers = 1
@@ -31,8 +32,7 @@ def load_config():
     cfg.output_dir = 'output_test'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output_test/checkpoint.pth'
-    # cfg.resume = 'output_temp_lol/checkpoint0029.pth'
+    cfg.resume = 'output_test/checkpoint_1.pth'
     # cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
@@ -83,8 +83,9 @@ def load_config():
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
     cfg.dataset.activity_net.for_testing = True    # for testing only
-    cfg.dataset.activity_net.num_samples = 6    # for testing only
-    cfg.dataset.activity_net.video_id = 'v_uqiMw7tQ1Cc'    # for testing only
+    cfg.dataset.activity_net.num_samples = 3    # for testing only
+    cfg.dataset.activity_net.video_id = ['v_kl4vLrvGAmM']    # for testing only
+    # v_wAAu-2U5Pso, v_E15Q3Z9J-Zg, v_kl4vLrvGAmM
     # cfg.dataset.activity_net.video_id = None    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
