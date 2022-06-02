@@ -20,7 +20,6 @@ from dataset.anet_video import build_dataset as build_dataset_without_raw_videos
 # from dataset.anet_with_raw_video import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 from dataset.anet_with_raw_video_audio import build_dataset as build_dataset_with_raw_videos, collate_fn as collate_fn_with_raw_videos
 
-
 def main(args):
     init_distributed_mode(args.distributed)
 
@@ -89,7 +88,7 @@ def main(args):
         print('Finished wrapping model in DDP constructor')
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # for a,b in model.named_parameters():
+    # for a,b in model.named_parameters():\
     #     print(a, b.shape)
     print(f'number of params: {n_parameters / 1000000} M')
 
@@ -98,7 +97,6 @@ def main(args):
     ]
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
-
 
     if args.resume is not None:
         checkpoint = torch.load(args.resume, map_location='cpu')
@@ -109,7 +107,9 @@ def main(args):
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
-    if not args.only_eval:
+    gt_json = import_ground_truths_for_eval(args.eval.references)
+
+    if args.model_mode == "training":
         print(f"Start training from epoch {args.start_epoch}")
         start_time = time.time()
         for epoch in range(args.start_epoch, args.epochs):
@@ -144,7 +144,7 @@ def main(args):
             # Validation
             val_stats = {}
             if (epoch + 1) % args.eval_rate == 0:
-                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+                val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
 
 
             # TODO: log encoder stats?
@@ -172,15 +172,29 @@ def main(args):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print(f"Total training time for {args.epochs - args.start_epoch} epochs:", total_time_str)
     
-    else:
+    elif args.model_mode == "validation":
         print(f"Start eval from epoch {args.start_epoch}")
         start_time = time.time()
         for epoch in range(args.start_epoch, args.epochs):
             if args.distributed.is_distributed:
                 sampler_train.set_epoch(epoch)
 
-            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on)
+            val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
 
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Total validation time for {args.epochs - args.start_epoch} epochs:", total_time_str)
+
+    elif args.model_mode == "testing":
+        start_time = time.time()
+        if args.distributed.is_distributed:
+            sampler_train.set_epoch(args.start_epoch)
+
+        val_stats = evaluate(model, criterion, data_loader_val, dataset_train.vocab, args.print_freq, device, args.start_epoch, args, args.wandb.on, gt_json, val_mode="teacher_forcing")
+
+        total_time = time.time() - start_time
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Total testing time for {args.start_epoch}th epoch model:", total_time_str)
     
 
 if __name__ == '__main__':

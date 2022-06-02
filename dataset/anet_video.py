@@ -53,11 +53,20 @@ class DVCdataset(Dataset):
 
         self.keys = list(self.annotation.keys())
 
+        if args.for_testing: 
+            if args.video_id is not None:
+                self.keys = args.video_id
+
+            else:
+                self.keys = self.keys[:args.num_samples]
+
         # TODO - convert mkv files (in invalid_ids for now)
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]
 
+        assert len(self.keys) != 0, 'length of dataset is 0, possible due to invalid video_id used for inference.'
+        
         print(f'{len(self.keys)} videos are present in the dataset.')
 
         # for testing purposes (remove later)

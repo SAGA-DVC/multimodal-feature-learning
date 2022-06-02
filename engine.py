@@ -59,7 +59,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions, indices, indices_aux, target_memory_mask = model(obj, is_training=True)
+            outputs, captions, indices, indices_aux, indices_enc_aux, target_memory_mask = model(obj, is_training=True)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -68,7 +68,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions, indices, indices_aux, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
+            outputs, captions, indices, indices_aux, indices_enc_aux, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=True)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -83,7 +83,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
         else:
             raise AssertionError('length of input modalities should be 1 or 2')
 
-        loss_dict = criterion(outputs, obj, indices, indices_aux, target_memory_mask)
+        loss_dict = criterion(outputs, obj, indices, indices_aux, indices_enc_aux, target_memory_mask)
         weight_dict = criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -157,7 +157,7 @@ def train_one_epoch(model, criterion, data_loader, vocab, optimizer, print_freq,
 
 # TODO: wandb scores (combine scores across batches)
 @torch.no_grad()
-def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log):
+def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, args, wandb_log, gt_json, val_mode="one_by_one"):
     
     """
     Inference on given data and save the results.
@@ -169,6 +169,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         `vocab` (torchtext.vocab.Vocab): mapping of all the words in the training dataset to indices and vice versa)
         `device` (torch.device) : the device on which the data has to be placed. It should be the same device that given model resides on.
         `eval_args` (ml_collections.ConfigDict) : config params for run_eval
+        `val_mode` (string): one_by_one OR teacher_forcing
     
     Returns: ???
     """
@@ -194,7 +195,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
         obj = defaultdict(lambda: None, obj)
 
         if len(args.dvc.input_modalities) == 1:
-            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False)
+            outputs, captions_with_eos, indices, indices_aux, target_memory_mask = model(obj, is_training=False, faster_eval=False, val_mode=val_mode)
         
             context_flag = (target_memory_mask is not None and 'contexts' in args.dvc.losses) or (target_memory_mask is None and 'contexts' not in args.dvc.losses)
             assert context_flag, f'mis-match in context loss and differentiable mask. target_memory_mask is {target_memory_mask} and losses are {args.dvc.losses}'
@@ -203,7 +204,7 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             assert aux_flag, f'mis-match in aux indicies and aux loss. indices_aux is {indices_aux} and aux_loss is {args.dvc.aux_loss}.'
 
         elif len(args.dvc.input_modalities) == 2:
-            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=True)
+            outputs, captions_with_eos, indices, video_target_memory_mask, audio_target_memory_mask = model(obj, is_training=False, faster_eval=False)
         
             context_flag_video = (video_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (video_target_memory_mask is None and 'contexts' not in args.dvc.losses)
             context_flag_audio = (audio_target_memory_mask is not None and 'contexts' in args.dvc.losses) or (audio_target_memory_mask is None and 'contexts' not in args.dvc.losses)
@@ -246,16 +247,18 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
             append_result_to_json_submission_file(video_id, submission_json_batch, captions_string[i], denormalized_segments[i])
             append_result_to_json_submission_file(video_id, submission_json_epoch, captions_string[i], denormalized_segments[i])
             
-        scores = run_eval(args.eval, submission_json_batch)
+        scores = run_eval(args.eval, submission_json_batch, gt_json)
         avg_scores = pprint_eval_scores(scores, debug=False)
 
+        scores.update(avg_scores)
+        
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         # metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(**avg_scores)
 
         if wandb_log and is_main_process():
             loss_dict_reduced_scaled.update(avg_scores)
-            substring_list = [str(i) for i in range(12)]
+            substring_list = [f'_{i}' for i in range(12)]
             wandb_log_metrics(
                 phase="val",
                 loss=loss_value,
@@ -264,6 +267,8 @@ def evaluate(model, criterion, data_loader, vocab, print_freq, device, epoch, ar
                 batch_idx=batch_idx,
                 substring_list=substring_list
             )
+
+        # print(submission_json_batch)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
