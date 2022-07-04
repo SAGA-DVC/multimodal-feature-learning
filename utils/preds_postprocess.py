@@ -138,6 +138,9 @@ def pprint_eval_scores(scores, debug=False):
 def pre_process(captions):
     for i, caption in enumerate(captions):
         tokens = caption.split()
+        if len(tokens) == 0 :
+            captions[i] = ''    # TODO check if space separated
+            continue
         res_tokens = [tokens[0]]
         for j in range(1, len(tokens)):
             if tokens[j] in ['.', ',', '/', "'"]:

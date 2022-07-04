@@ -59,7 +59,7 @@ class DVCdataset(Dataset):
 
             else:
                 self.keys = self.keys[:args.num_samples]
-
+        
         if args.invalid_videos_json is not None:
             invalid_videos = json.load(open(args.invalid_videos_json))
             self.keys = [k for k in self.keys if k not in invalid_videos]

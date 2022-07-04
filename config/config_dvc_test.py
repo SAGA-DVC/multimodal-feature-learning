@@ -26,14 +26,14 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.model_mode = "testing"  # training, validation, testing
+    cfg.model_mode = "training"  # training, validation, testing
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_test'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output_test/checkpoint_1.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output_test/checkpoint_1.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
     cfg.epochs = 1
@@ -84,9 +84,9 @@ def load_config():
 
     cfg.dataset.activity_net.for_testing = True    # for testing only
     cfg.dataset.activity_net.num_samples = 3    # for testing only
-    cfg.dataset.activity_net.video_id = ['v_kl4vLrvGAmM']    # for testing only
+    # cfg.dataset.activity_net.video_id = ['v_kl4vLrvGAmM']    # for testing only
     # v_wAAu-2U5Pso, v_E15Q3Z9J-Zg, v_kl4vLrvGAmM
-    # cfg.dataset.activity_net.video_id = None    # for testing only
+    cfg.dataset.activity_net.video_id = None    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
