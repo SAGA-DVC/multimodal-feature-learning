@@ -11,7 +11,7 @@ def load_config():
    
     # General
     cfg.seed = 0
-    cfg.device = 'cpu'    # change to 'cuda' when using distributed training
+    cfg.device = 'cuda'    # change to 'cuda' when using distributed training
 
     cfg.batch_size = 3
     cfg.num_workers = 1
@@ -25,18 +25,17 @@ def load_config():
 
     cfg.checkpoint_rate = 10
     cfg.eval_rate = 1    # used for val loops and submission json files
-    cfg.model_mode = "validation"  # training, validation, testing
+    cfg.model_mode = "training"  # training, validation, testing
         
     # cfg.output_dir = 'output'
     cfg.output_dir = 'output_temp'
     cfg.submission_dir = os.path.join(cfg.output_dir, "submission")
 
-    cfg.resume = 'output/unimodal_sparse_dvc_lower_case_E0-70/checkpoint0069.pth'
-    # cfg.resume = 'output_temp_lol/checkpoint0029.pth'
-    # cfg.resume = None
+    # cfg.resume = 'output/unimodal_sparse_dvc_lower_case_E0-70/checkpoint0069.pth'
+    cfg.resume = None
 
     cfg.start_epoch = 0    # set in main.py if cfg.resume is True (saved as part of the checkpoint)
-    cfg.epochs = 120
+    cfg.epochs = 1
 
     cfg.use_raw_videos = False    # Switch DVC
     cfg.use_differentiable_mask = True
@@ -84,8 +83,9 @@ def load_config():
     cfg.dataset.activity_net.invalid_videos_json = './anet_data/invalid_ids.json'
 
     cfg.dataset.activity_net.for_testing = True    # for testing only
-    cfg.dataset.activity_net.num_samples = 3    # for testing only
-    cfg.dataset.activity_net.video_id = ['v_kl4vLrvGAmM']    # for testing only
+    cfg.dataset.activity_net.num_samples = 6    # for testing only
+    # cfg.dataset.activity_net.video_id = ['v_kl4vLrvGAmM']    # for testing only
+    cfg.dataset.activity_net.video_id = None    # for testing only
 
     cfg.dataset.activity_net.vocab_file_path = './vocab.pkl'
     cfg.dataset.activity_net.min_freq = 2
@@ -103,7 +103,7 @@ def load_config():
     cfg.dataset.activity_net.audio_target_length = 64
 
     cfg.dataset.activity_net.max_gt_target_segments = 10
-    cfg.dataset.activity_net.num_classes = 200    # no action class not included 
+    cfg.dataset.activity_net.num_classes = 1    # no action class not included 
 
 
     # Kinetics 

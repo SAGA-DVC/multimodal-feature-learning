@@ -27,8 +27,12 @@ wandb login
 
 apt-get update
 apt update
-apt-get update
 apt install default-jre
+```
+
+* torchaudio - compile the torchaudio repo from source and run in that folder
+```sh
+python setup.py install
 ```
 
 <!-- In Submodules -->

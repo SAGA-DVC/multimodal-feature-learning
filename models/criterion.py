@@ -69,7 +69,7 @@ class SetCriterion(nn.Module):
 
 
 
-    def loss_labels(self, outputs, targets, indices, num_segments, log=True):
+    def loss_labels(self, outputs, targets, indices, num_segments, num_tokens_without_pad, memory_mask, log=True):
 
         """
         Classification loss (Negative Log Likelihood)

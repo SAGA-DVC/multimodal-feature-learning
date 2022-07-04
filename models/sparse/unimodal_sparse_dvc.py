@@ -74,9 +74,12 @@ class UnimodalSparseDVC(nn.Module):
         # TODO - do all this in init_weights()
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding_encoder.bias.data = torch.ones(num_classes + 1) * bias_value
-        self.class_embedding_decoder.bias.data = torch.ones(num_classes + 1) * bias_value
+        self.class_embedding_encoder.bias.data = torch.ones(num_classes) * bias_value
+        self.class_embedding_decoder.bias.data = torch.ones(num_classes) * bias_value
 
+        # nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
+        # nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data[:2], 0.)
+        # nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data[2:], -2.0)
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].weight.data, 0.)
         nn.init.constant_(self.segment_embedding_encoder.layers[-1].bias.data, 0.)
         nn.init.constant_(self.segment_embedding_decoder.layers[-1].weight.data, 0.)
@@ -114,7 +117,7 @@ class UnimodalSparseDVC(nn.Module):
     # TODO - padding and src_mask for vid features as input to caption decoder  
     # TODO - pos embed (static, learned)
     # TODO - check pos embed for all layers
-    def forward(self, obj, is_training=True, faster_eval=False):
+    def forward(self, obj, is_training=True, faster_eval=False, val_mode='one_by_one'):
 
         """
         Performs a forward pass on the UnimodalSparseDVC model which consists of the encoders, proposal decoder and caption decoder
@@ -128,7 +131,7 @@ class UnimodalSparseDVC(nn.Module):
         Returns:
             out (dictionary) : It returns a dict with the following elements:
                                 - "pred_logits": the classification logits (including no-object) for all queries
-                                                    shape (batch_size, num_queries, num_classes + 1)
+                                                    shape (batch_size, num_queries, num_classes)
                                 - "pred_segments": The normalized segments for all queries, represented as
                                                 (center_offset, length). Shape (batch_size, num_queries, 2)
             ???????
@@ -188,7 +191,7 @@ class UnimodalSparseDVC(nn.Module):
                                                                                                                                     level_start_index, valid_ratios,  query_embedding_weight, 
                                                                                                                                     mask_flatten, proposals_mask, disable_iterative_refine)
         
-        # (1, batch_size, num_queries, num_classes + 1) OR (depth, batch_size, num_queries, num_classes + 1)
+        # (1, batch_size, num_queries, num_classes) OR (depth, batch_size, num_queries, num_classes)
         outputs_class = self.class_embedding_decoder(query_features)
 
         # (1, batch_size, num_queries, 2) OR (depth, batch_size, num_queries, 2)
@@ -228,11 +231,17 @@ class UnimodalSparseDVC(nn.Module):
         if self.rho:
             out["backbone_mask_prediction"] = backbone_mask_prediction
 
-        indices_enc_aux = []
-        if self.use_enc_aux_loss:
-            out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
-            for i, aux_outputs in enumerate(out['aux_outputs_enc']):
-                indices_enc_aux.append(self.matcher(aux_outputs, obj['video_target']))
+        # indices_enc_aux = []
+        # if self.use_enc_aux_loss:
+        #     out['aux_outputs_enc'] = self._set_aux_loss(enc_inter_outputs_class, enc_inter_outputs_segments, enc_inter_outputs_count, is_enc_aux=True)
+        #     for i, aux_outputs in enumerate(out['aux_outputs_enc']):
+        #         indices_enc_aux.append(self.matcher(aux_outputs, obj['video_target']))
+
+        # indices_aux = []
+        # if self.aux_loss:
+        #     out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
+        #     for i, aux_outputs in enumerate(out['aux_outputs']):
+        #         indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
 
         if self.rho:
             out["sparse_token_nums"] = sparse_token_nums
@@ -300,7 +309,7 @@ class UnimodalSparseDVC(nn.Module):
                 out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_segment, outputs_count)
                 for i, aux_outputs in enumerate(out['aux_outputs']):
                     indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
-                
+
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption)    # caption depth could be different
 
             if self.use_differentiable_mask:
@@ -389,10 +398,6 @@ class UnimodalSparseDVC(nn.Module):
             # TODO - check use in eval
             indices_aux = []
             if self.aux_loss:
-                out['aux_outputs'] = self._set_aux_loss(outputs_segment, outputs_count)
-                for i, aux_outputs in enumerate(out['aux_outputs']):
-                    indices_aux.append(self.matcher(aux_outputs, obj['video_target']))
-                
                 out['aux_outputs_caption'] = self._set_aux_loss_caption(outputs_caption_val)
 
 
@@ -536,6 +541,6 @@ class UnimodalSparseDVC(nn.Module):
 
         prior_prob = 0.01
         bias_value = -math.log((1 - prior_prob) / prior_prob)
-        self.class_embedding.bias.data = torch.ones(self.num_classes + 1) * bias_value
+        self.class_embedding.bias.data = torch.ones(self.num_classes) * bias_value
         nn.init.constant_(self.segment_embedding.layers[-1].weight.data, 0)
         nn.init.constant_(self.segment_embedding.layers[-1].bias.data, 0)
